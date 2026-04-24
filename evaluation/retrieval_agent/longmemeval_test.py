@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import yaml
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +56,29 @@ Question: {question}
 """
 
 DEFAULT_CONCURRENCY = 30
+
+
+def _load_longmemeval_question_prefix_enabled(config_path: str) -> bool:
+    """Return whether to prepend ``User: `` to LongMemEval questions."""
+    config_file = Path(config_path)
+    if not config_file.exists():
+        return False
+
+    with config_file.open("r", encoding="utf-8") as file:
+        raw_conf = yaml.safe_load(file) or {}
+
+    if not isinstance(raw_conf, dict):
+        return False
+
+    evaluation_conf = raw_conf.get("evaluation", {})
+    if not isinstance(evaluation_conf, dict):
+        return False
+
+    longmemeval_conf = evaluation_conf.get("longmemeval", {})
+    if not isinstance(longmemeval_conf, dict):
+        return False
+
+    return bool(longmemeval_conf.get("prepend_user_prefix", False))
 
 
 def _split_chunks(text: str, max_chars: int = 3000) -> list[str]:
@@ -195,8 +219,12 @@ async def longmemeval_search(
     )
     _set_safe_embedder_request_limits(memory)
 
+    prepend_user_prefix = _load_longmemeval_question_prefix_enabled(config_path)
+
     for sample in dataset:
         question = str(sample.get("question", "")).strip()
+        if prepend_user_prefix:
+            question = f"User: {question}"
         answer = str(sample.get("answer", "")).strip()
         if not question:
             continue
