@@ -202,6 +202,7 @@ def short_term_memory_param(mock_model, mock_data_manager):
         summary_prompt_system="System prompt",
         summary_prompt_user="User prompt: {episodes} {summary} {max_length}",
         message_capacity=16,
+        summarization_enabled=True,
     )
 
 

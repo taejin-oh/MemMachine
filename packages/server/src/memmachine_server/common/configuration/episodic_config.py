@@ -60,7 +60,7 @@ class ShortTermMemoryConf(BaseModel):
         description="The maximum length of short-term memory",
     )
     summarization_enabled: bool = Field(
-        default=True,
+        default=False,
         description="Whether to generate LLM summaries when STM capacity is exceeded",
     )
 
