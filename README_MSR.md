@@ -111,3 +111,38 @@ cd evaluation/retrieval_agent
   `evaluation.longmemeval.prepend_user_prefix` 값을 스크립트가 변경해서 처리합니다.
 - 실행 종료 시 원래 `configuration.yml` 내용으로 자동 복구합니다.
 - 기본적으로 실행 커맨드/상태를 `evaluation/retrieval_agent/result/matrix_run_<UTC시간>.log`에 저장합니다.
+
+---
+
+## STM 요약 생성 선택적 비활성화 (`summarization_enabled`)
+
+STM(Short-Term Memory)을 끄지 않고, **용량 초과 시 LLM 요약 생성만**
+선택적으로 끌 수 있도록 설정 키를 추가했습니다.
+
+- 설정 키: `episodic_memory.short_term_memory.summarization_enabled`
+- 기본값: `false`
+- 효과:
+  - `false`: STM 용량 초과 시 오래된 메시지 evict는 계속 수행(메모리 bounded 유지),
+    단 LLM 요약 생성은 수행하지 않음
+  - `true`: 기존처럼 evict + 비동기 요약 생성 수행
+
+### 설정 예시
+
+```yaml
+episodic_memory:
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+    summarization_enabled: false
+```
+
+### 언제 사용하면 좋은가
+
+- LLM 호출 비용을 줄이고 싶을 때
+- 요약 생성 지연/외부 의존성 없이 STM 최신 컨텍스트만 유지하고 싶을 때
+- 메모리 제한은 유지하되(summary 없이) 빠른 evict 동작만 원할 때
+
+### 참고
+
+- `summarization_enabled: false`여도 STM은 capacity 기반으로 계속 정리됩니다.
+- 요약이 비활성화된 상태에서는 summary 컨텍스트가 비어 있게 됩니다.
