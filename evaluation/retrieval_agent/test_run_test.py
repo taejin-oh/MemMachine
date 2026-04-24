@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat
@@ -342,3 +343,62 @@ def test_longmemeval_search_uses_uv_for_preflight_and_postprocessing(tmp_path):
     assert any("evaluate.py" in line for line in uv_invocations)
     assert any("generate_scores.py" in line for line in uv_invocations)
     assert not python_log.exists()
+
+
+def test_ingest_emits_standard_logs_and_status_marker(tmp_path):
+    repo_root = tmp_path / "repo"
+    script_dir = repo_root / "evaluation" / "retrieval_agent"
+    script_dir.mkdir(parents=True)
+
+    run_test_copy = script_dir / "run_test.sh"
+    shutil.copy(RUN_TEST, run_test_copy)
+    run_test_copy.chmod(run_test_copy.stat().st_mode | stat.S_IXUSR)
+
+    (script_dir / "configuration.yml").write_text(
+        "logging:\n  level: INFO\n", encoding="utf-8"
+    )
+    _write_file(
+        script_dir / "locomo_ingest.py",
+        """
+        # Simulate successful ingest script.
+        """,
+    )
+    _write_file(
+        script_dir / "locomo_search.py",
+        """
+        # Not used by this test.
+        """,
+    )
+    _write_file(
+        script_dir / "locomo_delete.py",
+        """
+        # Not used by this test.
+        """,
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(run_test_copy),
+            "locomo",
+            "exp1",
+            "ingest",
+            "retrieval_agent",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "[INGEST_START]" in result.stdout
+    assert "[INGEST_OK]" in result.stdout
+
+    status_file = (
+        script_dir / "result" / "ingest_status" / "locomo_retrieval_agent_exp1.json"
+    )
+    assert status_file.exists()
+    status = json.loads(status_file.read_text(encoding="utf-8"))
+    assert status["status"] == "ok"
+    assert status["session_id"] == "locomo_exp1"

@@ -384,6 +384,8 @@ run_test() {
     RESULT_FILE="${SCRIPT_DIR}/result/${TEST}_${TEST_TARGET}_output_${RESULT_POSTFIX}.json"
     EVAL_FILE="${SCRIPT_DIR}/result/${TEST}_${TEST_TARGET}_evaluation_metrics_${RESULT_POSTFIX}.json"
     FINAL_SCORE_FILE="${SCRIPT_DIR}/result/final_score/${TEST}_${TEST_TARGET}_${RESULT_POSTFIX}.result"
+    INGEST_STATUS_DIR="${SCRIPT_DIR}/result/ingest_status"
+    INGEST_STATUS_FILE="${INGEST_STATUS_DIR}/${TEST}_${TEST_TARGET}_${RESULT_POSTFIX}.json"
     SESSION_ID="${TEST}_${RESULT_POSTFIX}"
 
     if [ "$INGEST" != "delete" ]; then
@@ -433,7 +435,39 @@ run_test() {
     esac
 
     if [[ "$INGEST" = "ingest" ]]; then
-        "${INGEST_CMD[@]}"
+        mkdir -p "${INGEST_STATUS_DIR}"
+        INGEST_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "[INGEST_START] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT}"
+        if "${INGEST_CMD[@]}"; then
+            INGEST_FINISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "[INGEST_OK] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT} finished_at=${INGEST_FINISHED_AT}"
+            cat > "${INGEST_STATUS_FILE}" <<EOF
+{
+  "status": "ok",
+  "test": "${TEST}",
+  "target": "${TEST_TARGET}",
+  "result_postfix": "${RESULT_POSTFIX}",
+  "session_id": "${SESSION_ID}",
+  "started_at_utc": "${INGEST_STARTED_AT}",
+  "finished_at_utc": "${INGEST_FINISHED_AT}"
+}
+EOF
+        else
+            INGEST_FINISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "[INGEST_FAIL] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT} finished_at=${INGEST_FINISHED_AT}"
+            cat > "${INGEST_STATUS_FILE}" <<EOF
+{
+  "status": "fail",
+  "test": "${TEST}",
+  "target": "${TEST_TARGET}",
+  "result_postfix": "${RESULT_POSTFIX}",
+  "session_id": "${SESSION_ID}",
+  "started_at_utc": "${INGEST_STARTED_AT}",
+  "finished_at_utc": "${INGEST_FINISHED_AT}"
+}
+EOF
+            exit 1
+        fi
     elif [[ "$INGEST" = "search" ]]; then
         EVALUATE_CMD=("${PYTHON_CMD[@]}" "$SCRIPT_DIR/evaluate.py" --data-path "$RESULT_FILE" --target-path "$EVAL_FILE" --config-path "$CONFIG_FILE")
         if [ -n "${JUDGE_CONCURRENCY:-}" ]; then
