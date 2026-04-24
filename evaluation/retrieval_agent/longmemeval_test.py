@@ -56,6 +56,7 @@ Question: {question}
 """
 
 DEFAULT_CONCURRENCY = 30
+DEFAULT_SEARCH_LIMIT = 20
 
 
 def _load_longmemeval_question_prefix_enabled(config_path: str) -> bool:
@@ -203,6 +204,7 @@ async def longmemeval_search(
     agent_name: str = "ToolSelectAgent",
     pure_llm: bool = False,
     concurrency: int = DEFAULT_CONCURRENCY,
+    search_limit: int = DEFAULT_SEARCH_LIMIT,
 ):
     from evaluation.utils import agent_utils
 
@@ -244,7 +246,7 @@ async def longmemeval_search(
                 answer=answer,
                 category=str(sample.get("question_type", "unknown")),
                 supporting_facts=supporting_facts,
-                search_limit=20,
+                search_limit=search_limit,
                 full_content=full_content if pure_llm else None,
                 extra_attributes={
                     "question_id": sample.get("question_id", ""),
@@ -386,6 +388,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CONCURRENCY,
         help="Maximum number of concurrent LongMemEval search requests",
     )
+    parser.add_argument(
+        "--search-limit",
+        type=positive_int,
+        default=DEFAULT_SEARCH_LIMIT,
+        help="Maximum number of episodes to retrieve per question",
+    )
     return parser
 
 
@@ -407,6 +415,7 @@ async def main():
         print(f"Dataset split: {args.split_name}")
         print(f"Test target: {args.test_target}")
         print(f"Concurrency: {args.concurrency}")
+        print(f"Search limit: {args.search_limit}")
 
         agent_name = (
             "MemMachineAgent" if args.test_target == "memmachine" else "ToolSelectAgent"
@@ -419,6 +428,7 @@ async def main():
             agent_name,
             args.test_target == "llm",
             args.concurrency,
+            args.search_limit,
         )
     else:
         raise ValueError(

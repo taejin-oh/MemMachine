@@ -47,6 +47,19 @@ def test_wikimultihop_help_mentions_search_and_judge_concurrency():
     assert "--judge-concurrency" in result.stdout
 
 
+def test_longmemeval_help_mentions_search_limit():
+    result = subprocess.run(
+        ["bash", str(RUN_TEST), "longmemeval", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "--search-limit" in result.stdout
+
+
 def test_locomo_rejects_search_concurrency_for_ingest():
     result = subprocess.run(
         [
@@ -170,6 +183,29 @@ def test_wikimultihop_delete_rejects_extra_positional_args():
 
     assert result.returncode == 1
     assert "WikiMultihop Usage" in result.stdout
+
+
+def test_wikimultihop_rejects_search_limit():
+    result = subprocess.run(
+        [
+            "bash",
+            str(RUN_TEST),
+            "wikimultihop",
+            "exp1",
+            "search",
+            "retrieval_agent",
+            "10",
+            "--search-limit",
+            "20",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "--search-limit is only supported for longmemeval search runs" in result.stdout
 
 
 def test_longmemeval_delete_invokes_delete_script(tmp_path):
@@ -326,6 +362,8 @@ def test_longmemeval_search_uses_uv_for_preflight_and_postprocessing(tmp_path):
             "longmemeval_s_cleaned",
             "retrieval_agent",
             "1",
+            "--search-limit",
+            "50",
         ],
         cwd=repo_root,
         capture_output=True,
@@ -339,7 +377,10 @@ def test_longmemeval_search_uses_uv_for_preflight_and_postprocessing(tmp_path):
 
     uv_invocations = uv_log.read_text(encoding="utf-8").splitlines()
     assert any("preflight.py" in line for line in uv_invocations)
-    assert any("longmemeval_test.py" in line for line in uv_invocations)
+    assert any(
+        "longmemeval_test.py" in line and "--search-limit 50" in line
+        for line in uv_invocations
+    )
     assert any("evaluate.py" in line for line in uv_invocations)
     assert any("generate_scores.py" in line for line in uv_invocations)
     assert not python_log.exists()
