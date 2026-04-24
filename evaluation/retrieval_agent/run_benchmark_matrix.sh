@@ -7,6 +7,8 @@ RUN_TEST="${SCRIPT_DIR}/run_test.sh"
 CONFIG_FILE="${SCRIPT_DIR}/configuration.yml"
 
 DRY_RUN=false
+SKIP_INGEST=false
+SUMMARY_PATH=""
 LONGMEM_LENGTH=500
 LONGMEM_SPLIT="longmemeval_s_cleaned"
 LONGMEM_TARGET="retrieval_agent"
@@ -21,7 +23,7 @@ LOCOMO_TARGET_VALUES=(memmachine retrieval_agent)
 
 usage() {
     cat <<'EOF'
-Usage: ./run_benchmark_matrix.sh [--dry-run]
+Usage: ./run_benchmark_matrix.sh [--dry-run] [--skip-ingest] [--summary-path PATH]
 
 Runs the benchmark matrix in one command:
   - LongMemEvalS: prefix {off,on} x k {10,20,30,50,100}, length=500
@@ -29,7 +31,9 @@ Runs the benchmark matrix in one command:
   - HotpotQA(validation): mode {memmachine,retrieval_agent}, length=500
 
 Options:
-  --dry-run   Print commands only; do not execute.
+  --dry-run            Print commands only; do not execute.
+  --skip-ingest        Skip all ingest steps and run search only.
+  --summary-path PATH  Write command execution summary to PATH.
 EOF
 }
 
@@ -37,6 +41,22 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --skip-ingest)
+            SKIP_INGEST=true
+            shift
+            ;;
+        --summary-path)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --summary-path requires a value"
+                exit 1
+            fi
+            SUMMARY_PATH="$2"
+            shift 2
+            ;;
+        --summary-path=*)
+            SUMMARY_PATH="${1#*=}"
             shift
             ;;
         -h|--help)
@@ -61,15 +81,32 @@ if [ "$DRY_RUN" = false ] && [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+if [ -z "$SUMMARY_PATH" ]; then
+    mkdir -p "${SCRIPT_DIR}/result"
+    SUMMARY_PATH="${SCRIPT_DIR}/result/matrix_run_$(date -u +%Y%m%dT%H%M%SZ).log"
+fi
+
+log_summary() {
+    local line="$1"
+    echo "$line" | tee -a "$SUMMARY_PATH"
+}
+
 run_cmd() {
+    local cmd_str
+    cmd_str="$(printf '%q ' "$@")"
+
     if [ "$DRY_RUN" = true ]; then
-        printf '[DRY-RUN] '
-        printf '%q ' "$@"
-        printf '\n'
+        log_summary "[DRY-RUN] ${cmd_str}"
         return 0
     fi
 
-    "$@"
+    log_summary "[RUN] ${cmd_str}"
+    if "$@"; then
+        log_summary "[OK]  ${cmd_str}"
+    else
+        log_summary "[FAIL] ${cmd_str}"
+        return 1
+    fi
 }
 
 set_longmemeval_prefix() {
@@ -122,33 +159,47 @@ restore_config() {
 }
 trap restore_config EXIT
 
-echo "=== LongMemEvalS matrix: prefix x k ==="
+log_summary "=== LongMemEvalS matrix: prefix x k ==="
 for prefix in "${LONGMEM_PREFIX_VALUES[@]}"; do
     if [ "$DRY_RUN" = true ]; then
-        echo "[DRY-RUN] Set evaluation.longmemeval.prepend_user_prefix=${prefix}"
+        log_summary "[DRY-RUN] Set evaluation.longmemeval.prepend_user_prefix=${prefix}"
     else
         set_longmemeval_prefix "$prefix"
+        log_summary "[SET] evaluation.longmemeval.prepend_user_prefix=${prefix}"
     fi
 
     for k in "${LONGMEM_K_VALUES[@]}"; do
         postfix="lmes_${prefix}_k${k}"
-        run_cmd "$RUN_TEST" longmemeval "$postfix" ingest "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH"
+        if [ "$SKIP_INGEST" = false ]; then
+            run_cmd "$RUN_TEST" longmemeval "$postfix" ingest "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH"
+        else
+            log_summary "[SKIP] ingest longmemeval ${postfix}"
+        fi
         run_cmd "$RUN_TEST" longmemeval "$postfix" search "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH" --search-limit "$k"
     done
 done
 
-echo "=== LoCoMo matrix: mode ==="
+log_summary "=== LoCoMo matrix: mode ==="
 for mode in "${LOCOMO_TARGET_VALUES[@]}"; do
     postfix="locomo_${mode}"
-    run_cmd "$RUN_TEST" locomo "$postfix" ingest "$mode"
+    if [ "$SKIP_INGEST" = false ]; then
+        run_cmd "$RUN_TEST" locomo "$postfix" ingest "$mode"
+    else
+        log_summary "[SKIP] ingest locomo ${postfix}"
+    fi
     run_cmd "$RUN_TEST" locomo "$postfix" search "$mode"
 done
 
-echo "=== HotpotQA matrix: mode ==="
+log_summary "=== HotpotQA matrix: mode ==="
 for mode in "${HOTPOT_TARGET_VALUES[@]}"; do
     postfix="hotpot_${mode}"
-    run_cmd "$RUN_TEST" hotpotqa "$postfix" ingest "$HOTPOT_SPLIT" "$mode" "$HOTPOT_LENGTH"
+    if [ "$SKIP_INGEST" = false ]; then
+        run_cmd "$RUN_TEST" hotpotqa "$postfix" ingest "$HOTPOT_SPLIT" "$mode" "$HOTPOT_LENGTH"
+    else
+        log_summary "[SKIP] ingest hotpotqa ${postfix}"
+    fi
     run_cmd "$RUN_TEST" hotpotqa "$postfix" search "$HOTPOT_SPLIT" "$mode" "$HOTPOT_LENGTH"
 done
 
-echo "Done."
+log_summary "Done."
+log_summary "Summary saved to: ${SUMMARY_PATH}"

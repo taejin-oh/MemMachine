@@ -90,9 +90,24 @@ cd evaluation/retrieval_agent
 ./run_benchmark_matrix.sh --dry-run
 ```
 
+ingest 생략 후 search만 실행:
+
+```bash
+cd evaluation/retrieval_agent
+./run_benchmark_matrix.sh --skip-ingest
+```
+
+요약 로그 파일 경로 지정:
+
+```bash
+cd evaluation/retrieval_agent
+./run_benchmark_matrix.sh --summary-path ./result/my_matrix_run.log
+```
+
 동작 방식:
 
 - 내부적으로 기존 `run_test.sh`를 그대로 재사용합니다.
 - LongMemEval prefix on/off는 `configuration.yml`의
   `evaluation.longmemeval.prepend_user_prefix` 값을 스크립트가 변경해서 처리합니다.
 - 실행 종료 시 원래 `configuration.yml` 내용으로 자동 복구합니다.
+- 기본적으로 실행 커맨드/상태를 `evaluation/retrieval_agent/result/matrix_run_<UTC시간>.log`에 저장합니다.
