@@ -63,3 +63,36 @@ cd evaluation/retrieval_agent
   search 단계에서 k=50으로 실행합니다.
 - k sweep은 `--search-limit` 값만 바꿔 반복 실행하면 됩니다.
   - 예: `10`, `20`, `30`, `50`, `100`
+
+### 3) 전체 경우의 수를 한 번에 실행
+
+아래 스크립트를 추가했습니다.
+
+- `evaluation/retrieval_agent/run_benchmark_matrix.sh`
+
+이 스크립트는 다음 매트릭스를 한 번에 실행합니다.
+
+- LongMemEvalS: `prefix {off,on}` × `k {10,20,30,50,100}` (length=500, target=retrieval_agent)
+- LoCoMo: `mode {memmachine,retrieval_agent}`
+- HotpotQA(validation): `mode {memmachine,retrieval_agent}` (length=500)
+
+실행:
+
+```bash
+cd evaluation/retrieval_agent
+./run_benchmark_matrix.sh
+```
+
+실행 전 커맨드 확인(실행 안 함):
+
+```bash
+cd evaluation/retrieval_agent
+./run_benchmark_matrix.sh --dry-run
+```
+
+동작 방식:
+
+- 내부적으로 기존 `run_test.sh`를 그대로 재사용합니다.
+- LongMemEval prefix on/off는 `configuration.yml`의
+  `evaluation.longmemeval.prepend_user_prefix` 값을 스크립트가 변경해서 처리합니다.
+- 실행 종료 시 원래 `configuration.yml` 내용으로 자동 복구합니다.
