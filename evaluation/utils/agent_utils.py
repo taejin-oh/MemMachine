@@ -384,7 +384,7 @@ async def init_memmachine_params(
     resource_manager: ResourceManagerImpl,
     session_id: str = "",
     agent_name: str = "ToolSelectAgent",
-    message_sentence_chunking: bool = False,
+    message_sentence_chunking: bool | None = None,
 ) -> tuple[EpisodicMemory, LanguageModel, AgentToolBase]:
     """Initialize MemMachine components from a ResourceManagerImpl.
 
@@ -402,6 +402,12 @@ async def init_memmachine_params(
         raise ValueError(
             "episodic_memory.long_term_memory is not configured in configuration.yml"
         )
+
+    resolved_message_sentence_chunking = (
+        ltm_conf.message_sentence_chunking
+        if message_sentence_chunking is None
+        else message_sentence_chunking
+    )
 
     embedder_id = ltm_conf.embedder
     if not embedder_id:
@@ -441,7 +447,7 @@ async def init_memmachine_params(
             vector_graph_store=vector_graph_store,
             embedder=embedder,
             reranker=reranker,
-            message_sentence_chunking=message_sentence_chunking,
+            message_sentence_chunking=resolved_message_sentence_chunking,
         )
     )
     memory = EpisodicMemory(
