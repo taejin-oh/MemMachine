@@ -223,11 +223,12 @@ async def longmemeval_search(
 
     for sample in dataset:
         question = str(sample.get("question", "")).strip()
-        if prepend_user_prefix:
-            question = f"User: {question}"
-        answer = str(sample.get("answer", "")).strip()
         if not question:
             continue
+        if prepend_user_prefix:
+            question = f"User: {question}"
+
+        answer = str(sample.get("answer", "")).strip()
 
         supporting_facts = _collect_supporting_facts(sample)
         all_content = _collect_turn_contents(sample)
