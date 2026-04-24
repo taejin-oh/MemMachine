@@ -59,6 +59,10 @@ class ShortTermMemoryConf(BaseModel):
         gt=0,
         description="The maximum length of short-term memory",
     )
+    summarization_enabled: bool = Field(
+        default=True,
+        description="Whether to generate LLM summaries when STM capacity is exceeded",
+    )
 
 
 class ShortTermMemoryConfPartial(BaseModel):
@@ -87,6 +91,10 @@ class ShortTermMemoryConfPartial(BaseModel):
         default=None,
         gt=0,
         description="The maximum length of short-term memory",
+    )
+    summarization_enabled: bool | None = Field(
+        default=None,
+        description="Whether to generate LLM summaries when STM capacity is exceeded",
     )
 
     def merge(self, other: Self) -> ShortTermMemoryConf:

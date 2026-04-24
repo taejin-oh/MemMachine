@@ -13,6 +13,7 @@ episodic_memory:
   short_term_memory:
     llm_model: openai_model
     message_capacity: 500
+    summarization_enabled: true # set to false to skip async summary generation
 
 semantic_memory:
   llm_model: openai_model
