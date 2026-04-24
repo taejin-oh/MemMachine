@@ -453,6 +453,18 @@ From `evaluation/retrieval_agent/`:
 ./run_test.sh locomo exp1 search retrieval_agent --search-concurrency 1 --judge-concurrency 4
 ```
 
+Ingest runs print standardized lifecycle logs:
+
+- `[INGEST_START] ...`
+- `[INGEST_OK] ...` on success
+- `[INGEST_FAIL] ...` on failure
+
+Each ingest run also writes a status marker JSON file:
+
+```sh
+evaluation/retrieval_agent/result/ingest_status/<test>_<target>_<result_postfix>.json
+```
+
 For the full argument reference run:
 
 ```sh

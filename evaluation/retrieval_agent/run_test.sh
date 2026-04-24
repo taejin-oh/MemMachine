@@ -80,6 +80,9 @@ usage_longmemeval() {
     echo "  --judge-concurrency N"
     echo "                     Optional max concurrent LLM judge workers"
     echo "                     (search only, default: 30)"
+    echo "  --search-limit N"
+    echo "                     Optional retrieval depth (max episodes per question)"
+    echo "                     (search only, default: 20)"
     exit 1
 }
 
@@ -122,6 +125,7 @@ POSITIONAL_ARGS=()
 INGEST_CONCURRENCY=""
 SEARCH_CONCURRENCY=""
 JUDGE_CONCURRENCY=""
+SEARCH_LIMIT=""
 PYTHON_CMD=(python)
 PYTHON_INSTALL_CMD='python -m pip install -r requirements.txt'
 
@@ -130,6 +134,7 @@ parse_optional_flags() {
     INGEST_CONCURRENCY=""
     SEARCH_CONCURRENCY=""
     JUDGE_CONCURRENCY=""
+    SEARCH_LIMIT=""
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -169,6 +174,18 @@ parse_optional_flags() {
                 JUDGE_CONCURRENCY="${1#*=}"
                 shift
                 ;;
+            --search-limit)
+                if [ "$#" -lt 2 ]; then
+                    echo "Error: --search-limit requires a value"
+                    exit 1
+                fi
+                SEARCH_LIMIT="$2"
+                shift 2
+                ;;
+            --search-limit=*)
+                SEARCH_LIMIT="${1#*=}"
+                shift
+                ;;
             *)
                 POSITIONAL_ARGS+=("$1")
                 shift
@@ -178,6 +195,11 @@ parse_optional_flags() {
 }
 
 validate_args() {
+    if [ -n "${SEARCH_LIMIT:-}" ] && [ "$1" != "longmemeval" ]; then
+        echo "--search-limit is only supported for longmemeval search runs"
+        exit 1
+    fi
+
     case "$1" in
         locomo)
             if [ "$#" -ne 4 ]; then
@@ -267,6 +289,11 @@ validate_args() {
                 echo
                 show_help longmemeval
             fi
+            if [ -n "${SEARCH_LIMIT:-}" ] && [ "$3" != "search" ]; then
+                echo "--search-limit can only be used with search runs"
+                echo
+                show_help longmemeval
+            fi
             ;;
         *)
             echo "Unknown test: $TEST"
@@ -310,6 +337,10 @@ run_test() {
     fi
     if [ -n "${JUDGE_CONCURRENCY:-}" ] && ! validate_positive_integer "$JUDGE_CONCURRENCY"; then
         echo "--judge-concurrency must be a positive integer"
+        exit 1
+    fi
+    if [ -n "${SEARCH_LIMIT:-}" ] && ! validate_positive_integer "$SEARCH_LIMIT"; then
+        echo "--search-limit must be a positive integer"
         exit 1
     fi
 
@@ -384,6 +415,8 @@ run_test() {
     RESULT_FILE="${SCRIPT_DIR}/result/${TEST}_${TEST_TARGET}_output_${RESULT_POSTFIX}.json"
     EVAL_FILE="${SCRIPT_DIR}/result/${TEST}_${TEST_TARGET}_evaluation_metrics_${RESULT_POSTFIX}.json"
     FINAL_SCORE_FILE="${SCRIPT_DIR}/result/final_score/${TEST}_${TEST_TARGET}_${RESULT_POSTFIX}.result"
+    INGEST_STATUS_DIR="${SCRIPT_DIR}/result/ingest_status"
+    INGEST_STATUS_FILE="${INGEST_STATUS_DIR}/${TEST}_${TEST_TARGET}_${RESULT_POSTFIX}.json"
     SESSION_ID="${TEST}_${RESULT_POSTFIX}"
 
     if [ "$INGEST" != "delete" ]; then
@@ -429,11 +462,46 @@ run_test() {
             if [ -n "${SEARCH_CONCURRENCY:-}" ]; then
                 SEARCH_CMD+=(--concurrency "$SEARCH_CONCURRENCY")
             fi
+            if [ -n "${SEARCH_LIMIT:-}" ]; then
+                SEARCH_CMD+=(--search-limit "$SEARCH_LIMIT")
+            fi
             ;;
     esac
 
     if [[ "$INGEST" = "ingest" ]]; then
-        "${INGEST_CMD[@]}"
+        mkdir -p "${INGEST_STATUS_DIR}"
+        INGEST_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "[INGEST_START] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT}"
+        if "${INGEST_CMD[@]}"; then
+            INGEST_FINISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "[INGEST_OK] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT} finished_at=${INGEST_FINISHED_AT}"
+            cat > "${INGEST_STATUS_FILE}" <<EOF
+{
+  "status": "ok",
+  "test": "${TEST}",
+  "target": "${TEST_TARGET}",
+  "result_postfix": "${RESULT_POSTFIX}",
+  "session_id": "${SESSION_ID}",
+  "started_at_utc": "${INGEST_STARTED_AT}",
+  "finished_at_utc": "${INGEST_FINISHED_AT}"
+}
+EOF
+        else
+            INGEST_FINISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "[INGEST_FAIL] test=${TEST} target=${TEST_TARGET} postfix=${RESULT_POSTFIX} session_id=${SESSION_ID} started_at=${INGEST_STARTED_AT} finished_at=${INGEST_FINISHED_AT}"
+            cat > "${INGEST_STATUS_FILE}" <<EOF
+{
+  "status": "fail",
+  "test": "${TEST}",
+  "target": "${TEST_TARGET}",
+  "result_postfix": "${RESULT_POSTFIX}",
+  "session_id": "${SESSION_ID}",
+  "started_at_utc": "${INGEST_STARTED_AT}",
+  "finished_at_utc": "${INGEST_FINISHED_AT}"
+}
+EOF
+            exit 1
+        fi
     elif [[ "$INGEST" = "search" ]]; then
         EVALUATE_CMD=("${PYTHON_CMD[@]}" "$SCRIPT_DIR/evaluate.py" --data-path "$RESULT_FILE" --target-path "$EVAL_FILE" --config-path "$CONFIG_FILE")
         if [ -n "${JUDGE_CONCURRENCY:-}" ]; then
