@@ -384,7 +384,7 @@ async def init_memmachine_params(
     resource_manager: ResourceManagerImpl,
     session_id: str = "",
     agent_name: str = "ToolSelectAgent",
-    message_sentence_chunking: bool = False,
+    message_sentence_chunking: bool | None = None,
 ) -> tuple[EpisodicMemory, LanguageModel, AgentToolBase]:
     """Initialize MemMachine components from a ResourceManagerImpl.
 
@@ -394,7 +394,9 @@ async def init_memmachine_params(
     - Reranker:           ``retrieval_agent.reranker`` (fallback:
                           ``episodic_memory.long_term_memory.reranker``)
     - Vector graph store: ``episodic_memory.long_term_memory.vector_graph_store``
-    - Agent + answer LM: ``retrieval_agent.llm_model``
+    - Agent + answer LM:  ``retrieval_agent.llm_model``
+    - Sentence chunking:  ``episodic_memory.long_term_memory.message_sentence_chunking``
+                          (default ``False``; explicit kwarg overrides YAML)
     """
     conf = resource_manager.config
     ltm_conf = conf.episodic_memory.long_term_memory
@@ -435,13 +437,20 @@ async def init_memmachine_params(
 
     normalized_session_id = session_id or "evaluation_session"
 
+    if message_sentence_chunking is None:
+        resolved_chunking = getattr(ltm_conf, "message_sentence_chunking", None)
+    else:
+        resolved_chunking = message_sentence_chunking
+    if resolved_chunking is None:
+        resolved_chunking = False
+
     long_term_memory = LongTermMemory(
         LongTermMemoryParams(
             session_id=normalized_session_id,
             vector_graph_store=vector_graph_store,
             embedder=embedder,
             reranker=reranker,
-            message_sentence_chunking=message_sentence_chunking,
+            message_sentence_chunking=resolved_chunking,
         )
     )
     memory = EpisodicMemory(
