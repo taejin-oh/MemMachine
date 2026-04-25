@@ -16,6 +16,12 @@
   `--search-limit` 전달 로직을 추가했습니다.
   - `longmemeval`의 `search` 실행에서만 허용됩니다.
   - 양의 정수만 허용합니다.
+- `evaluation/retrieval_agent/run_benchmark_matrix.sh`에서
+  LongMemEval 실행 시 chunk on/off 토글을 자동 반영하도록 확장했습니다.
+  - 변경 대상 YAML 키:
+    `episodic_memory.long_term_memory.message_sentence_chunking`
+  - 기존 prefix 토글(`evaluation.longmemeval.prepend_user_prefix`)과 함께
+    조합 매트릭스로 실행됩니다.
 
 ## 설정 방법
 
@@ -72,7 +78,7 @@ cd evaluation/retrieval_agent
 
 이 스크립트는 다음 매트릭스를 한 번에 실행합니다.
 
-- LongMemEvalS: `prefix {off,on}` × `k {10,20,30,50,100}` (length=500, target=retrieval_agent)
+- LongMemEvalS: `chunk {off,on}` × `prefix {off,on}` × `k {10,20,30,50,100}` (length=500, target=retrieval_agent)
 - LoCoMo: `mode {memmachine,retrieval_agent}`
 - HotpotQA(validation): `mode {memmachine,retrieval_agent}` (length=500)
 
@@ -109,8 +115,17 @@ cd evaluation/retrieval_agent
 - 내부적으로 기존 `run_test.sh`를 그대로 재사용합니다.
 - LongMemEval prefix on/off는 `configuration.yml`의
   `evaluation.longmemeval.prepend_user_prefix` 값을 스크립트가 변경해서 처리합니다.
+- LongMemEval chunk on/off는 `configuration.yml`의
+  `episodic_memory.long_term_memory.message_sentence_chunking` 값을 스크립트가 변경해서 처리합니다.
 - 실행 종료 시 원래 `configuration.yml` 내용으로 자동 복구합니다.
 - 기본적으로 실행 커맨드/상태를 `evaluation/retrieval_agent/result/matrix_run_<UTC시간>.log`에 저장합니다.
+
+### chunk 토글 사용 시 주의사항
+
+- `message_sentence_chunking` 값이 바뀌면 ingest 결과가 달라집니다.
+  따라서 `chunk=off`와 `chunk=on` 비교를 할 때는 ingest를 각각 수행해야 합니다.
+- `--skip-ingest` 옵션은 동일한 ingest 상태를 재사용할 때만 사용하세요.
+  chunk 값을 바꾸는 실험에서는 `--skip-ingest`를 권장하지 않습니다.
 
 ---
 

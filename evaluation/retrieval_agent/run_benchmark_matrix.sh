@@ -14,6 +14,7 @@ LONGMEM_SPLIT="longmemeval_s_cleaned"
 LONGMEM_TARGET="retrieval_agent"
 LONGMEM_K_VALUES=(10 20 30 50 100)
 LONGMEM_PREFIX_VALUES=(off on)
+LONGMEM_CHUNK_VALUES=(off on)
 
 HOTPOT_LENGTH=500
 HOTPOT_SPLIT="validation"
@@ -26,7 +27,7 @@ usage() {
 Usage: ./run_benchmark_matrix.sh [--dry-run] [--skip-ingest] [--summary-path PATH]
 
 Runs the benchmark matrix in one command:
-  - LongMemEvalS: prefix {off,on} x k {10,20,30,50,100}, length=500
+  - LongMemEvalS: chunk {off,on} x prefix {off,on} x k {10,20,30,50,100}, length=500
   - LoCoMo: mode {memmachine,retrieval_agent}
   - HotpotQA(validation): mode {memmachine,retrieval_agent}, length=500
 
@@ -146,6 +147,43 @@ with open(config_path, "w", encoding="utf-8") as file:
 PY
 }
 
+set_longmemeval_chunking() {
+    local chunk="$1"
+    local enabled=false
+    if [ "$chunk" = "on" ]; then
+        enabled=true
+    fi
+
+    python - "$CONFIG_FILE" "$enabled" <<'PY'
+import sys
+import yaml
+
+config_path = sys.argv[1]
+enabled = sys.argv[2].lower() == "true"
+
+with open(config_path, "r", encoding="utf-8") as file:
+    config = yaml.safe_load(file) or {}
+
+if not isinstance(config, dict):
+    config = {}
+
+episodic_cfg = config.setdefault("episodic_memory", {})
+if not isinstance(episodic_cfg, dict):
+    episodic_cfg = {}
+    config["episodic_memory"] = episodic_cfg
+
+long_term_cfg = episodic_cfg.setdefault("long_term_memory", {})
+if not isinstance(long_term_cfg, dict):
+    long_term_cfg = {}
+    episodic_cfg["long_term_memory"] = long_term_cfg
+
+long_term_cfg["message_sentence_chunking"] = enabled
+
+with open(config_path, "w", encoding="utf-8") as file:
+    yaml.safe_dump(config, file, sort_keys=False)
+PY
+}
+
 BACKUP_FILE=""
 if [ "$DRY_RUN" = false ]; then
     BACKUP_FILE="$(mktemp "${SCRIPT_DIR}/configuration.yml.backup.XXXXXX")"
@@ -159,23 +197,32 @@ restore_config() {
 }
 trap restore_config EXIT
 
-log_summary "=== LongMemEvalS matrix: prefix x k ==="
-for prefix in "${LONGMEM_PREFIX_VALUES[@]}"; do
+log_summary "=== LongMemEvalS matrix: chunk x prefix x k ==="
+for chunk in "${LONGMEM_CHUNK_VALUES[@]}"; do
     if [ "$DRY_RUN" = true ]; then
-        log_summary "[DRY-RUN] Set evaluation.longmemeval.prepend_user_prefix=${prefix}"
+        log_summary "[DRY-RUN] Set episodic_memory.long_term_memory.message_sentence_chunking=${chunk}"
     else
-        set_longmemeval_prefix "$prefix"
-        log_summary "[SET] evaluation.longmemeval.prepend_user_prefix=${prefix}"
+        set_longmemeval_chunking "$chunk"
+        log_summary "[SET] episodic_memory.long_term_memory.message_sentence_chunking=${chunk}"
     fi
 
-    for k in "${LONGMEM_K_VALUES[@]}"; do
-        postfix="lmes_${prefix}_k${k}"
-        if [ "$SKIP_INGEST" = false ]; then
-            run_cmd "$RUN_TEST" longmemeval "$postfix" ingest "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH"
+    for prefix in "${LONGMEM_PREFIX_VALUES[@]}"; do
+        if [ "$DRY_RUN" = true ]; then
+            log_summary "[DRY-RUN] Set evaluation.longmemeval.prepend_user_prefix=${prefix}"
         else
-            log_summary "[SKIP] ingest longmemeval ${postfix}"
+            set_longmemeval_prefix "$prefix"
+            log_summary "[SET] evaluation.longmemeval.prepend_user_prefix=${prefix}"
         fi
-        run_cmd "$RUN_TEST" longmemeval "$postfix" search "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH" --search-limit "$k"
+
+        for k in "${LONGMEM_K_VALUES[@]}"; do
+            postfix="lmes_chunk${chunk}_${prefix}_k${k}"
+            if [ "$SKIP_INGEST" = false ]; then
+                run_cmd "$RUN_TEST" longmemeval "$postfix" ingest "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH"
+            else
+                log_summary "[SKIP] ingest longmemeval ${postfix}"
+            fi
+            run_cmd "$RUN_TEST" longmemeval "$postfix" search "$LONGMEM_SPLIT" "$LONGMEM_TARGET" "$LONGMEM_LENGTH" --search-limit "$k"
+        done
     done
 done
 
