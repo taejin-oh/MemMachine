@@ -5,6 +5,7 @@ import yaml
 
 from memmachine_server.common.configuration.episodic_config import (
     EpisodicMemoryConfPartial,
+    LongTermMemoryConfPartial,
 )
 
 
@@ -32,3 +33,53 @@ def test_episodic_config_to_yaml(episodic_memory_conf):
     assert conf_cp.short_term_memory is not None
     assert conf_cp.short_term_memory == conf.short_term_memory
     assert conf_cp.short_term_memory.llm_model == "my_model"
+
+
+def _ltm_partial(**overrides: Any) -> LongTermMemoryConfPartial:
+    base: dict[str, Any] = {
+        "session_id": "s",
+        "vector_graph_store": "v",
+        "embedder": "e",
+        "reranker": "r",
+    }
+    base.update(overrides)
+    return LongTermMemoryConfPartial(**base)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, False),
+        ({"message_sentence_chunking": False}, False),
+        ({"message_sentence_chunking": True}, True),
+    ],
+)
+def test_message_sentence_chunking_merges_into_full_conf(overrides, expected):
+    full = _ltm_partial(**overrides).merge(LongTermMemoryConfPartial())
+    assert full.message_sentence_chunking is expected
+
+
+def test_message_sentence_chunking_round_trips_through_yaml():
+    conf = EpisodicMemoryConfPartial(
+        long_term_memory={
+            "embedder": "my_embedder",
+            "reranker": "my_reranker",
+            "vector_graph_store": "my_neo4j",
+            "message_sentence_chunking": True,
+        }
+    )
+    reloaded = EpisodicMemoryConfPartial(**yaml.safe_load(conf.to_yaml()))
+    assert reloaded.long_term_memory is not None
+    assert reloaded.long_term_memory.message_sentence_chunking is True
+
+
+def test_message_sentence_chunking_omitted_yaml_is_none_in_partial():
+    conf = EpisodicMemoryConfPartial(
+        long_term_memory={
+            "embedder": "my_embedder",
+            "reranker": "my_reranker",
+            "vector_graph_store": "my_neo4j",
+        }
+    )
+    assert conf.long_term_memory is not None
+    assert conf.long_term_memory.message_sentence_chunking is None

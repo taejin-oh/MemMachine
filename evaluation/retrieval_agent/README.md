@@ -405,6 +405,7 @@ session_manager:
 | `embedder` | ID of the embedder used to index and search episodes. |
 | `reranker` | Fallback reranker if `retrieval_agent.reranker` is not set. |
 | `vector_graph_store` | ID of the Neo4j database used as the vector store. |
+| `message_sentence_chunking` | If `true`, message episodes are chunked into sentences before embedding. Default: `false`. |
 
 ### `resources.language_models` — provider options
 
