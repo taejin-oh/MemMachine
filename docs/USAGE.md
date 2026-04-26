@@ -109,6 +109,10 @@ python scripts/generate_config.py --problem 5 --run-name p5_full \
 python scripts/run_pipeline.py --config configs/runs/p5_full.yaml --stage all
 ```
 
+> **주의 — p5 처리 범위**: PR #7 wrapper 는 기존 `evaluation/retrieval_agent/locomo_search.py` 를 subprocess 로 호출합니다. upstream 코드의 `start_index=0` / `end_index=20` 제한을 따르므로 "cat5 제외 전체 1094 문항" 을 항상 보장하는 실행이 아닙니다. 실제 처리 범위는 `locomo_search.py:115-117` 의 인덱스 로직을 그대로 따릅니다.
+>
+> **주의 — p5 search_limit**: `locomo_search.py:207` 에서 `search_limit=20` 이 하드코드되어 있습니다. run YAML 의 `fixed.search_limit` 을 바꿔도 LoCoMo subprocess 경로에는 반영되지 않습니다.
+
 ### #6 — Multi-session 재분해 (#4 결과 재사용)
 
 ```sh
@@ -191,6 +195,9 @@ CLI 인자와 JSON 이 충돌하면 CLI 가 우선.
 
 **Q6. 반복 실행 (N runs) / 자동 판정?**
 → 현재 `n_runs=1` 만 지원. `n_runs > 1` 면 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work.
+
+**Q7. 같은 DB 에서 p2 / p5 를 여러 번 돌려도 되나요?**
+→ 주의 필요. LongMemEval 은 PR #7 wrapper 의 `eval_tool_longmemeval_{run_name}` session_id 를 사용하므로 run 간 격리됩니다. 그러나 **HotpotQA (p2) 는 upstream 코드가 `hotpotqa_group` 으로 고정**, **LoCoMo (p5) 는 `group_{idx}` 로 고정**됩니다. 같은 DB 에서 p2 / p5 를 여러 번 실행하면 이전 run 의 episode 와 새 run 의 episode 가 섞일 수 있습니다. p2/p5 반복 시에는 `evaluation/retrieval_agent/wikimultihop_delete.py` / `locomo_delete.py` 같은 upstream delete script 로 정리하거나 별도 DB 를 사용하세요. 자동화는 `docs/msr/msr_eval_tool_todo_pr7.md` 의 future work.
 
 ---
 
