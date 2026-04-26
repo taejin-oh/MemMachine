@@ -161,7 +161,7 @@ PR #7 (브랜치 `claude/memmachine-eval-tool-GIrVz`) 가 추가한 `scripts/` +
 | #2 HotpotQA 모드 sweep (Memory/Agent) | ✅ | ✅ | `configs/problems/p2.yaml` `sweep.test_target` |
 | #2 HotpotQA `length=500` 정책 + split | 제외 | ✅ (`split=validation`) | `p2.yaml` 명시 |
 | #4/#12 chunk on/off YAML 제어 | ✅ | ✅ | `p4.yaml` `fixed.message_sentence_chunking`, ingest 전에 working configuration.yml 에 반영 |
-| #4/#12 chunk × prefix × k 조합 | ✅ | ✅ | `sweep + fixed` 조합 |
+| #4/#12 chunk × prefix × k 조합 | ✅ (`run_benchmark_matrix.sh`) | ✅ (확장 가능) | PR #7 기본 `p4.yaml` 은 chunk=on, prefix=on 고정 + k sweep. 전체 chunk × prefix × k 매트릭스는 사용자가 run YAML 의 `sweep` / `fixed` 를 직접 확장하면 가능 (예: `sweep.message_sentence_chunking: [false, true]`). 기본 제공은 아님 |
 | 공통: DB snapshot 동결/복원 | ❌ | ❌ | 본 도구 범위 밖 |
 | 공통: 파일럿 5회 + 본실험 N 자동결정 wrapper | ❌ | ❌ (단 `n_runs > 1` 명시 error) | `run_pipeline.py` |
 | 공통: 성공/부분/실패 자동 판정 스크립트 | ❌ | ❌ | future work — analyze 출력 raw 값 수기 판정 |
