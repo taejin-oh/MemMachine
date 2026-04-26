@@ -11,6 +11,7 @@ Options:
 
 from __future__ import annotations
 
+import contextlib
 import statistics
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,14 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         cell_key = ",".join(f"{k}={sweep[k]}" for k in sorted(sweep))
         cell = cells.setdefault(
             cell_key,
-            {"sweep": sweep, "n": 0, "scores": [], "by_category": {}, "latencies": [], "num_episodes": []},
+            {
+                "sweep": sweep,
+                "n": 0,
+                "scores": [],
+                "by_category": {},
+                "latencies": [],
+                "num_episodes": [],
+            },
         )
         cell["n"] += 1
         if "llm_score" in r:
@@ -40,15 +48,11 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if "llm_score" in r:
             bucket.append(int(r["llm_score"]))
         if "llm_time" in r:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 cell["latencies"].append(float(r["llm_time"]))
-            except (TypeError, ValueError):
-                pass
         if "num_episodes_retrieved" in r:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 cell["num_episodes"].append(int(r["num_episodes_retrieved"]))
-            except (TypeError, ValueError):
-                pass
 
     summary: dict[str, Any] = {"cells": []}
     for cell_key, c in cells.items():
@@ -64,9 +68,13 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "n": c["n"],
                 "accuracy": (sum(scores) / len(scores)) if scores else None,
                 "accuracy_std": statistics.pstdev(scores) if len(scores) > 1 else 0.0,
-                "mean_llm_time": (sum(c["latencies"]) / len(c["latencies"])) if c["latencies"] else None,
+                "mean_llm_time": (sum(c["latencies"]) / len(c["latencies"]))
+                if c["latencies"]
+                else None,
                 "mean_num_episodes": (
-                    sum(c["num_episodes"]) / len(c["num_episodes"]) if c["num_episodes"] else None
+                    sum(c["num_episodes"]) / len(c["num_episodes"])
+                    if c["num_episodes"]
+                    else None
                 ),
                 "by_category": per_cat,
             }
@@ -112,21 +120,27 @@ def _add_pareto(summary: dict[str, Any]) -> None:
     summary["pareto"] = points
 
 
-def run(run_cfg: dict[str, Any], decompose_multisession: bool = False, pareto: bool = False) -> Path:
+def run(
+    run_cfg: dict[str, Any], decompose_multisession: bool = False, pareto: bool = False
+) -> Path:
     out_dir = cm.results_dir_for(run_cfg)
     judge_path = out_dir / "judge.jsonl"
 
     # p6 / p12: reuse another run's judge.jsonl
     reuse = run_cfg.get("reuse_run")
     if reuse:
-        reuse_path = (cm.REPO_ROOT / run_cfg.get("results_dir", "results") / reuse / "judge.jsonl").resolve()
+        reuse_path = (
+            cm.REPO_ROOT / run_cfg.get("results_dir", "results") / reuse / "judge.jsonl"
+        ).resolve()
         if not reuse_path.exists():
             raise FileNotFoundError(f"reuse_run judge.jsonl not found: {reuse_path}")
         judge_path = reuse_path
         print(f"[analyze] reusing {reuse_path}")
 
     if not judge_path.exists():
-        raise FileNotFoundError(f"judge.jsonl missing: {judge_path} — run --stage judge first")
+        raise FileNotFoundError(
+            f"judge.jsonl missing: {judge_path} — run --stage judge first"
+        )
 
     rows = cm.read_jsonl(judge_path)
     summary = _aggregate(rows)

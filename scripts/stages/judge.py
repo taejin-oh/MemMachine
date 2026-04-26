@@ -20,7 +20,9 @@ def run(run_cfg: dict[str, Any]) -> Path:
     judge_path = out_dir / "judge.jsonl"
 
     if not generate_path.exists():
-        raise FileNotFoundError(f"generate.jsonl missing: {generate_path} — run --stage retrieve first")
+        raise FileNotFoundError(
+            f"generate.jsonl missing: {generate_path} — run --stage retrieve first"
+        )
 
     config_path = cm.resolve_config_path(run_cfg)
     rows = cm.read_jsonl(generate_path)

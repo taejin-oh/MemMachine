@@ -19,23 +19,36 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from _merge import load_yaml  # noqa: E402
+from scripts._merge import load_yaml  # noqa: E402
 
 STAGE_ORDER = ["ingest", "retrieve", "generate", "judge", "analyze"]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", required=True, help="Path to run YAML (configs/runs/{name}.yaml)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--config", required=True, help="Path to run YAML (configs/runs/{name}.yaml)"
+    )
     parser.add_argument(
         "--stage",
         default="all",
-        help='Comma-separated stages or "all". Allowed: ' + ",".join(STAGE_ORDER) + ",all",
+        help='Comma-separated stages or "all". Allowed: '
+        + ",".join(STAGE_ORDER)
+        + ",all",
     )
-    parser.add_argument("--decompose-multisession", action="store_true", help="analyze: emit MS vs others gap (#6)")
-    parser.add_argument("--pareto", action="store_true", help="analyze: emit token/accuracy Pareto curve (#12)")
+    parser.add_argument(
+        "--decompose-multisession",
+        action="store_true",
+        help="analyze: emit MS vs others gap (#6)",
+    )
+    parser.add_argument(
+        "--pareto",
+        action="store_true",
+        help="analyze: emit token/accuracy Pareto curve (#12)",
+    )
     return parser.parse_args()
 
 
@@ -45,7 +58,7 @@ def resolve_stages(arg: str) -> list[str]:
     parts = [s.strip() for s in arg.split(",") if s.strip()]
     bad = [s for s in parts if s not in STAGE_ORDER]
     if bad:
-        raise SystemExit(f"Unknown stage(s): {bad}. Allowed: {STAGE_ORDER + ['all']}")
+        raise SystemExit(f"Unknown stage(s): {bad}. Allowed: {[*STAGE_ORDER, 'all']}")
     # Preserve canonical order
     return [s for s in STAGE_ORDER if s in parts]
 

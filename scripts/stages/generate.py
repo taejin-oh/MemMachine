@@ -17,7 +17,9 @@ from . import _common as cm
 
 
 def _strip_comments(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#")).strip()
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    ).strip()
 
 
 def _check_prompt_hook(run_cfg: dict[str, Any]) -> str:
