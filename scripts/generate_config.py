@@ -69,8 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--length", type=int, help="benchmark.length override (dataset slice)"
     )
-    parser.add_argument("--n-runs", type=int, help="Repeat count")
-    parser.add_argument("--seed", type=int, help="Random seed")
+    parser.add_argument(
+        "--n-runs", type=int, help="Repeat count (only n_runs=1 supported)"
+    )
 
     # #6 / #12 reuse-run
     parser.add_argument(
@@ -121,8 +122,6 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.n_runs is not None:
         out["n_runs"] = args.n_runs
-    if args.seed is not None:
-        out["seed"] = args.seed
 
     if args.reuse_run:
         out["reuse_run"] = args.reuse_run
