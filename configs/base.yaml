@@ -1,0 +1,37 @@
+# MemMachine 재현 평가 도구 — 공통 base 설정
+# 모든 run config 의 기본값. problem / run YAML 이 이 위에 deep-merge.
+
+# 산출물 위치
+results_dir: results
+prompts_dir: prompts
+
+# configuration.yml 처리 모드 (DECISIONS.md D-002)
+configuration:
+  # "profile" : configs/profiles/{models,dbs}/*.yaml 조합으로 매 run 생성
+  # "existing" : 사용자가 직접 만든 configuration.yml 경로 사용
+  mode: profile
+
+  # mode=profile 일 때 사용
+  model_profile: null   # configs/profiles/models/{name}.yaml 의 {name}
+  db_profile: null      # configs/profiles/dbs/{name}.yaml 의 {name}
+  generated_dir: configs/generated   # 생성 파일 저장 위치
+
+  # mode=existing 일 때 사용
+  existing_path: null   # 절대 또는 repo-root 상대 경로
+
+# Judge LLM (null 이면 retrieval_agent.llm_model 와 동일)
+judge:
+  llm_model_id: null
+
+# 평가 기본값
+evaluation:
+  # LongMemEval abstention 카테고리 처리
+  exclude_abstention: true
+  # 동시성 (기존 run_test.sh 와 동일 의미)
+  ingest_concurrency: 4
+  search_concurrency: 4
+  judge_concurrency: 4
+
+# 반복 실행 (DECISIONS.md D-001 / 설계 §3.5 fallback)
+# 현재 MVP 는 n_runs=1 만 지원. 그 외 값은 run_pipeline.py 가 NotImplementedError.
+n_runs: 1

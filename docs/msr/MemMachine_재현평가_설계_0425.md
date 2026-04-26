@@ -21,25 +21,28 @@
 
 ---
 
-## 0.1 코드 구현 상태 요약 (v0.2 연동)
+## 0.1 코드 구현 상태 요약 (v0.2 + PR #7 연동)
 
-`docs/msr/20260425_modified_list_v0.2.md` 의 점검 결과를 본 문서 §2/§4 운영 가능성 관점에서 재정리.
+`docs/msr/20260425_modified_list_v0.2.md` (기존 evaluation 코드 기준) 와 PR #7 (eval-tool MVP) 의 양쪽 상태를 §2/§4 운영 가능성 관점에서 재정리.
 
-| 항목 | v0.2 상태 | 본 문서 영향 |
-|---|:---:|---|
-| `prepend_user_prefix` 토글 (#3·#4·#12) | ✅ | §2 #3·#4 운영 가능 |
-| `k` sweep `{10,20,30,50,100}` (#4·#12) | ✅ | §2 #4·#12 운영 가능 |
-| `chunk` YAML wiring (`message_sentence_chunking`) | ✅ | §2 #4 chunk=on 고정 가능, §3 sentence chunking 단계 측정 가능 |
-| `chunk × prefix × k` 매트릭스 | ✅ | §2 #4·#12 단일 run 공유 가능 |
-| LoCoMo cat5 skip 포팅 | ✅ | §2 #5 운영 가능 (`evaluation/retrieval_agent/locomo_search.py:135`) |
-| HotpotQA `length=500` 정책 | ✅ (정책 채택) | §2 #2 표 갱신 (선정 방식 명시) |
-| EDWIN1/EDWIN3 prompt 주입 | ❌ **BLOCKER** | §2 #3·#4·#12·#5 prompt 통제 깨짐 — §5 v4 한계 첫 항목 |
-| DB snapshot 동결/복원 | ❌ | §4 반복 실행 간 DB 동일성 보장 자동화 부재 |
-| 파일럿 5회 + N 자동결정 wrapper | ❌ | §4 σ×2 자동 판정 작동 불능 → §4 fallback 채택 |
-| 자동 판정 스크립트 | ❌ | §2 판정 기준 수기 운영 |
-| #6 MS 재분해 집계 스크립트 | ❌ | §2 #6 MS 카테고리 후처리 수동 |
+| 항목 | v0.2 상태 | PR #7 상태 | 본 문서 영향 |
+|---|:---:|:---:|---|
+| `prepend_user_prefix` 토글 (#3·#4·#12) | ✅ | ✅ (config 토글) | §2 #3·#4 운영 가능 |
+| `k` sweep `{10,20,30,50,100}` (#4·#12) | ✅ | ✅ (`sweep.search_limit`) | §2 #4·#12 운영 가능 |
+| `chunk` YAML wiring (`message_sentence_chunking`) | ✅ | ✅ (ingest 전 반영) | §2 #4 chunk=on 정상 |
+| `chunk × prefix × k` 매트릭스 | ✅ (`run_benchmark_matrix.sh`) | 부분 (chunk 별도 run 필요) | PR #7 기본 `p4.yaml` 은 chunk=on / prefix=on / k sweep. prefix × k 는 단일 run sweep 으로 확장 가능. 단 `message_sentence_chunking` 은 ingest 결과에 영향을 주므로 chunk on/off 비교는 chunk 값별 별도 `run_name` + 별도 ingest 로 실행해야 함. 전체 chunk × prefix × k 매트릭스는 단일 run 기본 제공이 아님 |
+| LoCoMo cat5 skip 포팅 | ✅ | ✅ | §2 #5 운영 가능 (`evaluation/retrieval_agent/locomo_search.py:135`) |
+| HotpotQA `length=500` 정책 | ✅ | ✅ (`split=validation`) | §2 #2 표 갱신 (선정 방식 명시) |
+| EDWIN1/EDWIN3 prompt 주입 | ❌ | ❌ (hook only) | EDWIN 텍스트 미확보 → 외삽 해석 |
+| DB snapshot 동결/복원 | ❌ | ❌ | 본 작업 범위 밖 |
+| 파일럿 5회 + N 자동결정 wrapper | ❌ | ❌ (`n_runs>1` 명시 error) | §3.5 fallback (N=1) |
+| 자동 판정 스크립트 (σ×2) | ❌ | ❌ | §2 판정 기준 수기 운영 |
+| #6 MS 재분해 집계 스크립트 | ❌ | ✅ (`analyze --decompose-multisession`) | §2 #6 자동화됨 |
+| #12 token/accuracy Pareto | ❌ | ✅ (`analyze --pareto`) | §2 #12 자동화됨 |
+| `configuration.yml` 원본 보호 | — | ✅ (run-local working copy) | mode=existing 도 안전 |
+| token / per-tool / recall metric carry | ❌ | ✅ | analyze 가 mean_recall / overall_recall / by_tool / mean_tokens_per_query 산출 |
 
-→ ❌ 5개 중 EDWIN과 반복 wrapper 두 항목이 본 문서의 **σ×2 판정 체계 작동 전제**를 깨뜨린다. §4 임시 운영 규약과 §5 v4 한계로 격상.
+→ PR #7 이후로 #6 / #12 / config 보호 / metric carry 4 항목이 추가 해결됨. 남은 미해결: EDWIN 실 prompt 적용, DB snapshot, 반복 wrapper, 자동 σ×2 판정 — 본 도구 범위 밖 (§3.5 fallback 운영).
 
 ---
 
@@ -98,8 +101,8 @@
 | 종속변수 | Accuracy · Recall · 쿼리당 token · Per-tool breakdown (ToolSelect / ChainOfQuery / SplitQuery) |
 | Agent 구성 | 기존 코드 기본값 (ToolSelectAgent / ChainOfQuery / SplitQuery) |
 | Answer prompt | 기본값 COT (Edwin 미설정 fallback) — Multi-hop 성격상 적합 |
-| 반복 | §4 전략 (파일럿 표준편차 기반 결정) |
-| 판정 기준 | 성공: Agent > Memory 가 결합 σ 2배 초과 + Agent token > Memory token / 부분: 한쪽만 재현 / 실패: Memory ≥ Agent |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work |
+| 판정 기준 | 성공: Agent > Memory 가 결합 σ 2배 초과 + Agent token > Memory token / 부분: 한쪽만 재현 / 실패: Memory ≥ Agent (analyze 출력값 기준 수기 판단) |
 | 500 선정 방식 | 코드 `evaluation/retrieval_agent/hotpotQA_test.py:215 dataset.select(range(length))` = split 앞 500 (무작위 sampling/seed 없음). paper "hard 500" 과의 동일성 미검증. v0.2 운영 결정에 따라 `length=500` 정책 사용 |
 
 **LoCoMo Multi-hop(282) 측정 운영 결정 (v4 추가)**: 본 과제는 LoCoMo cat2(multi-hop) 자체 측정을 수행하지 않는다. 위 표의 LoCoMo Multi-hop 0.8759/0.8830/0.8972 수치는 paper §8.1 Table 10 인용으로만 사용한다. 자체 측정은 HotpotQA 500 으로 한정 (`evaluation/retrieval_agent/locomo_search.py:135` 의 cat5 skip 은 cat2-only slicing 이 아님 — 별도 slicing 미구현).
@@ -132,13 +135,13 @@
 | 구분 | 값 |
 |---|---|
 | 벤치마크 | LongMemEvalS 500 |
-| 독립변수 | 평가 스크립트 소스 편집 여부 (C5: prefix 없음 / C6: prefix 삽입) |
+| 독립변수 | `evaluation.longmemeval.prepend_user_prefix` 토글 (C5: false / C6: true) |
 | 고정변수 (논문 C5/C6 조합) | chunk=**off** / json_str=**off** (방침) / Prompt=**Edwin1** / k=20 / Answer LLM 사내 오픈 LLM |
 | 종속변수 | overall `llm_score` |
-| 소스 수정 | C6 적용 시 `longmemeval_test.py:214` 직전 `question = f"User: {question}"` 삽입 — 패치 파일로 2버전 관리 |
-| Answer prompt 주입 | `mmai.lme_answer_prompt = "EDWIN1"` — 주입 경로 MemVerge Q1 대기 |
-| 반복 | §4 전략 (파일럿 표준편차 기반 결정) |
-| 판정 기준 | 성공: prefix on 에서 overall 상승이 결합 σ 2배 초과 / 부분: 방향 맞으나 σ 1~2배 / 실패: 방향 반대 |
+| 토글 방식 | PR #7 eval-tool 의 `configs/problems/p3.yaml` 의 `sweep.prepend_user_prefix: [false, true]` 로 처리. 소스 패치 불필요 |
+| Answer prompt | EDWIN1 텍스트 미확보 → PR #7 은 prompt placeholder/hook 만 제공. 실제 적용은 future work. 본 후보 결과는 default ANSWER_PROMPT 기반 외삽 (paper EDWIN1 exact reproduction 아님) |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work |
+| 판정 기준 | 성공: prefix on 에서 overall 상승이 결합 σ 2배 초과 / 부분: 방향 맞으나 σ 1~2배 / 실패: 방향 반대 (analyze 출력값 기준 수기 판단) |
 | 주의 | JSON-str=off 상태이므로 논문 (on) 과 차이 있음. 재현 수치가 논문 +1.4%p 와 다를 수 있음을 사전 명시. JSON-str off 운영점에서는 §3 ablation 기여도 누계가 paper(C4↔C5 +2.0%p, C5↔C6 +1.4%p) 와 일치하지 않음. User_q 구현 경로(legacy vs retrieval_agent) 논문 명시 없음 |
 | 운영 결정 | `exclude_abstention = True` 로 통일 |
 
@@ -184,12 +187,11 @@
 | 독립변수 | k ∈ {10, 20, 30, 50, 100} |
 | 고정변수 (논문 C12 조합) | chunk=**on** / user_q=**on** / json_str=**off** (방침) / Prompt=**Edwin3** / `expand_context`=코드 기본값 / Answer LLM 사내 오픈 LLM |
 | 종속변수 | `llm_score` overall · 카테고리별 6종 (SSU/SSP/SSA/TR/KU/MS) · 쿼리당 input token · 쿼리당 latency |
-| YAML 설정 | `long_term_memory.message_sentence_chunking: true` |
-| 소스 수정 | `longmemeval_test.py:214` 직전 `question = f"User: {question}"` 삽입 |
-| Answer prompt 주입 | `mmai.lme_answer_prompt = "EDWIN3"` — 주입 경로 MemVerge Q1 대기 |
-| 반복 | §4 전략 (파일럿 표준편차 기반 결정) |
-| 판정 기준 | 성공: k 를 늘리는 동안 정확도 상승 둔화·꺾임이 결합 σ 2배 초과 관찰 / 부분: σ 1~2배 / 실패: k 무관 또는 비례 증가 |
-| 전제 | Edwin3 prompt 전문은 로컬 파일 확보 완료, 주입 경로 확정 필요 |
+| YAML 설정 | PR #7 eval-tool 의 `configs/problems/p4.yaml` 이 `fixed.message_sentence_chunking: true` + `fixed.prepend_user_prefix: true` 를 working configuration.yml 에 ingest 전 반영 |
+| 토글 방식 | k sweep 은 `sweep.search_limit`, prefix/chunk 는 `fixed`. 소스 패치 불필요 |
+| Answer prompt | EDWIN3 텍스트 미확보 → PR #7 은 prompt placeholder/hook 만 제공. 실제 적용은 future work. 본 후보 결과는 default ANSWER_PROMPT 기반 외삽 (paper EDWIN3 exact reproduction 아님) |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work |
+| 판정 기준 | 성공: k 를 늘리는 동안 정확도 상승 둔화·꺾임이 결합 σ 2배 초과 관찰 / 부분: σ 1~2배 / 실패: k 무관 또는 비례 증가 (analyze 출력값 기준 수기 판단) |
 
 ---
 
@@ -217,17 +219,17 @@
 
 | 구분 | 값 |
 |---|---|
-| 벤치마크 | LoCoMo 1,540 (cat5 adversarial 446 제외 → 실질 1,094 문항) |
+| 벤치마크 | LoCoMo 1,540 (cat5 adversarial 446 제외 → 잔여 1,094 문항이 paper 운영점). 단 PR #7 wrapper 는 `locomo_search.py:115-117` 의 `start_index=0` / `end_index=20` 제한을 따르므로 실제 처리 범위는 그 인덱스 로직 기준 — 전체 1,094 보장 아님. 자세한 todo 는 `docs/msr/msr_eval_tool_todo_pr7.md` |
 | 독립변수 | 모드 ∈ {Memory, Agent} |
 | 고정변수 | Answer LLM (사내 오픈 LLM — TBD), embedding, reranker, DB snapshot |
 | 종속변수 | 카테고리별 `llm_score` (주목: Temporal vs Single-hop) |
 | 코드 수정 | **포팅 완료** — cat5 skip 로직이 `evaluation/retrieval_agent/locomo_search.py:135` 에 반영됨 (v0.2 §1 ✅). 추가 코드 수정 없음 |
 | Answer prompt | 기본값 COT (Edwin 미설정 fallback) — MemVerge 답변 후 EDWIN3 재실행 여지 |
-| 반복 | §4 전략 (파일럿 표준편차 기반 결정) |
-| 판정 기준 | 성공: Temporal 이 Single-hop 대비 결합 σ 2배 초과 낮음 / 부분: σ 1~2배 / 실패: Temporal ≥ Single-hop |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work |
+| 판정 기준 | 성공: Temporal 이 Single-hop 대비 결합 σ 2배 초과 낮음 / 부분: σ 1~2배 / 실패: Temporal ≥ Single-hop (analyze 출력값 기준 수기 판단) |
 | Judge prompt | 공통 `ACCURACY_PROMPT` (태스크 분기 없음) |
 
-**LoCoMo cat2(multi-hop) 측정 범위 (v4 추가)**: 본 과제는 LoCoMo cat2(multi-hop) 자체 측정을 수행하지 않는다. #2 의 LoCoMo Multi-hop 인용으로 대체 (§2 #2 "LoCoMo Multi-hop 측정 운영 결정" 참조). 본 후보(#5)는 cat5 adversarial 446 제외 후 잔여 1,094 문항의 카테고리별 점수에서 Temporal vs Single-hop 비교에 집중.
+**LoCoMo cat2(multi-hop) 측정 범위 (v4 추가)**: 본 과제는 LoCoMo cat2(multi-hop) 자체 측정을 수행하지 않는다. #2 의 LoCoMo Multi-hop 인용으로 대체 (§2 #2 "LoCoMo Multi-hop 측정 운영 결정" 참조). 본 후보(#5)는 cat5 adversarial 446 제외 후 잔여 1,094 문항의 카테고리별 점수에서 Temporal vs Single-hop 비교에 집중 — 단, PR #7 wrapper 의 LoCoMo subprocess 경로는 `locomo_search.py:115-117` start/end_index 제한을 따르므로 실제 실행 범위는 upstream 코드 기준 (`docs/msr/msr_eval_tool_todo_pr7.md` 참조).
 
 ---
 
@@ -262,9 +264,9 @@
 | 실행 방식 | **#4/#12 k sweep run 재분석** — 별도 run 불필요 |
 | 독립변수 | 없음 (관찰 분석) |
 | 종속변수 | MS 카테고리 점수 vs 타 카테고리 (SSU/SSP/SSA/TR/KU) 점수 |
-| 추가 코드 | MS 집계 전용 스크립트 (카테고리별 결합 σ 2배 기준선 자동 계산) |
-| 반복 | #4/#12 반복 결과 재사용 |
-| 판정 기준 | 성공: 모든 k 값에서 MS < SSU/SSA 가 결합 σ 2배 초과 / 부분: 일부 k / 실패: MS 가 타 카테고리와 비슷하거나 높음 |
+| 자동화 | PR #7 의 `python scripts/run_pipeline.py --config p6_*.yaml --stage analyze --decompose-multisession` 가 MS vs 타 카테고리 gap 산출 (`ms_accuracy / others_mean_accuracy / ms_vs_others_gap` per cell). 결합 σ×2 자동 판정은 future work — 현재는 raw 값을 수기 비교 |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work. #4/#12 가 만든 산출물을 그대로 재사용 |
+| 판정 기준 | 성공: 모든 k 값에서 MS < SSU/SSA 가 결합 σ 2배 초과 / 부분: 일부 k / 실패: MS 가 타 카테고리와 비슷하거나 높음 (analyze 출력값 기준 수기 판단) |
 
 ---
 
@@ -298,9 +300,10 @@
 | 실행 방식 | **#4 k sweep 과 동일 run 공유** — 별도 run 불필요 |
 | 독립변수 | k ∈ {10, 20, 30, 50, 100} (#4와 동일) |
 | 고정변수 | #4 와 동일 (C12 조합) |
-| 종속변수 (추가) | 쿼리당 input token (M 단위) · token/accuracy Pareto 분석 |
-| 관점 | Pareto-optimal k 식별 — token 증가 대비 accuracy 한계효용 측정 |
-| 판정 기준 | 성공: k=20→k=100 시 token ≥3× 증가 대비 accuracy 증가가 결합 σ 2배 이내 (논문 +0.8%p 대응) / 실패: 고 k 에서 accuracy 선형 증가 |
+| 종속변수 (추가) | 쿼리당 input/output token · accuracy/recall Pareto |
+| 자동화 | PR #7 의 `python scripts/run_pipeline.py --config p12_*.yaml --stage analyze --pareto` 가 k 별 `mean_tokens_per_query / mean_input_token / mean_output_token / mean_num_episodes / mean_recall / overall_recall` 출력 |
+| 반복 | PR #7 MVP 는 `n_runs=1` 고정. `n_runs>1` 은 `NotImplementedError`. 파일럿 5회 / N 자동결정 / σ×2 자동 판정은 future work. #4 산출물 재사용 |
+| 판정 기준 | 성공: k=20→k=100 시 token ≥3× 증가 대비 accuracy 증가가 결합 σ 2배 이내 (논문 +0.8%p 대응) / 실패: 고 k 에서 accuracy 선형 증가 (analyze 출력값 기준 수기 판단) |
 
 ---
 
@@ -322,16 +325,16 @@
 
 ---
 
-## 3.5 반복 전략 임시 운영 규약 (v4 추가)
+## 3.5 반복 전략 임시 운영 규약 (PR #7 MVP 기준)
 
-§2 각 후보 표의 "반복" 칸이 인용하는 **본 과제 §4 (파일럿 5회 + N 자동결정 wrapper)** 가 v0.2 §1 에서 ❌ 미구현 상태이므로, σ×2 자동 판정이 작동하지 않는다. 그동안의 임시 운영 규약:
+§2 각 후보 표의 "반복" 칸이 인용하는 **본 과제 §4 (파일럿 5회 + N 자동결정 wrapper)** 는 PR #7 eval-tool MVP 에서도 미구현이다. PR #7 은 n_runs 안전장치만 제공한다.
 
-- **반복 수**: 모든 후보 N=3 고정으로 실행 (파일럿 분산 추정 생략)
-- **σ 산출**: 결과 raw log 에서 후처리 계산 (전용 스크립트 ❌ → 수동 집계)
-- **σ×2 판정**: 자동 판정 도구 ❌ 인 동안 **수기 판정**으로 대체 — 각 후보 §2 표의 "판정 기준" 을 사람이 읽고 결정
-- **부분 결과 기록**: 부분 σ 미달인 경우 raw 데이터를 보존하여 wrapper 구현 후 재집계 가능하게 둔다
+- **반복 수**: PR #7 은 `n_runs=1` 고정 — `run_pipeline.py` 가 `n_runs > 1` 시 명시적 `NotImplementedError`. 파일럿 5회 / N 자동결정은 future work
+- **σ 산출**: `analyze` 단계가 cell 별 `accuracy_std` 만 자동 계산. 더 복잡한 결합 σ 는 raw `judge.jsonl` / `retrieve.jsonl` 후처리에서 사용자가 산출
+- **σ×2 판정**: 자동 판정 도구 미구현 → **수기 판정** — 각 후보 §2 표의 "판정 기준" 을 사람이 읽고 결정
+- **부분 결과 기록**: PR #7 의 `results/{run}/{stage}.jsonl` 가 모든 raw row 를 보존하므로 wrapper 구현 후 재집계 가능
 
-→ wrapper 구현 (파일럿 5회 + N 자동결정 + σ 자동 집계) 완료 시 본 §3.5 는 0426 갱신에서 제거 예정.
+→ 파일럿 5회 / N 자동결정 / σ×2 자동 집계 wrapper 구현 시 본 §3.5 는 후속 갱신에서 제거 예정.
 
 ---
 
@@ -354,10 +357,10 @@
 
 본 과제 운영점이 paper 와 단일 변수 일치하지 않거나, σ×2 판정 체계 작동 전제가 무너진 4개 항목. **paper §9.7 한계보다 본 과제 결과 해석에 직접적 영향**.
 
-1. **EDWIN1/EDWIN3 prompt 주입 미해결 — BLOCKER**
-   - retrieval_agent 평가 경로에 `mmai.lme_answer_prompt = "EDWIN1"` / `"EDWIN3"` 주입 코드 미확인 (v0.2 §E, `20260425_modified_list_v0.2.md:40,132-142`)
-   - 본 한계가 해결되기 전 §2 #3·#4·#12·#5 결과는 **prompt 통제 실패 상태**로 해석됨 → 답변 LLM prompt 가 paper 와 다른 단일 하드코드 (`longmemeval_test.py:22 ANSWER_PROMPT`) 로 동작
-   - **§2 판정 기준 (σ×2) 은 prompt 가 통제됐을 때만 의미가 있음**
+1. **EDWIN1/EDWIN3 prompt 적용 미구현 (PR #7 hook only)**
+   - PR #7 eval-tool 은 `prompts/EDWIN{1,3}.txt` placeholder + `scripts/stages/generate.py` 의 prompt-file hook 만 제공. EDWIN 텍스트 미확보 + 실제 generate-time 적용 로직은 future work (DECISIONS.md D-003)
+   - 따라서 §2 #3·#4·#12·#5 결과는 **paper EDWIN exact reproduction 이 아님** → 답변 prompt = `longmemeval_test.py:22 ANSWER_PROMPT` (default)
+   - 결과는 "EDWIN 외삽 / default prompt 기반 operational reproduction" 으로 해석. §2 판정 기준 (σ×2) 도 default prompt 통제 하의 비교
 
 2. **JSON-str off 운영 결정의 영향**
    - 본 과제 방침: `json_str=off` (§2 #3·#4 표 고정변수). paper C5/C6/C12 는 모두 JSON-str=on (§8.4.2)

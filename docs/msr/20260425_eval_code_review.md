@@ -1,3 +1,7 @@
+> ⚠️ **Historical note (2026-04-26 업데이트)**
+>
+> 이 문서는 **PR #7 eval-tool 반영 전, 기존 `evaluation/retrieval_agent` 코드 기준**의 검토 기록입니다. PR #7 (브랜치 `claude/memmachine-eval-tool-GIrVz`) 머지 이후 상태와는 다릅니다. PR #7 기준 최신 상태는 본 문서 마지막 § "PR #7 반영 후 재분류" 와 `20260425_modified_list_v0.2.md` § "PR #7 eval-tool 반영 후 상태" 를 참조하세요.
+
 확인 끝났습니다. 두 문서를 논문(arXiv:2604.04853v1) 정합성과 실제 코드(`origin/eval`/현재 브랜치)와의 재현 정합성 두 축에서 상세 리뷰합니다.
 
 ---
@@ -127,3 +131,40 @@
 ---
 
 요약: v0.2의 ✅ 6항목은 코드 정합 측면에서 정확합니다. 그러나 ❌ 5항목(특히 EDWIN과 반복 wrapper)이 미해결인 한, 0424가 정의한 σ×2 판정 체계는 작동하지 않으며, JSON-str off 일탈로 인해 paper C5/C6/C12 직접 비교 자체가 성립하지 않습니다. 두 문서의 다음 갱신은 (1) blocker 마킹, (2) JSON-str 일탈 명시, (3) HotpotQA 500/chunk 잔류 등 코드-문서 정합 정정에 집중하는 것이 효과적입니다.
+
+---
+
+# PR #7 반영 후 재분류 (2026-04-26 추가)
+
+PR #7 eval-tool (브랜치 `claude/memmachine-eval-tool-GIrVz`, head `0139800` 시점) 머지 후 위 권고 8건 + 본문 한계 항목들의 상태:
+
+### 해결됨 (PR #7 에서 자동화)
+
+| 항목 | PR #7 처리 |
+|---|---|
+| HotpotQA split 정합 | `configs/problems/p2.yaml` 의 `split: validation` 으로 통일 (run_benchmark_matrix.sh 와 동일) |
+| chunk × prefix sweep matrix | `configs/problems/p4.yaml` 의 `fixed.message_sentence_chunking` + `sweep` 조합. ingest 전에 working configuration.yml 에 반영되어 chunk on/off mismatch 위험 차단 |
+| `--skip-ingest` mismatch | PR #7 은 `ingest.jsonl` ok 마커로 idempotent skip — chunking 토글이 ingest 단계 전에 working copy 에 반영되므로 인덱싱·검색 정의 일치 |
+| HotpotQA 500 선정 표현 | `configs/problems/p2.yaml` 주석 + RESEARCH.md 에 split=validation 첫 500 명시 |
+| #6 MS 재분해 자동화 | `python scripts/run_pipeline.py … --stage analyze --decompose-multisession` 가 cell 별 `ms_accuracy / others_mean_accuracy / ms_vs_others_gap` 산출 |
+| #12 token/accuracy Pareto 자동화 | `--stage analyze --pareto` 가 cell 별 `mean_tokens_per_query / mean_input_token / mean_output_token / mean_recall / overall_recall` 산출 |
+| 사용자 `configuration.yml` 보호 | `mode=existing` 도 `configs/generated/{run}_configuration.yml` 로 working copy 만들어 그것만 in-place 수정. 사용자 원본 read-only |
+| token / per-tool / fact_hits carry-over | retrieve.jsonl 이 `selected_tool / input_token / output_token / tool_select_*_token / fact_hits / fact_miss` 보존, analyze 가 join 해 per-cell + per-tool breakdown 산출 |
+| n_runs > 1 silent no-op | `run_pipeline.py` 가 명시적 `NotImplementedError` |
+
+### 여전히 미해결 (본 도구 범위 밖, future work)
+
+- **EDWIN1 / EDWIN3 prompt 실 적용** — PR #7 은 `prompts/EDWIN{1,3}.txt` placeholder + `scripts/stages/generate.py` 의 prompt-file hook 만 제공. 실제 generate-time prompt swap 미구현. 결과 해석은 default ANSWER_PROMPT 외삽 (DECISIONS.md D-003).
+- **DB snapshot 동결/복원** — 매 반복 fresh ingest + `session_id` 분리 운영으로 우회 가능하나 자동화 없음.
+- **반복 실행 wrapper (파일럿 5회 + N 자동결정)** — 현재 n_runs=1 고정, σ 후처리는 raw 데이터에서 수기.
+- **자동 σ×2 판정 스크립트** — analyze 출력의 `accuracy_std` 등을 활용한 자동 판정은 미구현. 수기 판정 운영.
+
+### v0.2 ❌ 5건 → PR #7 후 상태
+
+| v0.2 항목 | PR #7 후 |
+|---|---|
+| DB snapshot | ❌ (그대로) |
+| 파일럿 5회 + N 자동결정 wrapper | ❌ (그대로). 단 `n_runs > 1` 명시 error 로 silent 위험 차단 |
+| 자동 성공/부분/실패 판정 | ❌ (그대로) |
+| #6 MS 재분해 집계 스크립트 | ✅ (`analyze --decompose-multisession`) |
+| EDWIN prompt 주입 | ❌ (텍스트 미확보 + 실 적용 미구현, hook only) |

@@ -1,0 +1,26 @@
+{
+  "_comment": "JSON override 예시. generate_config.py --from-json 으로 사용. 모든 키는 base.yaml + problem yaml 위에 deep-merge.",
+
+  "problem": 4,
+  "run_name": "p4_pilot_5q",
+
+  "configuration": {
+    "mode": "profile",
+    "model_profile": "_example",
+    "db_profile": "_example"
+  },
+
+  "judge": {
+    "llm_model_id": null
+  },
+
+  "sweep": {
+    "search_limit": [10, 20]
+  },
+
+  "benchmark": {
+    "length": 5
+  },
+
+  "n_runs": 1
+}
