@@ -28,9 +28,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-from _merge import deep_merge, dump_yaml, load_yaml  # noqa: E402
+from scripts._merge import deep_merge, dump_yaml, load_yaml  # noqa: E402
 
 CONFIGS_DIR = REPO_ROOT / "configs"
 
@@ -41,10 +42,16 @@ CONFIGS_DIR = REPO_ROOT / "configs"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
-    parser.add_argument("--problem", type=int, choices=[2, 3, 4, 5, 6, 12], help="Problem number")
-    parser.add_argument("--run-name", help="Output run name (used in filename and results/ dir)")
+    parser.add_argument(
+        "--problem", type=int, choices=[2, 3, 4, 5, 6, 12], help="Problem number"
+    )
+    parser.add_argument(
+        "--run-name", help="Output run name (used in filename and results/ dir)"
+    )
 
     # configuration.yml mode
     parser.add_argument("--model-profile", help="configs/profiles/models/{name}.yaml")
@@ -55,14 +62,20 @@ def parse_args() -> argparse.Namespace:
     )
 
     # Sweep / fixed override (most common)
-    parser.add_argument("--k-list", help="Comma-separated search_limit list. Ex: 10,20,30")
+    parser.add_argument(
+        "--k-list", help="Comma-separated search_limit list. Ex: 10,20,30"
+    )
     parser.add_argument("--judge-model", help="judge.llm_model_id override")
-    parser.add_argument("--length", type=int, help="benchmark.length override (dataset slice)")
+    parser.add_argument(
+        "--length", type=int, help="benchmark.length override (dataset slice)"
+    )
     parser.add_argument("--n-runs", type=int, help="Repeat count")
     parser.add_argument("--seed", type=int, help="Random seed")
 
     # #6 / #12 reuse-run
-    parser.add_argument("--reuse-run", help="For p6/p12: name of an earlier run to analyze")
+    parser.add_argument(
+        "--reuse-run", help="For p6/p12: name of an earlier run to analyze"
+    )
 
     # Bulk JSON override (highest precedence)
     parser.add_argument("--from-json", help="Path to JSON file with overrides")
@@ -96,7 +109,9 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
         out["configuration"] = cfg
 
     if args.k_list:
-        out.setdefault("sweep", {})["search_limit"] = [int(x) for x in args.k_list.split(",")]
+        out.setdefault("sweep", {})["search_limit"] = [
+            int(x) for x in args.k_list.split(",")
+        ]
 
     if args.judge_model:
         out["judge"] = {"llm_model_id": args.judge_model}
@@ -129,7 +144,9 @@ def load_json_overrides(path: str | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def build_configuration_yml(model_profile: dict[str, Any], db_profile: dict[str, Any]) -> dict[str, Any]:
+def build_configuration_yml(
+    model_profile: dict[str, Any], db_profile: dict[str, Any]
+) -> dict[str, Any]:
     """Combine model + db profile dicts into a full MemMachine configuration.yml dict.
 
     Mirrors the structure documented in evaluation/retrieval_agent/README.md (Sample 1).
@@ -177,16 +194,28 @@ def build_configuration_yml(model_profile: dict[str, Any], db_profile: dict[str,
         "resources": {
             "databases": {
                 vgs["id"]: {"provider": vgs["provider"], "config": vgs["config"]},
-                profile_db["id"]: {"provider": profile_db["provider"], "config": profile_db["config"]},
+                profile_db["id"]: {
+                    "provider": profile_db["provider"],
+                    "config": profile_db["config"],
+                },
             },
             "embedders": {
-                embedder["id"]: {"provider": embedder["provider"], "config": embedder["config"]},
+                embedder["id"]: {
+                    "provider": embedder["provider"],
+                    "config": embedder["config"],
+                },
             },
             "language_models": {
-                llm_model["id"]: {"provider": llm_model["provider"], "config": llm_model["config"]},
+                llm_model["id"]: {
+                    "provider": llm_model["provider"],
+                    "config": llm_model["config"],
+                },
             },
             "rerankers": {
-                reranker["id"]: {"provider": reranker["provider"], "config": reranker["config"]},
+                reranker["id"]: {
+                    "provider": reranker["provider"],
+                    "config": reranker["config"],
+                },
             },
         },
         "session_manager": {"database": profile_db["id"]},
@@ -206,7 +235,9 @@ def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str | None:
     if mode == "existing":
         path = cfg.get("existing_path")
         if not path:
-            raise ValueError("configuration.mode=existing but configuration.existing_path is empty")
+            raise ValueError(
+                "configuration.mode=existing but configuration.existing_path is empty"
+            )
         return None
 
     if mode != "profile":
@@ -215,9 +246,13 @@ def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str | None:
     model_name = cfg.get("model_profile")
     db_name = cfg.get("db_profile")
     if not model_name or not db_name:
-        raise ValueError("mode=profile requires both configuration.model_profile and configuration.db_profile")
+        raise ValueError(
+            "mode=profile requires both configuration.model_profile and configuration.db_profile"
+        )
 
-    model_profile = load_yaml(CONFIGS_DIR / "profiles" / "models" / f"{model_name}.yaml")
+    model_profile = load_yaml(
+        CONFIGS_DIR / "profiles" / "models" / f"{model_name}.yaml"
+    )
     db_profile = load_yaml(CONFIGS_DIR / "profiles" / "dbs" / f"{db_name}.yaml")
     configuration = build_configuration_yml(model_profile, db_profile)
 
@@ -273,7 +308,9 @@ def main() -> int:
     if generated_path:
         print(f"[ok] configuration.yml: {generated_path}")
     elif merged.get("configuration", {}).get("mode") == "existing":
-        print(f"[ok] using existing configuration: {merged['configuration']['existing_path']}")
+        print(
+            f"[ok] using existing configuration: {merged['configuration']['existing_path']}"
+        )
     return 0
 
 

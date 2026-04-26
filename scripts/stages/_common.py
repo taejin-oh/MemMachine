@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,7 +36,9 @@ def resolve_config_path(run_cfg: dict[str, Any]) -> str:
     if mode == "existing":
         path = cfg.get("existing_path")
         if not path:
-            raise ValueError("configuration.existing_path is required for mode=existing")
+            raise ValueError(
+                "configuration.existing_path is required for mode=existing"
+            )
         return str(Path(path).expanduser().resolve())
     # mode=profile
     generated = cfg.get("generated_path")
@@ -119,5 +122,7 @@ def env_with_repo_root() -> dict[str, str]:
         str(REPO_ROOT / "packages" / "server" / "src"),
         str(REPO_ROOT / "packages" / "client" / "src"),
     ]
-    env["PYTHONPATH"] = os.pathsep.join(extra + [env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+    env["PYTHONPATH"] = os.pathsep.join([*extra, env.get("PYTHONPATH", "")]).rstrip(
+        os.pathsep
+    )
     return env

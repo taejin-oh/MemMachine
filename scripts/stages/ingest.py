@@ -32,19 +32,25 @@ def _already_ingested(out_path: Path) -> bool:
     return bool(rows) and rows[-1].get("status") == "ok"
 
 
-def _ingest_longmemeval(run_cfg: dict[str, Any], config_path: str, session_id: str) -> dict[str, Any]:
+def _ingest_longmemeval(
+    run_cfg: dict[str, Any], config_path: str, session_id: str
+) -> dict[str, Any]:
     from evaluation.retrieval_agent.longmemeval_test import (
         load_longmemeval_dataset,
         longmemeval_ingest,
     )
 
     bench = run_cfg["benchmark"]
-    dataset = load_longmemeval_dataset(length=int(bench["length"]), split=bench["split"])
+    dataset = load_longmemeval_dataset(
+        length=int(bench["length"]), split=bench["split"]
+    )
     asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
     return {"benchmark": "longmemeval", "num_questions": len(dataset)}
 
 
-def _ingest_hotpot(run_cfg: dict[str, Any], config_path: str, _session_id: str) -> dict[str, Any]:
+def _ingest_hotpot(
+    run_cfg: dict[str, Any], config_path: str, _session_id: str
+) -> dict[str, Any]:
     from evaluation.retrieval_agent.hotpotQA_test import (
         hotpotqa_ingest,
         load_hotpotqa_dataset,
@@ -56,20 +62,30 @@ def _ingest_hotpot(run_cfg: dict[str, Any], config_path: str, _session_id: str) 
     return {"benchmark": "hotpot", "num_questions": len(dataset)}
 
 
-def _ingest_locomo(run_cfg: dict[str, Any], config_path: str, _session_id: str) -> dict[str, Any]:
+def _ingest_locomo(
+    run_cfg: dict[str, Any], config_path: str, _session_id: str
+) -> dict[str, Any]:
     bench = run_cfg["benchmark"]
     data_path = bench.get("data_path")
     if not data_path:
-        raise ValueError("benchmark.data_path is required for locomo (path to LoCoMo source JSON)")
+        raise ValueError(
+            "benchmark.data_path is required for locomo (path to LoCoMo source JSON)"
+        )
 
     cmd = [
         sys.executable,
         str(cm.REPO_ROOT / "evaluation" / "retrieval_agent" / "locomo_ingest.py"),
-        "--data-path", str(data_path),
-        "--config-path", config_path,
+        "--data-path",
+        str(data_path),
+        "--config-path",
+        config_path,
     ]
     completed = subprocess.run(cmd, env=cm.env_with_repo_root(), check=True)
-    return {"benchmark": "locomo", "data_path": str(data_path), "subprocess_rc": completed.returncode}
+    return {
+        "benchmark": "locomo",
+        "data_path": str(data_path),
+        "subprocess_rc": completed.returncode,
+    }
 
 
 def run(run_cfg: dict[str, Any]) -> Path:
@@ -84,7 +100,9 @@ def run(run_cfg: dict[str, Any]) -> Path:
     session_id = cm.session_id_for(run_cfg)
     bench_name = run_cfg["benchmark"]["name"]
 
-    print(f"[ingest] benchmark={bench_name}  config={config_path}  session={session_id}")
+    print(
+        f"[ingest] benchmark={bench_name}  config={config_path}  session={session_id}"
+    )
     started = _dt.datetime.now(_dt.UTC).isoformat()
 
     if bench_name == "longmemeval":
@@ -99,7 +117,15 @@ def run(run_cfg: dict[str, Any]) -> Path:
     finished = _dt.datetime.now(_dt.UTC).isoformat()
     cm.write_jsonl(
         out_path,
-        [{"status": "ok", "started_at": started, "finished_at": finished, "session_id": session_id, **info}],
+        [
+            {
+                "status": "ok",
+                "started_at": started,
+                "finished_at": finished,
+                "session_id": session_id,
+                **info,
+            }
+        ],
     )
     print(f"[ingest] ok → {out_path}")
     return out_path

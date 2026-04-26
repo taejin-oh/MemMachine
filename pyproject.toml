@@ -126,6 +126,20 @@ convention = "google"
     "PERF203",
     "PERF401",
 ]
+"scripts/**/*.py" = [
+    "D",
+    "ARG",
+    "T201",
+    "ANN",
+    "FA",
+    "PTH",
+    "C901",
+    "TRY",
+    "PERF203",
+    "PERF401",
+    "RUF001",
+    "RUF002",
+]
 
 [tool.ty.environment]
 extra-paths = ["packages/common/src", "packages/server/src", "packages/client/src"]

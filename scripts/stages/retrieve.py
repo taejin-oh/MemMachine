@@ -13,12 +13,12 @@ Iterates the sweep cells. For each (sweep cell × question):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 from pathlib import Path
 from typing import Any
 
 from . import _common as cm
-
 
 # ---------------------------------------------------------------------------
 # sweep expansion
@@ -31,7 +31,9 @@ def _expand_sweep(sweep: dict[str, list[Any]]) -> list[dict[str, Any]]:
         return [{}]
     keys = list(sweep.keys())
     value_lists = [sweep[k] if isinstance(sweep[k], list) else [sweep[k]] for k in keys]
-    return [dict(zip(keys, combo, strict=True)) for combo in itertools.product(*value_lists)]
+    return [
+        dict(zip(keys, combo, strict=True)) for combo in itertools.product(*value_lists)
+    ]
 
 
 def _resolved_params(run_cfg: dict[str, Any], cell: dict[str, Any]) -> dict[str, Any]:
@@ -78,7 +80,9 @@ async def _run_longmemeval_cell(
     from evaluation.utils import agent_utils
 
     bench = run_cfg["benchmark"]
-    dataset = load_longmemeval_dataset(length=int(bench["length"]), split=bench["split"])
+    dataset = load_longmemeval_dataset(
+        length=int(bench["length"]), split=bench["split"]
+    )
 
     rm = agent_utils.load_eval_config(config_path)
     test_target = params.get("test_target", "retrieval_agent")
@@ -139,7 +143,10 @@ async def _run_hotpot_cell(
     _session_id: str,
     params: dict[str, Any],
 ) -> list[tuple[str, dict[str, Any]]]:
-    from evaluation.retrieval_agent.hotpotQA_test import ANSWER_PROMPT, load_hotpotqa_dataset
+    from evaluation.retrieval_agent.hotpotQA_test import (
+        ANSWER_PROMPT,
+        load_hotpotqa_dataset,
+    )
     from evaluation.utils import agent_utils
 
     bench = run_cfg["benchmark"]
@@ -168,10 +175,8 @@ async def _run_hotpot_cell(
         sf_facts: list[str] = []
         sf = data.get("supporting_facts", {})
         for title, sid in zip(sf.get("title", []), sf.get("sent_id", []), strict=True):
-            try:
+            with contextlib.suppress(ValueError, IndexError):
                 sf_facts.append(sentences[ctx["title"].index(title)][sid])
-            except (ValueError, IndexError):
-                pass
 
         tasks.append(
             agent_utils.process_question(
@@ -216,10 +221,14 @@ def _run_locomo_cell(
     cmd = [
         sys.executable,
         str(cm.REPO_ROOT / "evaluation" / "retrieval_agent" / "locomo_search.py"),
-        "--data-path", str(data_path),
-        "--eval-result-path", str(out_json),
-        "--test-target", test_target,
-        "--config-path", config_path,
+        "--data-path",
+        str(data_path),
+        "--eval-result-path",
+        str(out_json),
+        "--test-target",
+        test_target,
+        "--config-path",
+        config_path,
     ]
     subprocess.run(cmd, env=cm.env_with_repo_root(), check=True)
 
@@ -286,7 +295,9 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
     bench_name = run_cfg["benchmark"]["name"]
 
     sweep_cells = _expand_sweep(run_cfg.get("sweep", {}))
-    print(f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  config={config_path}")
+    print(
+        f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  config={config_path}"
+    )
 
     retrieve_rows: list[dict[str, Any]] = []
     generate_rows: list[dict[str, Any]] = []
@@ -300,11 +311,17 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
         cell_dir.mkdir(parents=True, exist_ok=True)
 
         if bench_name == "longmemeval":
-            responses = asyncio.run(_run_longmemeval_cell(run_cfg, config_path, session_id, params))
+            responses = asyncio.run(
+                _run_longmemeval_cell(run_cfg, config_path, session_id, params)
+            )
         elif bench_name == "hotpot":
-            responses = asyncio.run(_run_hotpot_cell(run_cfg, config_path, session_id, params))
+            responses = asyncio.run(
+                _run_hotpot_cell(run_cfg, config_path, session_id, params)
+            )
         elif bench_name == "locomo":
-            responses = _run_locomo_cell(run_cfg, config_path, session_id, params, cell_dir)
+            responses = _run_locomo_cell(
+                run_cfg, config_path, session_id, params, cell_dir
+            )
         else:
             raise ValueError(f"Unknown benchmark.name: {bench_name!r}")
 
@@ -318,5 +335,7 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
     cm.write_jsonl(retrieve_path, retrieve_rows)
     cm.write_jsonl(generate_path, generate_rows)
     print(f"[retrieve] ok → {retrieve_path} ({len(retrieve_rows)} rows)")
-    print(f"[generate] ok → {generate_path} ({len(generate_rows)} rows)  [emitted by retrieve loop]")
+    print(
+        f"[generate] ok → {generate_path} ({len(generate_rows)} rows)  [emitted by retrieve loop]"
+    )
     return retrieve_path, generate_path
