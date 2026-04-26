@@ -19,7 +19,7 @@
 - 측정 결과의 사이클 간 비교 가능성을 잃는다.
 
 **개선 후보**
-- A. p2 ingest 직전에 `evaluation/retrieval_agent/wikimultihop_delete.py` 에 해당하는 hotpot delete helper 호출. clean option 을 wrapper 에 추가
+- A. p2 ingest 직전에 HotpotQA delete 경로 (`evaluation/retrieval_agent/hotpotQA_test.py --run-type delete` 또는 모듈 함수 `hotpotqa_delete(config_path)` — `hotpotQA_test.py:195`) 를 호출하는 clean option 을 wrapper 에 추가
 - B. `hotpotqa_ingest()` / `hotpotqa_search()` 의 `session_id` 를 인자로 받도록 upstream 시그니처 확장 (read-only 경계 확장)
 - C. 운영 가이드에 "p2 반복 시 별도 DB 사용 권장" 만 명시 (현 상태)
 
