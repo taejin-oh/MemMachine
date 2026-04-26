@@ -73,8 +73,13 @@ async def _run_longmemeval_cell(
     session_id: str,
     params: dict[str, Any],
 ) -> list[tuple[str, dict[str, Any]]]:
+    # Reuse the same supporting-fact / turn-content collectors as the upstream
+    # longmemeval_search() so recall numbers stay comparable. These helpers are
+    # private-prefixed but stable; SLF001 is allowed for scripts/.
     from evaluation.retrieval_agent.longmemeval_test import (
         ANSWER_PROMPT,
+        _collect_supporting_facts,
+        _collect_turn_contents,
         load_longmemeval_dataset,
     )
     from evaluation.utils import agent_utils
@@ -109,12 +114,9 @@ async def _run_longmemeval_cell(
         if prepend:
             question = f"User: {question}"
         answer = str(sample.get("answer", "")).strip()
-        full_content = "\n".join(
-            seg.get("content", "")
-            for session in sample.get("haystack_sessions", [])
-            for seg in (session if isinstance(session, list) else [])
-            if isinstance(seg, dict)
-        )
+        supporting_facts = _collect_supporting_facts(sample)
+        all_content = _collect_turn_contents(sample)
+        full_content = "\n".join(all_content)
 
         tasks.append(
             agent_utils.process_question(
@@ -125,7 +127,7 @@ async def _run_longmemeval_cell(
                 question=question,
                 answer=answer,
                 category=str(sample.get("question_type", "unknown")),
-                supporting_facts=[],
+                supporting_facts=supporting_facts,
                 search_limit=search_limit,
                 full_content=full_content if pure_llm else None,
                 extra_attributes={"question_id": sample.get("question_id", "")},

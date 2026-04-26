@@ -6,9 +6,10 @@ description: "HotpotQA hard 500 — Memory(memmachine) vs Retrieval Agent"
 benchmark:
   name: hotpot
   length: 500
-  split: hard
+  split: validation
+  # HuggingFace `hotpot_qa/distractor` 에는 train/validation 만 있고 hard split 은 없음.
+  # paper 의 "hard 500" 은 distractor validation 의 첫 500 문항으로 운영 (v0.2 결정).
   # length=500 은 hotpotQA_test.py:215 dataset.select(range(length))
-  # paper "hard 500" 과의 동일성은 v0.2 운영 결정 (RESEARCH.md Q5)
 
 # 독립변수
 sweep:

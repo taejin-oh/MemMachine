@@ -120,22 +120,64 @@ def _add_pareto(summary: dict[str, Any]) -> None:
     summary["pareto"] = points
 
 
+def _retrieve_index(
+    retrieve_rows: list[dict[str, Any]],
+) -> dict[tuple[Any, Any, Any], dict[str, Any]]:
+    """Index retrieve.jsonl rows by (cell_idx, question_id, question)."""
+    return {
+        (r.get("cell_idx"), r.get("question_id", ""), r.get("question", "")): r
+        for r in retrieve_rows
+    }
+
+
+_CARRY_FIELDS = (
+    "num_episodes_retrieved",
+    "memory_retrieval_time",
+    "memory_search_called",
+    "agent",
+    "supporting_facts",
+)
+
+
+def _join_retrieve(
+    judge_rows: list[dict[str, Any]],
+    retrieve_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Carry retrieval-stage fields onto judge rows by matching (cell, qid, question)."""
+    if not retrieve_rows:
+        return judge_rows
+    idx = _retrieve_index(retrieve_rows)
+    out: list[dict[str, Any]] = []
+    for r in judge_rows:
+        key = (r.get("cell_idx"), r.get("question_id", ""), r.get("question", ""))
+        carry = idx.get(key, {})
+        merged = dict(r)
+        for field in _CARRY_FIELDS:
+            if field not in merged and field in carry:
+                merged[field] = carry[field]
+        out.append(merged)
+    return out
+
+
 def run(
     run_cfg: dict[str, Any], decompose_multisession: bool = False, pareto: bool = False
 ) -> Path:
     out_dir = cm.results_dir_for(run_cfg)
     judge_path = out_dir / "judge.jsonl"
+    retrieve_path = out_dir / "retrieve.jsonl"
 
-    # p6 / p12: reuse another run's judge.jsonl
+    # p6 / p12: reuse another run's judge.jsonl + retrieve.jsonl
     reuse = run_cfg.get("reuse_run")
     if reuse:
-        reuse_path = (
-            cm.REPO_ROOT / run_cfg.get("results_dir", "results") / reuse / "judge.jsonl"
+        reuse_dir = (
+            cm.REPO_ROOT / run_cfg.get("results_dir", "results") / reuse
         ).resolve()
-        if not reuse_path.exists():
-            raise FileNotFoundError(f"reuse_run judge.jsonl not found: {reuse_path}")
-        judge_path = reuse_path
-        print(f"[analyze] reusing {reuse_path}")
+        reuse_judge = reuse_dir / "judge.jsonl"
+        if not reuse_judge.exists():
+            raise FileNotFoundError(f"reuse_run judge.jsonl not found: {reuse_judge}")
+        judge_path = reuse_judge
+        retrieve_path = reuse_dir / "retrieve.jsonl"
+        print(f"[analyze] reusing {reuse_judge}")
 
     if not judge_path.exists():
         raise FileNotFoundError(
@@ -143,6 +185,8 @@ def run(
         )
 
     rows = cm.read_jsonl(judge_path)
+    retrieve_rows = cm.read_jsonl(retrieve_path) if retrieve_path.exists() else []
+    rows = _join_retrieve(rows, retrieve_rows)
     summary = _aggregate(rows)
 
     # Apply problem-yaml flags first, then CLI flags (CLI wins)
@@ -160,7 +204,9 @@ def run(
         "problem": run_cfg.get("problem"),
         "benchmark": run_cfg.get("benchmark", {}).get("name"),
         "source_judge_path": str(judge_path),
+        "source_retrieve_path": str(retrieve_path) if retrieve_path.exists() else None,
         "total_rows": len(rows),
+        "joined_retrieve_rows": len(retrieve_rows),
         "decompose_multisession": do_ms,
         "pareto": do_pareto,
     }

@@ -182,7 +182,9 @@ CLI 인자와 JSON 인자가 충돌하면 CLI 가 이깁니다.
 → 현재는 자리만 마련해 두었고 실제 적용 로직은 비활성 상태입니다 (`DECISIONS.md` D-003). EDWIN 텍스트가 확보되면 `prompts/EDWIN1.txt` 또는 `prompts/EDWIN3.txt` 에 저장하고, `scripts/stages/generate.py` 에 prompt 적용 코드를 추가하면 됩니다.
 
 **Q5. judge LLM 을 답변 LLM 과 다르게 쓰고 싶어요.**
-→ 현재 MVP 는 두 LLM 이 동일한 `retrieval_agent.llm_model` 을 공유합니다 (기존 코드 동작). 분리하려면 `evaluation/retrieval_agent/llm_judge.py` 의 모델 선택 로직 변경이 필요해 본 도구 범위 밖입니다.
+→ 두 단계:
+1. 모델 profile YAML (`configs/profiles/models/{이름}.yaml`) 의 `resources.language_models` 에 judge 모델을 ID 로 추가 — 본 도구의 profile YAML 은 단일 `llm_model` 만 갖지만, judge LLM 을 별도로 등록하려면 `mode: existing` 으로 직접 만든 `configuration.yml` 을 사용하시거나, 또는 profile 의 `llm_model` ID 와 별도로 `judge_llm` 을 추가하는 식으로 사용자가 `configuration.yml` 을 수정해야 합니다 (현 placeholder profile 은 model 1개 기준).
+2. `--judge-model {그 ID}` 인자를 `generate_config.py` 에 넘기면, judge 단계에서 `retrieval_agent.llm_model` 을 그 ID 로 swap 한 임시 `configuration.yml` 을 생성해 사용합니다. ID 가 `resources.language_models` 에 없으면 명시적으로 에러를 냅니다.
 
 **Q6. 반복 실행 (N runs) 은요?**
 → run YAML 의 `n_runs` 키가 있지만 현재 stage 모듈은 1회 실행만 수행합니다 (DECISIONS.md D-001 / 설계 §3.5 fallback). σ×2 자동 판정과 wrapper 는 향후 작업입니다.
