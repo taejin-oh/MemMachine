@@ -271,7 +271,17 @@ def _split_response(
         "memory_retrieval_time": record.get("memory_retrieval_time", 0),
         "memory_search_called": record.get("memory_search_called", 0),
         "agent": record.get("agent", ""),
+        "selected_tool": record.get("selected_tool", ""),
         "supporting_facts": record.get("supporting_facts", []),
+        # Token + recall fields produced by query_agent.do_query() / agent_utils
+        # (see evaluation/utils/agent_utils.py:202-245). These flow into the
+        # process_question record via res.update(perf_metrics) at line 126.
+        "input_token": record.get("input_token", 0),
+        "output_token": record.get("output_token", 0),
+        "tool_select_input_token": record.get("tool_select_input_token", 0),
+        "tool_select_output_token": record.get("tool_select_output_token", 0),
+        "fact_hits": record.get("fact_hits", []),
+        "fact_miss": record.get("fact_miss", []),
     }
     generate_row = {
         **common,

@@ -23,6 +23,21 @@ from . import _common as cm
 _MS_KEYS = {"multi-session", "multi_session", "ms"}
 
 
+_TOKEN_FIELDS = (
+    "input_token",
+    "output_token",
+    "tool_select_input_token",
+    "tool_select_output_token",
+)
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     cells: dict[str, dict[str, Any]] = {}
 
@@ -36,23 +51,57 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "n": 0,
                 "scores": [],
                 "by_category": {},
+                "by_tool": {},
                 "latencies": [],
                 "num_episodes": [],
+                "tokens": {f: [] for f in _TOKEN_FIELDS},
+                "recalls": [],
             },
         )
         cell["n"] += 1
-        if "llm_score" in r:
-            cell["scores"].append(int(r["llm_score"]))
+        score = _coerce_int(r.get("llm_score"))
+        if score is not None:
+            cell["scores"].append(score)
+
         cat = str(r.get("category", "unknown"))
-        bucket = cell["by_category"].setdefault(cat, [])
-        if "llm_score" in r:
-            bucket.append(int(r["llm_score"]))
+        cat_bucket = cell["by_category"].setdefault(cat, [])
+        if score is not None:
+            cat_bucket.append(score)
+
+        tool = str(r.get("selected_tool") or r.get("agent") or "Unknown")
+        tool_bucket = cell["by_tool"].setdefault(
+            tool,
+            {"scores": [], "input_tokens": [], "output_tokens": [], "latencies": []},
+        )
+        if score is not None:
+            tool_bucket["scores"].append(score)
+        for field, dest in (
+            ("input_token", "input_tokens"),
+            ("output_token", "output_tokens"),
+        ):
+            v = _coerce_int(r.get(field))
+            if v is not None:
+                tool_bucket[dest].append(v)
+        with contextlib.suppress(TypeError, ValueError):
+            if "llm_time" in r:
+                tool_bucket["latencies"].append(float(r["llm_time"]))
+
         if "llm_time" in r:
             with contextlib.suppress(TypeError, ValueError):
                 cell["latencies"].append(float(r["llm_time"]))
-        if "num_episodes_retrieved" in r:
-            with contextlib.suppress(TypeError, ValueError):
-                cell["num_episodes"].append(int(r["num_episodes_retrieved"]))
+        ep = _coerce_int(r.get("num_episodes_retrieved"))
+        if ep is not None:
+            cell["num_episodes"].append(ep)
+
+        for field in _TOKEN_FIELDS:
+            v = _coerce_int(r.get(field))
+            if v is not None:
+                cell["tokens"][field].append(v)
+
+        sf = r.get("supporting_facts") or []
+        hits = r.get("fact_hits")
+        if sf and isinstance(hits, list):
+            cell["recalls"].append(len(hits) / len(sf))
 
     summary: dict[str, Any] = {"cells": []}
     for cell_key, c in cells.items():
@@ -61,6 +110,50 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
             cat: {"n": len(s), "accuracy": (sum(s) / len(s)) if s else None}
             for cat, s in c["by_category"].items()
         }
+        per_tool: dict[str, dict[str, Any]] = {}
+        for tool, t in c["by_tool"].items():
+            t_scores = t["scores"]
+            per_tool[tool] = {
+                "n": len(t_scores),
+                "accuracy": (sum(t_scores) / len(t_scores)) if t_scores else None,
+                "mean_input_token": (
+                    sum(t["input_tokens"]) / len(t["input_tokens"])
+                    if t["input_tokens"]
+                    else None
+                ),
+                "mean_output_token": (
+                    sum(t["output_tokens"]) / len(t["output_tokens"])
+                    if t["output_tokens"]
+                    else None
+                ),
+                "mean_llm_time": (
+                    sum(t["latencies"]) / len(t["latencies"])
+                    if t["latencies"]
+                    else None
+                ),
+            }
+
+        token_means: dict[str, float | None] = {}
+        for field in _TOKEN_FIELDS:
+            vals = c["tokens"][field]
+            token_means[f"mean_{field}"] = (sum(vals) / len(vals)) if vals else None
+        # tokens_per_query = sum of all 4 token fields, averaged over questions
+        per_q_totals = []
+        for i in range(c["n"]):
+            total = 0
+            any_present = False
+            for field in _TOKEN_FIELDS:
+                vals = c["tokens"][field]
+                if i < len(vals):
+                    total += vals[i]
+                    any_present = True
+            if any_present:
+                per_q_totals.append(total)
+        mean_tokens_per_query = (
+            sum(per_q_totals) / len(per_q_totals) if per_q_totals else None
+        )
+
+        recalls = c["recalls"]
         summary["cells"].append(
             {
                 "cell": cell_key,
@@ -68,6 +161,7 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "n": c["n"],
                 "accuracy": (sum(scores) / len(scores)) if scores else None,
                 "accuracy_std": statistics.pstdev(scores) if len(scores) > 1 else 0.0,
+                "mean_recall": (sum(recalls) / len(recalls)) if recalls else None,
                 "mean_llm_time": (sum(c["latencies"]) / len(c["latencies"]))
                 if c["latencies"]
                 else None,
@@ -76,7 +170,10 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     if c["num_episodes"]
                     else None
                 ),
+                "mean_tokens_per_query": mean_tokens_per_query,
+                **token_means,
                 "by_category": per_cat,
+                "by_tool": per_tool,
             }
         )
     return summary
@@ -111,6 +208,10 @@ def _add_pareto(summary: dict[str, Any]) -> None:
             {
                 "search_limit": int(k),
                 "accuracy": cell.get("accuracy"),
+                "mean_recall": cell.get("mean_recall"),
+                "mean_tokens_per_query": cell.get("mean_tokens_per_query"),
+                "mean_input_token": cell.get("mean_input_token"),
+                "mean_output_token": cell.get("mean_output_token"),
                 "mean_num_episodes": cell.get("mean_num_episodes"),
                 "mean_llm_time": cell.get("mean_llm_time"),
                 "n": cell.get("n"),
@@ -135,7 +236,14 @@ _CARRY_FIELDS = (
     "memory_retrieval_time",
     "memory_search_called",
     "agent",
+    "selected_tool",
     "supporting_facts",
+    "fact_hits",
+    "fact_miss",
+    "input_token",
+    "output_token",
+    "tool_select_input_token",
+    "tool_select_output_token",
 )
 
 

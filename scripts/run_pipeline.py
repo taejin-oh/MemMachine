@@ -69,6 +69,14 @@ def main() -> int:
     if "run_name" not in run_cfg:
         raise SystemExit(f"run YAML is missing 'run_name': {args.config}")
 
+    n_runs = int(run_cfg.get("n_runs", 1) or 1)
+    if n_runs != 1:
+        raise NotImplementedError(
+            f"n_runs={n_runs} is not yet supported (MVP runs each stage once). "
+            "Set n_runs=1 in the run YAML or omit --n-runs. "
+            "Repeated-run wrapper is tracked as future work in DECISIONS.md."
+        )
+
     stages = resolve_stages(args.stage)
     print(f"[pipeline] run_name={run_cfg['run_name']}  stages={stages}")
 

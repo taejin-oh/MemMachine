@@ -224,21 +224,61 @@ def build_configuration_yml(
     }
 
 
-def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str | None:
-    """If mode=profile, generate configs/generated/{run_name}_configuration.yml.
+def _apply_fixed_to_configuration(
+    configuration: dict[str, Any], fixed: dict[str, Any]
+) -> None:
+    """Apply fixed values that affect ingest/dataset loading into configuration.yml.
 
-    Returns the absolute path of the generated file, or None for mode=existing.
+    `message_sentence_chunking` changes Episode storage shape, so it MUST be set
+    before ingest, not just toggled per sweep cell. `prepend_user_prefix` is read
+    by longmemeval_test from configuration.yml at search time.
     """
+    if "message_sentence_chunking" in fixed:
+        configuration.setdefault("episodic_memory", {}).setdefault(
+            "long_term_memory", {}
+        )["message_sentence_chunking"] = bool(fixed["message_sentence_chunking"])
+    if "prepend_user_prefix" in fixed:
+        configuration.setdefault("evaluation", {}).setdefault("longmemeval", {})[
+            "prepend_user_prefix"
+        ] = bool(fixed["prepend_user_prefix"])
+
+
+def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str:
+    """Always produce a run-local working configuration.yml.
+
+    For mode=profile: combine model + db profile YAMLs.
+    For mode=existing: copy the user-supplied configuration.yml (so we never
+        mutate the user's original) and then apply fixed values.
+
+    Either way, fixed values that affect ingest are written into the working
+    copy here so retrieve sweep toggles are consistent with ingest.
+    """
+    import shutil
+
     cfg = run_cfg.get("configuration", {})
     mode = cfg.get("mode", "profile")
+    fixed = run_cfg.get("fixed", {}) or {}
+
+    generated_dir = REPO_ROOT / cfg.get("generated_dir", "configs/generated")
+    out_path = generated_dir / f"{run_cfg['run_name']}_configuration.yml"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if mode == "existing":
-        path = cfg.get("existing_path")
-        if not path:
+        src = cfg.get("existing_path")
+        if not src:
             raise ValueError(
                 "configuration.mode=existing but configuration.existing_path is empty"
             )
-        return None
+        src_path = Path(src).expanduser().resolve()
+        if not src_path.exists():
+            raise FileNotFoundError(
+                f"configuration.existing_path does not exist: {src_path}"
+            )
+        shutil.copy2(src_path, out_path)
+        configuration = load_yaml(out_path)
+        _apply_fixed_to_configuration(configuration, fixed)
+        dump_yaml(configuration, out_path)
+        return str(out_path)
 
     if mode != "profile":
         raise ValueError(f"Unknown configuration.mode: {mode!r}")
@@ -255,23 +295,7 @@ def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str | None:
     )
     db_profile = load_yaml(CONFIGS_DIR / "profiles" / "dbs" / f"{db_name}.yaml")
     configuration = build_configuration_yml(model_profile, db_profile)
-
-    # Apply fixed values that affect ingest / dataset loading (not just retrieve sweep).
-    # message_sentence_chunking changes how Episodes are stored, so it must be set
-    # BEFORE ingest, not just toggled per sweep cell. prepend_user_prefix is read
-    # by longmemeval_test from configuration.yml at search time.
-    fixed = run_cfg.get("fixed", {}) or {}
-    if "message_sentence_chunking" in fixed:
-        configuration["episodic_memory"]["long_term_memory"][
-            "message_sentence_chunking"
-        ] = bool(fixed["message_sentence_chunking"])
-    if "prepend_user_prefix" in fixed:
-        configuration["evaluation"]["longmemeval"]["prepend_user_prefix"] = bool(
-            fixed["prepend_user_prefix"]
-        )
-
-    generated_dir = REPO_ROOT / cfg.get("generated_dir", "configs/generated")
-    out_path = generated_dir / f"{run_cfg['run_name']}_configuration.yml"
+    _apply_fixed_to_configuration(configuration, fixed)
     dump_yaml(configuration, out_path)
     return str(out_path)
 
@@ -309,21 +333,20 @@ def main() -> int:
     if not merged.get("run_name"):
         merged["run_name"] = slugify(f"p{problem}_run")
 
-    # Generate configuration.yml if mode=profile
+    # Always produce a run-local working configuration.yml (D-002 / round-2 fix).
     generated_path = maybe_generate_configuration_yml(merged)
-    if generated_path:
-        merged.setdefault("configuration", {})["generated_path"] = generated_path
+    merged.setdefault("configuration", {})["generated_path"] = generated_path
 
     # Persist run config
     run_path = CONFIGS_DIR / "runs" / f"{merged['run_name']}.yaml"
     dump_yaml(merged, run_path)
 
     print(f"[ok] run config: {run_path}")
-    if generated_path:
-        print(f"[ok] configuration.yml: {generated_path}")
-    elif merged.get("configuration", {}).get("mode") == "existing":
+    print(f"[ok] working configuration.yml: {generated_path}")
+    if merged.get("configuration", {}).get("mode") == "existing":
         print(
-            f"[ok] using existing configuration: {merged['configuration']['existing_path']}"
+            f"      (copied from {merged['configuration']['existing_path']} — "
+            "user original NOT modified)"
         )
     return 0
 
