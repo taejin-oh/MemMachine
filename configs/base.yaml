@@ -33,5 +33,5 @@ evaluation:
   judge_concurrency: 4
 
 # 반복 실행 (DECISIONS.md D-001 / 설계 §3.5 fallback)
+# 현재 MVP 는 n_runs=1 만 지원. 그 외 값은 run_pipeline.py 가 NotImplementedError.
 n_runs: 1
-seed: 42

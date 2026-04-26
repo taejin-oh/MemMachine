@@ -271,7 +271,7 @@ fi
 - LongMemEval: shuffle 없음, `dataset.select(range(n))`
 - LoCoMo: `[unverified]` 별도 세부 조사 안 함
 
-→ 본 도구가 새 seed 인자를 도입하더라도 기존 코드 호출 경로를 read-only 로 유지하려면 **기존 코드에 seed 주입 불가**. 단, `random.seed()` 를 stage 시작 시 monkey-call 은 할 수 있음 (process 전역 영향).
+→ PR #7 (eval-tool MVP) 은 별도 seed 옵션을 제공하지 않는다. 데이터셋 순서·shuffle 동작은 기존 코드 동작을 그대로 따른다.
 
 ### sentence chunking 제어
 
