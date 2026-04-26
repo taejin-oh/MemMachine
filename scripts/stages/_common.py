@@ -30,17 +30,13 @@ for p in [
 
 
 def resolve_config_path(run_cfg: dict[str, Any]) -> str:
-    """Return the absolute path of the configuration.yml this run should use."""
+    """Return the absolute path of the run-local working configuration.yml.
+
+    Both mode=profile and mode=existing produce a working copy at
+    `configuration.generated_path` (set by scripts/generate_config.py); stage
+    modules write to that copy and never touch the user's original.
+    """
     cfg = run_cfg.get("configuration", {})
-    mode = cfg.get("mode", "profile")
-    if mode == "existing":
-        path = cfg.get("existing_path")
-        if not path:
-            raise ValueError(
-                "configuration.existing_path is required for mode=existing"
-            )
-        return str(Path(path).expanduser().resolve())
-    # mode=profile
     generated = cfg.get("generated_path")
     if not generated:
         raise ValueError(
