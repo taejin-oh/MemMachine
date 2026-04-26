@@ -30,7 +30,7 @@
 | `prepend_user_prefix` 토글 (#3·#4·#12) | ✅ | ✅ (config 토글) | §2 #3·#4 운영 가능 |
 | `k` sweep `{10,20,30,50,100}` (#4·#12) | ✅ | ✅ (`sweep.search_limit`) | §2 #4·#12 운영 가능 |
 | `chunk` YAML wiring (`message_sentence_chunking`) | ✅ | ✅ (ingest 전 반영) | §2 #4 chunk=on 정상 |
-| `chunk × prefix × k` 매트릭스 | ✅ (`run_benchmark_matrix.sh`) | 확장 가능 | PR #7 기본 `p4.yaml` 은 chunk=on / prefix=on / k sweep. 전체 매트릭스는 run YAML 의 `sweep` / `fixed` 를 사용자가 확장하면 가능 (기본 제공 아님) |
+| `chunk × prefix × k` 매트릭스 | ✅ (`run_benchmark_matrix.sh`) | 부분 (chunk 별도 run 필요) | PR #7 기본 `p4.yaml` 은 chunk=on / prefix=on / k sweep. prefix × k 는 단일 run sweep 으로 확장 가능. 단 `message_sentence_chunking` 은 ingest 결과에 영향을 주므로 chunk on/off 비교는 chunk 값별 별도 `run_name` + 별도 ingest 로 실행해야 함. 전체 chunk × prefix × k 매트릭스는 단일 run 기본 제공이 아님 |
 | LoCoMo cat5 skip 포팅 | ✅ | ✅ | §2 #5 운영 가능 (`evaluation/retrieval_agent/locomo_search.py:135`) |
 | HotpotQA `length=500` 정책 | ✅ | ✅ (`split=validation`) | §2 #2 표 갱신 (선정 방식 명시) |
 | EDWIN1/EDWIN3 prompt 주입 | ❌ | ❌ (hook only) | EDWIN 텍스트 미확보 → 외삽 해석 |

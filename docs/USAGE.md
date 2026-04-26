@@ -95,6 +95,8 @@ python scripts/generate_config.py --problem 4 --run-name p4_full \
 python scripts/run_pipeline.py --config configs/runs/p4_full.yaml --stage all
 ```
 
+> **주의 — chunk on/off 비교**: `message_sentence_chunking` 은 ingest 시 DB 에 적재되는 episode 구조에 영향을 줍니다. 따라서 chunk on/off 비교는 같은 run 에서 retrieve sweep 만 바꾸지 말고, **chunk 값별로 별도 `run_name` 을 사용해 ingest 부터 다시 실행**하세요. 기본 p4 run 은 chunk=on, prefix=on, k sweep 입니다.
+
 ### #5 — LoCoMo Memory vs Agent
 
 LoCoMo 는 데이터 JSON 경로가 필요합니다 (subprocess 로 `locomo_search.py` 호출).
