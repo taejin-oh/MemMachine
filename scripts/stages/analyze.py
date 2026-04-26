@@ -56,6 +56,8 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "num_episodes": [],
                 "tokens": {f: [] for f in _TOKEN_FIELDS},
                 "recalls": [],
+                "total_hits": 0,
+                "total_facts": 0,
             },
         )
         cell["n"] += 1
@@ -102,6 +104,8 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         hits = r.get("fact_hits")
         if sf and isinstance(hits, list):
             cell["recalls"].append(len(hits) / len(sf))
+            cell["total_hits"] += len(hits)
+            cell["total_facts"] += len(sf)
 
     summary: dict[str, Any] = {"cells": []}
     for cell_key, c in cells.items():
@@ -154,6 +158,9 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
 
         recalls = c["recalls"]
+        overall_recall = (
+            c["total_hits"] / c["total_facts"] if c["total_facts"] else None
+        )
         summary["cells"].append(
             {
                 "cell": cell_key,
@@ -162,6 +169,9 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "accuracy": (sum(scores) / len(scores)) if scores else None,
                 "accuracy_std": statistics.pstdev(scores) if len(scores) > 1 else 0.0,
                 "mean_recall": (sum(recalls) / len(recalls)) if recalls else None,
+                "overall_recall": overall_recall,
+                "total_fact_hits": c["total_hits"],
+                "total_supporting_facts": c["total_facts"],
                 "mean_llm_time": (sum(c["latencies"]) / len(c["latencies"]))
                 if c["latencies"]
                 else None,
@@ -209,6 +219,7 @@ def _add_pareto(summary: dict[str, Any]) -> None:
                 "search_limit": int(k),
                 "accuracy": cell.get("accuracy"),
                 "mean_recall": cell.get("mean_recall"),
+                "overall_recall": cell.get("overall_recall"),
                 "mean_tokens_per_query": cell.get("mean_tokens_per_query"),
                 "mean_input_token": cell.get("mean_input_token"),
                 "mean_output_token": cell.get("mean_output_token"),

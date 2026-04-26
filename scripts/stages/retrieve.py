@@ -337,6 +337,16 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
         else:
             raise ValueError(f"Unknown benchmark.name: {bench_name!r}")
 
+        # Annotate fact_hits / fact_miss on each response in-place. process_question()
+        # itself does not produce these — they're computed by agent_utils.update_results
+        # by comparing supporting_facts against conversation_memories. Without this call
+        # all retrieve.jsonl rows would have empty fact_hits and analyze's mean_recall
+        # would always be 0.
+        from evaluation.utils import agent_utils
+
+        attribute_matrix = agent_utils.init_attribute_matrix()
+        agent_utils.update_results(responses, attribute_matrix, {})
+
         for category, record in responses:
             r_row, g_row = _split_response(category, record, params)
             r_row["cell_idx"] = cell_idx
