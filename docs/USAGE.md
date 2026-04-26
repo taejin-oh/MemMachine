@@ -197,7 +197,7 @@ CLI 인자와 JSON 이 충돌하면 CLI 가 우선.
 → 현재 `n_runs=1` 만 지원. `n_runs > 1` 면 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work.
 
 **Q7. 같은 DB 에서 p2 / p5 를 여러 번 돌려도 되나요?**
-→ 주의 필요. LongMemEval 은 PR #7 wrapper 의 `eval_tool_longmemeval_{run_name}` session_id 를 사용하므로 run 간 격리됩니다. 그러나 **HotpotQA (p2) 는 upstream 코드가 `hotpotqa_group` 으로 고정**, **LoCoMo (p5) 는 `group_{idx}` 로 고정**됩니다. 같은 DB 에서 p2 / p5 를 여러 번 실행하면 이전 run 의 episode 와 새 run 의 episode 가 섞일 수 있습니다. p2/p5 반복 시에는 `evaluation/retrieval_agent/wikimultihop_delete.py` / `locomo_delete.py` 같은 upstream delete script 로 정리하거나 별도 DB 를 사용하세요. 자동화는 `docs/msr/msr_eval_tool_todo_pr7.md` 의 future work.
+→ 주의 필요. LongMemEval 은 PR #7 wrapper 의 `eval_tool_longmemeval_{run_name}` session_id 를 사용하므로 run 간 격리됩니다. 그러나 **HotpotQA (p2) 는 upstream 코드가 `hotpotqa_group` 으로 고정**, **LoCoMo (p5) 는 `group_{idx}` 로 고정**됩니다. 같은 DB 에서 p2 / p5 를 여러 번 실행하면 이전 run 의 episode 와 새 run 의 episode 가 섞일 수 있습니다. p2/p5 반복 시에는 HotpotQA 의 경우 `evaluation/retrieval_agent/hotpotQA_test.py --run-type delete` (또는 모듈 함수 `hotpotqa_delete(config_path)`) 를, LoCoMo 의 경우 `evaluation/retrieval_agent/locomo_delete.py` 를 호출해 정리하거나 별도 DB 를 사용하세요. 자동화는 `docs/msr/msr_eval_tool_todo_pr7.md` 의 future work.
 
 ---
 
