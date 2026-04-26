@@ -4,6 +4,12 @@ config.yml
 cfg.yml
 sqlitetest.db
 
+# Eval tool runtime artifacts (configs/* schema 와 _example.json 만 추적)
+results/
+configs/generated/
+configs/runs/*.yaml
+!configs/runs/_example.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

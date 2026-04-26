@@ -1,0 +1,33 @@
+# DB profile placeholder
+#
+# 한 DB 프로파일 = (vector_graph_store + profile_storage) 셋
+# generate_config.py 가 이 셋을 읽어 configuration.yml 의
+#   - episodic_memory.long_term_memory.vector_graph_store
+#   - episode_store.database / session_manager.database / semantic_memory.config_database
+#   - resources.databases
+# 섹션을 자동 구성합니다.
+#
+# 사용법: 이 파일을 복사해 configs/profiles/dbs/{내가정한이름}.yaml 로 저장,
+#         실제 host/port/auth 채운 뒤 base.yaml 의 configuration.db_profile 에 그 이름을 적습니다.
+#
+# DB 인스턴스 자체는 사용자가 Docker 등으로 별도 띄워야 합니다 (본 도구는 주소·인증만 받음).
+
+vector_graph_store:
+  id: my_neo4j
+  provider: neo4j
+  config:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: "<NEO4J_PASSWORD>"
+
+profile_storage:
+  id: my_postgres
+  provider: postgres
+  config:
+    dialect: postgresql
+    driver: asyncpg
+    host: localhost
+    port: 5432
+    user: memmachine
+    password: "<POSTGRES_PASSWORD>"
+    db_name: memmachine

@@ -1,0 +1,16 @@
+# #6 — Multi-session reasoning 어려움 (#4 결과 재분해, 별도 run 불필요)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #6
+problem: 6
+description: "#4 산출물의 카테고리 재분해 (MS vs SSU/SSP/SSA/TR/KU)"
+
+# 본 problem 은 ingest/retrieve/generate/judge 단계를 새로 돌지 않는다.
+# generate_config.py 가 --reuse-run <run_name> 을 받아 그 run 의 judge.jsonl 을 가리킨다.
+reuse_run: null   # generate_config.py 에서 채워짐
+
+# 분석 옵션
+analyze:
+  decompose_multisession: true
+
+metrics:
+  - per_category_llm_score
+  - ms_vs_others_gap
