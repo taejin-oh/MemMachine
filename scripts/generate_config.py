@@ -256,6 +256,20 @@ def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str | None:
     db_profile = load_yaml(CONFIGS_DIR / "profiles" / "dbs" / f"{db_name}.yaml")
     configuration = build_configuration_yml(model_profile, db_profile)
 
+    # Apply fixed values that affect ingest / dataset loading (not just retrieve sweep).
+    # message_sentence_chunking changes how Episodes are stored, so it must be set
+    # BEFORE ingest, not just toggled per sweep cell. prepend_user_prefix is read
+    # by longmemeval_test from configuration.yml at search time.
+    fixed = run_cfg.get("fixed", {}) or {}
+    if "message_sentence_chunking" in fixed:
+        configuration["episodic_memory"]["long_term_memory"][
+            "message_sentence_chunking"
+        ] = bool(fixed["message_sentence_chunking"])
+    if "prepend_user_prefix" in fixed:
+        configuration["evaluation"]["longmemeval"]["prepend_user_prefix"] = bool(
+            fixed["prepend_user_prefix"]
+        )
+
     generated_dir = REPO_ROOT / cfg.get("generated_dir", "configs/generated")
     out_path = generated_dir / f"{run_cfg['run_name']}_configuration.yml"
     dump_yaml(configuration, out_path)
