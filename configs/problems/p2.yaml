@@ -1,0 +1,30 @@
+# #2 — Multi-hop retrieval failure (HotpotQA Memory vs Retrieval Agent)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #2
+problem: 2
+description: "HotpotQA hard 500 — Memory(memmachine) vs Retrieval Agent"
+
+benchmark:
+  name: hotpot
+  length: 500
+  split: hard
+  # length=500 은 hotpotQA_test.py:215 dataset.select(range(length))
+  # paper "hard 500" 과의 동일성은 v0.2 운영 결정 (RESEARCH.md Q5)
+
+# 독립변수
+sweep:
+  test_target: [memmachine, retrieval_agent]
+
+# 고정변수
+fixed:
+  search_limit: 20
+
+# stage hooks
+prompts:
+  generate_prompt_file: null   # EDWIN 미사용 → 기본 ANSWER_PROMPT fallback
+
+# 종속변수 (analyze 단계에서 보고)
+metrics:
+  - accuracy
+  - recall
+  - tokens_per_query
+  - per_tool_breakdown

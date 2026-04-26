@@ -1,0 +1,39 @@
+# Model profile placeholder
+#
+# 한 모델 프로파일 = (embedder + reranker + llm_model) 셋
+# generate_config.py 가 이 셋을 읽어 configuration.yml 의
+#   - episodic_memory.long_term_memory.embedder / reranker
+#   - retrieval_agent.llm_model / reranker
+#   - resources.embedders / language_models / rerankers
+# 섹션을 자동 구성합니다.
+#
+# 사용법: 이 파일을 복사해 configs/profiles/models/{내가정한이름}.yaml 로 저장,
+#         아래 placeholder 를 실제 값으로 채운 뒤
+#         base.yaml 의 configuration.model_profile 에 그 이름을 적습니다.
+
+embedder:
+  id: my_embedder
+  provider: openai
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: text-embedding-3-small
+    dimensions: 1536
+
+reranker:
+  id: my_reranker
+  provider: bm25
+  config:
+    k1: 1.5
+    b: 0.75
+    epsilon: 0.25
+    language: english
+    tokenizer: default
+
+llm_model:
+  id: my_llm
+  provider: openai-responses
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini

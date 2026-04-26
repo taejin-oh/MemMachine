@@ -1,0 +1,23 @@
+# #5 — Temporal reasoning 약함 (LoCoMo Memory vs Agent, cat5 자동 skip)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #5
+problem: 5
+description: "LoCoMo cat5 제외 1094 — Memory vs Agent, Temporal vs Single-hop 비교"
+
+benchmark:
+  name: locomo
+  # cat5 (adversarial) skip 은 evaluation/retrieval_agent/locomo_search.py:135 에 자동 포함
+
+# 독립변수
+sweep:
+  test_target: [memmachine, retrieval_agent]
+
+# 고정변수
+fixed:
+  search_limit: 20
+
+# stage hooks
+prompts:
+  generate_prompt_file: null   # EDWIN 미사용 → 기본 ANSWER_PROMPT fallback
+
+metrics:
+  - per_category_llm_score   # 주목: Temporal vs Single-hop
