@@ -606,6 +606,8 @@ sweep:
 
 세 경로 모두 generated yml 의 `episodic_memory.short_term_memory.summarization_enabled` 한 줄을 갱신. CLI > JSON > problem yaml > base yaml 의 deep_merge 우선순위 그대로.
 
+> **sweep caveat** — 현재 eval wrapper 는 STM 을 생성하지 않으므로 (`agent_utils.py:461`) 위 sweep 으로 LongMemEval accuracy 차이를 기대하면 안 됨. configuration audit 또는 향후 STM-enabled 경로 검증용.
+
 ### 6) `my_db.yaml` — DB 두 개
 
 본 도구는 DB 를 안 띄움. 본인이 Docker 등으로 먼저 띄우고 주소만 적음.
@@ -862,14 +864,14 @@ evaluation:
 
 | 값 | 코드 위치 |
 |---|---|
-| reranker list 검증/정규화 (id/provider/config/primary/rrf-hybrid 참조) | `scripts/generate_config.py:158-253` `_validate_and_normalize_rerankers()` |
-| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:255-333` `build_configuration_yml()` |
-| `message_sentence_chunking` / `prepend_user_prefix` / `summarization_enabled` 주입 | `scripts/generate_config.py:335-352` `_apply_fixed_to_configuration()` |
-| sweep cell 별 토글 (위 3개) | `scripts/stages/retrieve.py:51-66` `_apply_cell_to_config()` |
-| `--summarization` CLI shortcut → `fixed.summarization_enabled` | `scripts/generate_config.py:99-145` `cli_to_overrides()` |
-| `benchmark.data_path` 절대경로 resolve (LoCoMo 등) | `scripts/generate_config.py:434-441` (`main()` 안) |
-| 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py:425` `deep_merge(...)` |
-| `configuration.generated_path` 박는 곳 | `scripts/generate_config.py:443-444` |
+| reranker list 검증/정규화 (id/provider/config/primary/rrf-hybrid 참조) | `scripts/generate_config.py` `_validate_and_normalize_rerankers()` |
+| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py` `build_configuration_yml()` |
+| `message_sentence_chunking` / `prepend_user_prefix` / `summarization_enabled` 주입 | `scripts/generate_config.py` `_apply_fixed_to_configuration()` |
+| sweep cell 별 토글 (위 3개) | `scripts/stages/retrieve.py` `_apply_cell_to_config()` |
+| `--summarization` CLI shortcut → `fixed.summarization_enabled` | `scripts/generate_config.py` `cli_to_overrides()` |
+| `benchmark.data_path` 절대경로 resolve (LoCoMo 등) | `scripts/generate_config.py` `main()` 안 data_path resolve block |
+| 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py` `main()` 안 `deep_merge(...)` 호출 |
+| `configuration.generated_path` 박는 곳 | `scripts/generate_config.py` `main()` 안 `maybe_generate_configuration_yml()` 직후 |
 
 ### 6) `--from-json` 으로 같은 결과 재현 (선택 검증)
 
