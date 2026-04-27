@@ -151,7 +151,18 @@ def build_configuration_yml(
     Mirrors the structure documented in evaluation/retrieval_agent/README.md (Sample 1).
     """
     embedder = model_profile["embedder"]
-    reranker = model_profile["reranker"]
+    rerankers_list = model_profile["rerankers"]
+    if not rerankers_list:
+        raise ValueError("model profile 'rerankers' must contain at least one entry")
+    primary_reranker_id = (
+        model_profile.get("primary_reranker") or rerankers_list[0]["id"]
+    )
+    rerankers_by_id = {r["id"]: r for r in rerankers_list}
+    if primary_reranker_id not in rerankers_by_id:
+        raise ValueError(
+            f"primary_reranker={primary_reranker_id!r} not found in rerankers ids "
+            f"{list(rerankers_by_id)}"
+        )
     llm_model = model_profile["llm_model"]
     vgs = db_profile["vector_graph_store"]
     profile_db = db_profile["profile_storage"]
@@ -165,7 +176,7 @@ def build_configuration_yml(
             "enabled": True,
             "long_term_memory": {
                 "embedder": embedder["id"],
-                "reranker": reranker["id"],
+                "reranker": primary_reranker_id,
                 "vector_graph_store": vgs["id"],
                 # message_sentence_chunking 은 run_pipeline 이 sweep 별로 in-place 갱신
                 "message_sentence_chunking": False,
@@ -184,7 +195,7 @@ def build_configuration_yml(
         "logging": {"level": "INFO"},
         "retrieval_agent": {
             "llm_model": llm_model["id"],
-            "reranker": reranker["id"],
+            "reranker": primary_reranker_id,
         },
         "semantic_memory": {
             "enabled": False,
@@ -211,15 +222,11 @@ def build_configuration_yml(
                 },
             },
             "rerankers": {
-                reranker["id"]: {
-                    "provider": reranker["provider"],
-                    "config": reranker["config"],
-                },
+                r["id"]: {"provider": r["provider"], "config": r["config"]}
+                for r in rerankers_list
             },
         },
         "session_manager": {"database": profile_db["id"]},
-        # 평가 토글 (run_pipeline 이 sweep 별로 in-place 갱신할 수 있음)
-        "evaluation": {"longmemeval": {"prepend_user_prefix": False}},
     }
 
 

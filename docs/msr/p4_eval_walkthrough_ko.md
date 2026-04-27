@@ -673,7 +673,358 @@ profile YAML 두 개 모두 평문 key/password 가 들어감. `.gitignore` 에 
 
 ---
 
+---
+
+## 4-B: `generate_config.py` 한 번 돌려 산출물 검증
+
+목적: 4-A 에서 채운 두 profile YAML 이 실제로 어떻게 합쳐지는지 눈으로 확인. 아직 DB·LLM 호출 0, 디스크 IO 만.
+
+### 1) 명령 한 줄 — 가장 작은 dry-run
+
+```sh
+python scripts/generate_config.py \
+    --problem 4 --run-name p4_pilot \
+    --model-profile my_model --db-profile my_db \
+    --k-list 10,20 --length 5
+```
+
+각 인자 의미:
+- `--problem 4` → `configs/problems/p4.yaml` 을 base 위에 얹음
+- `--run-name p4_pilot` → 산출물 파일명·디렉토리명에 박힘
+- `--model-profile my_model` → `configs/profiles/models/my_model.yaml` 읽음
+- `--db-profile my_db` → `configs/profiles/dbs/my_db.yaml` 읽음
+- `--k-list 10,20` → p4.yaml 의 `sweep.search_limit: [10,20,30,50,100]` 을 `[10,20]` 으로 덮음 (cell 5개 → 2개)
+- `--length 5` → p4.yaml 의 `benchmark.length: 500` 을 `5` 로 덮음 (질문 500 → 5)
+
+### 2) 성공하면 stdout
+
+```
+[ok] run config: configs/runs/p4_pilot.yaml
+[ok] working configuration.yml: configs/generated/p4_pilot_configuration.yml
+```
+
+두 파일이 만들어짐:
+
+| 파일 | 누가 읽나 | 역할 |
+|---|---|---|
+| `configs/runs/p4_pilot.yaml` | `run_pipeline.py` | run 의 모든 결정값 박제 |
+| `configs/generated/p4_pilot_configuration.yml` | MemMachine 본체 | 실제 컴포넌트 띄울 때 읽는 통합 설정 |
+
+### 3) 산출물 1: `configs/runs/p4_pilot.yaml` 1대1 추적
+
+각 값이 어디서 왔는지 표시:
+
+```yaml
+# === configs/base.yaml 에서 옴 ===
+results_dir: results
+prompts_dir: prompts
+n_runs: 1
+evaluation:
+  exclude_abstention: true
+  ingest_concurrency: 4
+  search_concurrency: 4
+  judge_concurrency: 4
+judge:
+  llm_model_id: null
+
+# === configs/problems/p4.yaml 에서 옴 ===
+problem: 4
+description: "LongMemEval 500 — k sweep ..."
+benchmark:
+  name: longmemeval
+  length: 5                       # ← p4.yaml 은 500. CLI --length 5 가 덮음
+  split: longmemeval_s
+sweep:
+  search_limit: [10, 20]          # ← p4.yaml 은 [10,20,30,50,100]. CLI --k-list 가 덮음
+fixed:
+  prepend_user_prefix: true
+  message_sentence_chunking: true
+  test_target: retrieval_agent
+prompts:
+  generate_prompt_file: prompts/EDWIN3.txt
+metrics:                          # 코드는 안 읽음 (메모성)
+  - overall_llm_score
+  - per_category_llm_score
+  - tokens_per_query
+  - latency_per_query
+
+# === CLI 에서 옴 ===
+run_name: p4_pilot
+configuration:
+  mode: profile                   # base.yaml default
+  model_profile: my_model
+  db_profile: my_db
+  generated_dir: configs/generated
+  generated_path: /home/user/MemMachine/configs/generated/p4_pilot_configuration.yml
+                                  # ← generate_config 가 마지막에 추가
+```
+
+확인 포인트:
+- `benchmark.length: 5` 인가
+- `sweep.search_limit: [10, 20]` 인가
+- `configuration.generated_path` 가 절대경로로 박혀 있는가
+- `fixed.message_sentence_chunking: true` 그대로인가 (CLI 로 못 덮음)
+
+### 4) 산출물 2: `configs/generated/p4_pilot_configuration.yml` 1대1 추적
+
+profile YAML 두 개가 합쳐진 결과 (`_example.yaml` 로 채웠다고 가정):
+
+```yaml
+episode_store:
+  database: my_postgres                     # ◄── my_db.yaml profile_storage.id
+  with_count_cache: true
+episodic_memory:
+  enabled: true
+  long_term_memory:
+    embedder: my_embedder                   # ◄── my_model.yaml embedder.id
+    reranker: my_reranker                   # ◄── primary_reranker (또는 rerankers[0].id)
+    vector_graph_store: my_neo4j            # ◄── my_db.yaml vector_graph_store.id
+    message_sentence_chunking: true         # ◄── p4.yaml fixed (_apply_fixed_to_configuration)
+  long_term_memory_enabled: true
+  short_term_memory:
+    llm_model: my_llm
+    message_capacity: 500
+    summary_prompt_system: "You are an AI agent that summarizes episodes."
+    summary_prompt_user: "Summarize: {summary}\n{episodes}\n..."
+  short_term_memory_enabled: true
+logging:
+  level: INFO
+retrieval_agent:
+  llm_model: my_llm
+  reranker: my_reranker
+semantic_memory:
+  enabled: false
+  config_database: my_postgres
+session_manager:
+  database: my_postgres
+resources:
+  databases:
+    my_neo4j:
+      provider: neo4j                       # ◄── my_db.yaml vector_graph_store.provider
+      config: { uri: bolt://localhost:7687, user: neo4j, password: ... }
+    my_postgres:
+      provider: postgres
+      config: { dialect: postgresql, ... }
+  embedders:
+    my_embedder:
+      provider: openai                      # ◄── my_model.yaml embedder.provider
+      config: { api_key: ..., model: ..., dimensions: 1536 }
+  language_models:
+    my_llm:
+      provider: openai-responses
+      config: { api_key: ..., model: gpt-4o-mini }
+  rerankers:
+    my_reranker:
+      provider: bm25                        # ◄── my_model.yaml rerankers[0].provider
+      config: { k1: 1.5, b: 0.75, ... }
+evaluation:
+  longmemeval:
+    prepend_user_prefix: true               # ◄── p4.yaml fixed
+```
+
+확인 포인트:
+- `resources.embedders.my_embedder.config.api_key` 에 placeholder (`<OPENAI_API_KEY>`) 가 아니라 실키
+- `resources.databases.my_neo4j.config.password` 가 본인 비번
+- `episodic_memory.long_term_memory.message_sentence_chunking: true`
+- `evaluation.longmemeval.prepend_user_prefix: true`
+- 위쪽 id 참조와 아래쪽 `resources` 의 키 일치
+
+### 5) 코드 근거
+
+| 값 | 코드 위치 |
+|---|---|
+| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:159-223` `build_configuration_yml()` |
+| reranker list → resources.rerankers + primary_reranker 처리 | `scripts/generate_config.py:154-165` |
+| `message_sentence_chunking`, `prepend_user_prefix` 주입 | `scripts/generate_config.py:226-242` `_apply_fixed_to_configuration()` |
+| 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py:329` `deep_merge(...)` |
+| `configuration.generated_path` 박는 곳 | `scripts/generate_config.py:336-337` |
+
+### 6) `--from-json` 으로 같은 결과 재현 (선택 검증)
+
+```sh
+cat > /tmp/p4_pilot.json <<'EOF'
+{
+  "problem": 4,
+  "run_name": "p4_pilot_from_json",
+  "configuration": {"model_profile": "my_model", "db_profile": "my_db"},
+  "benchmark": {"length": 5},
+  "sweep": {"search_limit": [10, 20]}
+}
+EOF
+python scripts/generate_config.py --from-json /tmp/p4_pilot.json
+diff configs/runs/p4_pilot.yaml configs/runs/p4_pilot_from_json.yaml
+```
+diff 가 `run_name` / `generated_path` 두 줄만 차이 나면 4-way merge 가 의도대로.
+
+### 7) 흔한 실패 케이스
+
+| 증상 | 원인 |
+|---|---|
+| `ERROR: --problem (or 'problem' in JSON) is required` | `--problem` 빠짐 |
+| `mode=profile requires both configuration.model_profile and configuration.db_profile` | 두 인자 중 하나 누락 |
+| `FileNotFoundError: configs/profiles/models/my_model.yaml` | 4-A 에서 파일 복사 안 함 또는 이름 오타 |
+| `KeyError: 'embedder'` 또는 `KeyError: 'rerankers'` | profile YAML 의 yaml 들여쓰기/key 누락 |
+| `model profile 'rerankers' must contain at least one entry` | rerankers 가 빈 list |
+| `primary_reranker=... not found in rerankers ids ...` | `primary_reranker` 가 가리키는 id 가 rerankers 안에 없음 (오타) |
+| `pydantic.ValidationError: api_key Field required` (ingest 시점) | profile YAML 의 placeholder 안 바꿈 |
+
+### 8) 산출 디렉토리
+
+```
+configs/
+  runs/
+    p4_pilot.yaml                        # ← run_pipeline 이 다음 단계에서 사용
+  generated/
+    p4_pilot_configuration.yml           # ← MemMachine 본체가 읽음
+results/                                  # ← 아직 비어있음. 4-C 에서 채워짐
+```
+
+이 시점까지 **모든 게 로컬 파일 IO**. DB·LLM 호출 0. 인터넷·DB 없이도 4-B 까지는 smoke OK.
+
+### 9) 4-C 가기 전 체크리스트
+
+- [ ] `configs/runs/p4_pilot.yaml` 의 `benchmark.length`, `sweep.search_limit` 의도대로
+- [ ] `configs/generated/p4_pilot_configuration.yml` 의 `api_key`/`password` 가 실값
+- [ ] `nc -zv localhost 7687` / `nc -zv localhost 5432` 둘 다 succeeded
+- [ ] LLM API 가 실제 호출 가능한지 간단한 curl
+
+---
+
+## 4-B 부록: rrf-hybrid (bm25 + identity) 쓰기
+
+### 시나리오와 한계
+
+`my_model.yaml` 에서 reranker 로 `rrf-hybrid` 를 쓰고 싶다. rrf-hybrid 는 **여러 reranker 를 RRF 로 결합** 하는 메타 reranker 라 `resources.rerankers` 에 결합 대상 + hybrid 자체가 동시에 등록돼 있어야 함 (`reranker_conf.py:112-120` `RRFHybridRerankerConf.reranker_ids: list[str]` 필수).
+
+PR7 초기 wrapper 는 `model_profile["reranker"]` (단일) 만 받아 한 항목만 등록했음. 후속 패치로 **`rerankers` (list) + `primary_reranker` (선택)** 형식을 받게 변경. 이로써 동일 profile 안에서 여러 reranker 등록 + hybrid 결합이 가능해짐.
+
+### identity + bm25 의 의미
+
+- identity = 원래 retrieval (벡터 유사도) 순서를 그대로
+- bm25 = 어휘 매칭 점수
+- rrf-hybrid = 두 순위를 RRF (Reciprocal Rank Fusion) 로 결합
+
+즉 "의미적 검색 + 어휘 매칭 보강" 패턴. 합리적.
+
+### `my_model.yaml` 새 형식 — rrf-hybrid 케이스
+
+```yaml
+embedder:
+  id: my_embedder
+  provider: openai
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: text-embedding-3-small
+    dimensions: 1536
+
+rerankers:
+  - id: my_bm25                        # ◄── 첫 축
+    provider: bm25
+    config:
+      k1: 1.5
+      b: 0.75
+      epsilon: 0.25
+      language: english
+      tokenizer: default
+  - id: my_identity                    # ◄── 두 번째 축
+    provider: identity
+    config: {}                         # IdentityRerankerConf 는 키 0개
+  - id: my_hybrid                      # ◄── 둘을 RRF 로 결합
+    provider: rrf-hybrid
+    config:
+      reranker_ids: [my_bm25, my_identity]
+      k: 60                            # default 60. RRF 의 k 파라미터
+
+primary_reranker: my_hybrid            # ◄── 위쪽 (episodic_memory / retrieval_agent) 이 가리킬 id
+
+llm_model:
+  id: my_llm
+  provider: openai-responses
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+```
+
+### 생성될 configuration.yml 의 reranker 부분
+
+```yaml
+episodic_memory:
+  long_term_memory:
+    reranker: my_hybrid                # ◄── primary_reranker
+retrieval_agent:
+  reranker: my_hybrid                  # ◄── primary_reranker
+resources:
+  rerankers:
+    my_bm25:
+      provider: bm25
+      config: { k1: 1.5, b: 0.75, ... }
+    my_identity:
+      provider: identity
+      config: {}
+    my_hybrid:
+      provider: rrf-hybrid
+      config:
+        reranker_ids: [my_bm25, my_identity]
+        k: 60
+```
+
+### 단일 reranker 도 새 형식
+
+기존 `reranker:` (dict) 는 더 이상 받지 않음. 단일도 list 1개 항목으로 적어야 함. `primary_reranker` 는 생략 가능 (없으면 첫 항목 자동 선택):
+
+```yaml
+rerankers:
+  - id: my_reranker
+    provider: bm25
+    config: { ... }
+# primary_reranker 생략 → my_reranker 가 자동 선택됨
+```
+
+### 다른 hybrid 조합 cookbook
+
+- bm25 + cross-encoder: 어휘 + 의미 cross-encoder 결합
+  ```yaml
+  rerankers:
+    - id: my_bm25
+      provider: bm25
+      config: {}
+    - id: my_ce
+      provider: cross-encoder
+      config: { model_name: cross-encoder/qnli-electra-base }
+    - id: my_hybrid
+      provider: rrf-hybrid
+      config: { reranker_ids: [my_bm25, my_ce], k: 60 }
+  primary_reranker: my_hybrid
+  ```
+- bm25 + cohere (Cohere reranker)
+  ```yaml
+  rerankers:
+    - id: my_bm25
+      provider: bm25
+      config: {}
+    - id: my_cohere
+      provider: cohere
+      config:
+        cohere_key: "<COHERE_API_KEY>"
+        model: rerank-english-v3.0
+    - id: my_hybrid
+      provider: rrf-hybrid
+      config: { reranker_ids: [my_bm25, my_cohere], k: 60 }
+  primary_reranker: my_hybrid
+  ```
+
+### 검증
+
+`generate_config.py` 가 다음 두 에러를 미리 잡음:
+- `model profile 'rerankers' must contain at least one entry` — list 가 빈 경우
+- `primary_reranker=... not found in rerankers ids [...]` — primary 가 가리키는 id 가 rerankers 에 없는 경우 (오타 등)
+
+이외는 ingest 단계에서 `RerankersConf.parse()` (`reranker_conf.py:189-237`) 가 잘못된 provider/필드를 잡아냄.
+
+---
+
 다음 메모:
-- **4-B**: 위 두 파일 채운 상태에서 `generate_config.py` 를 진짜 돌렸을 때 어떤 파일이 어디 생기고 그 안의 어느 값이 어디서 왔는지 1:1 추적 (위 미리보기를 실제로 검증)
 - **4-C**: ingest 단독 실행, DB 적재 확인
 - **4-D**: retrieve / judge / analyze
