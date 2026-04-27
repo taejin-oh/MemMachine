@@ -230,3 +230,29 @@ def test_legacy_reranker_with_rerankers_present_raises():
     profile["rerankers"] = [{"id": "new", "provider": "bm25"}]
     with pytest.raises(ValueError, match=r"no longer supported"):
         _validate_and_normalize_rerankers(profile)
+
+
+def test_summarization_default_false_in_generated_config():
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    stm = cfg["episodic_memory"]["short_term_memory"]
+    assert stm["summarization_enabled"] is False
+
+
+def test_summarization_fixed_override_true():
+    from scripts.generate_config import _apply_fixed_to_configuration
+
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    _apply_fixed_to_configuration(cfg, {"summarization_enabled": True})
+    assert cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] is True
+
+
+def test_summarization_fixed_override_false_explicit():
+    from scripts.generate_config import _apply_fixed_to_configuration
+
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] = True
+    _apply_fixed_to_configuration(cfg, {"summarization_enabled": False})
+    assert cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] is False

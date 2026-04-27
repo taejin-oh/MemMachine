@@ -580,6 +580,32 @@ rerankers:
 # rerankers 가 1개면 primary_reranker 는 생략 가능 (첫 항목 자동 선택)
 ```
 
+### 5b) STM summarization 토글 (`summarization_enabled`)
+
+`episodic_memory.short_term_memory.summarization_enabled` 가 generated configuration.yml 에 항상 박힘. **default `false`** (`generate_config.py:build_configuration_yml`). 의미: STM `message_capacity` 초과 시 LLM 요약 호출 여부.
+
+> **주의** — eval wrapper 의 LongMemEval ingest/retrieve 는 `agent_utils.init_memmachine_params()` 가 STM 자체를 `None` 으로 만들어 (`agent_utils.py:461`) 이 토글이 평가 동작에 영향을 주지 않음. 본체 서버를 generated yml 그대로 띄우는 경우엔 토글이 실제 동작 결정.
+
+켜고 끄는 3가지 길:
+
+```sh
+# 1. CLI shortcut (가장 간단, 1회용)
+python scripts/generate_config.py --problem 4 --run-name p4_pilot \
+    --model-profile my_model --db-profile my_db --summarization on
+
+# 2. fixed (영구) — configs/problems/p4.yaml 또는 base.yaml 또는 run override JSON
+fixed:
+  prepend_user_prefix: true
+  message_sentence_chunking: true
+  summarization_enabled: true              # ◄── 추가
+
+# 3. sweep (cell 단위 비교)
+sweep:
+  summarization_enabled: [false, true]     # 끈 vs 켠 cell 두 개
+```
+
+세 경로 모두 generated yml 의 `episodic_memory.short_term_memory.summarization_enabled` 한 줄을 갱신. CLI > JSON > problem yaml > base yaml 의 deep_merge 우선순위 그대로.
+
 ### 6) `my_db.yaml` — DB 두 개
 
 본 도구는 DB 를 안 띄움. 본인이 Docker 등으로 먼저 띄우고 주소만 적음.
@@ -786,6 +812,7 @@ episodic_memory:
   short_term_memory:
     llm_model: my_llm
     message_capacity: 500
+    summarization_enabled: false             # ◄── default. fixed/sweep/CLI(--summarization on/off) 로 토글
     summary_prompt_system: "You are an AI agent that summarizes episodes."
     summary_prompt_user: "Summarize: {summary}\n{episodes}\n..."
   short_term_memory_enabled: true
@@ -835,9 +862,11 @@ evaluation:
 
 | 값 | 코드 위치 |
 |---|---|
-| reranker list 검증/정규화 (id/provider/config/primary/rrf-hybrid 참조) | `scripts/generate_config.py:146-241` `_validate_and_normalize_rerankers()` |
-| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:243-319` `build_configuration_yml()` |
-| `message_sentence_chunking`, `prepend_user_prefix` 주입 | `scripts/generate_config.py:321-338` `_apply_fixed_to_configuration()` |
+| reranker list 검증/정규화 (id/provider/config/primary/rrf-hybrid 참조) | `scripts/generate_config.py:158-253` `_validate_and_normalize_rerankers()` |
+| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:255-333` `build_configuration_yml()` |
+| `message_sentence_chunking` / `prepend_user_prefix` / `summarization_enabled` 주입 | `scripts/generate_config.py:335-352` `_apply_fixed_to_configuration()` |
+| sweep cell 별 토글 (위 3개) | `scripts/stages/retrieve.py:51-66` `_apply_cell_to_config()` |
+| `--summarization` CLI shortcut → `fixed.summarization_enabled` | `scripts/generate_config.py:99-145` `cli_to_overrides()` |
 | `benchmark.data_path` 절대경로 resolve (LoCoMo 등) | `scripts/generate_config.py:434-441` (`main()` 안) |
 | 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py:425` `deep_merge(...)` |
 | `configuration.generated_path` 박는 곳 | `scripts/generate_config.py:443-444` |

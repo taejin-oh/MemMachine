@@ -58,6 +58,10 @@ def _apply_cell_to_config(config_path: str, params: dict[str, Any]) -> None:
         updates.setdefault("episodic_memory", {}).setdefault("long_term_memory", {})[
             "message_sentence_chunking"
         ] = bool(params["message_sentence_chunking"])
+    if "summarization_enabled" in params:
+        updates.setdefault("episodic_memory", {}).setdefault("short_term_memory", {})[
+            "summarization_enabled"
+        ] = bool(params["summarization_enabled"])
     if updates:
         cm.update_yaml_in_place(config_path, updates)
 
