@@ -220,3 +220,11 @@ ingest → retrieve → generate → judge → analyze 단계로 분리.
    - 동급: chunk sweep guard + LoCoMo search_limit 인자화 + matrix chunk 잔류 버그
 
 본 branch 의 실질적 성과는 “논문 수치 복제 도구”보다 **사내 환경에서 변수 효과를 반복 가능하게 검증하는 평가 자동화 기반** 구축에 있습니다.
+
+---
+
+## F. 리뷰 반영 메모 (2026-04-27)
+
+- 본 문서는 **브랜치 변경사항 정리/검증 관점 문서**이며, 테스트 통과의 공식 증빙 문서가 아니다.
+- 테스트 pass/fail 단정은 PR의 Testing 로그 또는 CI 결과를 기준으로 별도 확인한다.
+- 문서 내 구현 상태(적용/미적용)와 운영 한계(EDWIN 미적용, JSON-str off)는 "해석 경계"를 명확히 하기 위한 기술이며, 성능 수치의 확정적 보증을 의미하지 않는다.
