@@ -100,12 +100,14 @@ python scripts/run_pipeline.py --config configs/runs/p4_full.yaml --stage all
 ### #5 — LoCoMo Memory vs Agent
 
 LoCoMo 는 데이터 JSON 경로가 필요합니다 (subprocess 로 `locomo_search.py` 호출).
+`p5.yaml` 에 `benchmark.data_path: evaluation/data/locomo10.json` 기본값이 들어있어
+별도 수정 없이도 `--stage all` 이 바로 동작합니다 — 다른 위치의 LoCoMo JSON 을
+쓰려면 run YAML 의 `benchmark.data_path` 만 절대경로 또는 repo-root 기준 상대경로로
+덮어쓰면 됩니다.
 
 ```sh
 python scripts/generate_config.py --problem 5 --run-name p5_full \
     --model-profile my_model --db-profile my_db
-# configs/runs/p5_full.yaml 의 benchmark 섹션에 한 줄 추가:
-#   data_path: /absolute/path/to/locomo10.json
 python scripts/run_pipeline.py --config configs/runs/p5_full.yaml --stage all
 ```
 

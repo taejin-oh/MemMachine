@@ -66,11 +66,7 @@ def _ingest_locomo(
     run_cfg: dict[str, Any], config_path: str, _session_id: str
 ) -> dict[str, Any]:
     bench = run_cfg["benchmark"]
-    data_path = bench.get("data_path")
-    if not data_path:
-        raise ValueError(
-            "benchmark.data_path is required for locomo (path to LoCoMo source JSON)"
-        )
+    data_path = cm.resolve_data_path(bench, "evaluation/data/locomo10.json")
     length = int(bench.get("length", 10))
 
     cmd = [

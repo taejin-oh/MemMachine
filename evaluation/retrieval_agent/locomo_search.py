@@ -106,6 +106,7 @@ async def run_locomo(  # noqa: C901
     print(f"Evaluation result path: {args.eval_result_path}")
     print(f"Test target: {args.test_target}")
     print(f"Concurrency: {args.concurrency}")
+    print(f"Length: {args.length}")
 
     data_path = args.data_path
     eval_result_path = args.eval_result_path

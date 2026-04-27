@@ -57,6 +57,11 @@ async def main():
 
     data_path = args.data_path
 
+    print("Starting locomo ingest...")
+    print(f"Data path: {data_path}")
+    print(f"Length: {args.length}")
+    print(f"Concurrency: {args.concurrency}")
+
     with open(data_path, "r") as f:
         locomo_data = json.load(f)
 
