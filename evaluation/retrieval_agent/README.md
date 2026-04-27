@@ -447,11 +447,12 @@ From `evaluation/retrieval_agent/`:
 ./run_test.sh hotpotqa exp1 ingest validation retrieval_agent 200
 ./run_test.sh hotpotqa exp1 search validation retrieval_agent 200
 
-# LoCoMo
-./run_test.sh locomo exp1 ingest retrieval_agent
-./run_test.sh locomo exp1 ingest retrieval_agent --ingest-concurrency 2
-./run_test.sh locomo exp1 search retrieval_agent
-./run_test.sh locomo exp1 search retrieval_agent --search-concurrency 1 --judge-concurrency 4
+# LoCoMo (default data file has 10 conversations; LENGTH is a positive integer
+# capped by the data file size)
+./run_test.sh locomo exp1 ingest retrieval_agent 10
+./run_test.sh locomo exp1 ingest retrieval_agent 10 --ingest-concurrency 2
+./run_test.sh locomo exp1 search retrieval_agent 10
+./run_test.sh locomo exp1 search retrieval_agent 10 --search-concurrency 1 --judge-concurrency 4
 ```
 
 Ingest runs print standardized lifecycle logs:

@@ -100,16 +100,18 @@ python scripts/run_pipeline.py --config configs/runs/p4_full.yaml --stage all
 ### #5 — LoCoMo Memory vs Agent
 
 LoCoMo 는 데이터 JSON 경로가 필요합니다 (subprocess 로 `locomo_search.py` 호출).
+`p5.yaml` 에 `benchmark.data_path: evaluation/data/locomo10.json` 기본값이 들어있어
+별도 수정 없이도 `--stage all` 이 바로 동작합니다 — 다른 위치의 LoCoMo JSON 을
+쓰려면 run YAML 의 `benchmark.data_path` 만 절대경로 또는 repo-root 기준 상대경로로
+덮어쓰면 됩니다.
 
 ```sh
 python scripts/generate_config.py --problem 5 --run-name p5_full \
     --model-profile my_model --db-profile my_db
-# configs/runs/p5_full.yaml 의 benchmark 섹션에 한 줄 추가:
-#   data_path: /absolute/path/to/locomo10.json
 python scripts/run_pipeline.py --config configs/runs/p5_full.yaml --stage all
 ```
 
-> **주의 — p5 처리 범위**: PR #7 wrapper 는 기존 `evaluation/retrieval_agent/locomo_search.py` 를 subprocess 로 호출합니다. upstream 코드의 `start_index=0` / `end_index=20` 제한을 따르므로 "cat5 제외 전체 1094 문항" 을 항상 보장하는 실행이 아닙니다. 실제 처리 범위는 `locomo_search.py:115-117` 의 인덱스 로직을 그대로 따릅니다.
+> **참고 — p5 처리 범위**: `locomo_search.py` / `locomo_ingest.py` 는 `--length N` 옵션으로 처리할 conversation group 수를 받습니다. p5.yaml 의 `benchmark.length` (기본 10 — `locomo10.json` 전체) 를 통해 wrapper subprocess 가 자동으로 `--length` 를 전달하며, `python scripts/generate_config.py --length N` 으로 override 가능합니다.
 >
 > **주의 — p5 search_limit**: `locomo_search.py:207` 에서 `search_limit=20` 이 하드코드되어 있습니다. run YAML 의 `fixed.search_limit` 을 바꿔도 LoCoMo subprocess 경로에는 반영되지 않습니다.
 

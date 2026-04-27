@@ -598,7 +598,7 @@ def _check_prompt_hook(run_cfg):
 | ---: | ------------------------------------------------------------ | :------: |
 |    1 | HotpotQA session isolation (`hotpotqa_group` 하드코드)       |   High   |
 |    2 | LoCoMo session isolation (`group_{idx}` 하드코드)            |   High   |
-|    3 | LoCoMo `start_index=0 / end_index=20` 외부 파라미터화        |  Medium  |
+|    3 | ~~LoCoMo `start_index=0 / end_index=20` 외부 파라미터화~~ → **DONE** (`--length` + `benchmark.length`) |  Medium → DONE  |
 |    4 | LoCoMo `search_limit=20` 외부 파라미터화                     |  Medium  |
 |    5 | chunk on/off 비교 자동화 (multi-run generator / sweep silent 차단) |  Medium  |
 

@@ -57,16 +57,16 @@ For full argument details, run:
 
 Examples:
 
-- LoCoMo ingest:
+- LoCoMo ingest (10 conversations):
 
 ```sh
-./run_test.sh locomo exp1 ingest retrieval_agent
+./run_test.sh locomo exp1 ingest retrieval_agent 10
 ```
 
-- LoCoMo search + scoring:
+- LoCoMo search + scoring (10 conversations):
 
 ```sh
-./run_test.sh locomo exp1 search retrieval_agent
+./run_test.sh locomo exp1 search retrieval_agent 10
 ```
 
 - WikiMultiHop search (500 examples):

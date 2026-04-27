@@ -11,6 +11,9 @@ from evaluation.retrieval_agent.locomo_ingest import (
     DEFAULT_CONCURRENCY as LOCOMO_INGEST_DEFAULT_CONCURRENCY,
 )
 from evaluation.retrieval_agent.locomo_ingest import (
+    DEFAULT_LENGTH as LOCOMO_INGEST_DEFAULT_LENGTH,
+)
+from evaluation.retrieval_agent.locomo_ingest import (
     build_parser as build_locomo_ingest_parser,
 )
 from evaluation.retrieval_agent.longmemeval_test import (
@@ -35,6 +38,48 @@ def test_locomo_ingest_concurrency_defaults_to_ten():
     )
 
     assert args.concurrency == LOCOMO_INGEST_DEFAULT_CONCURRENCY == 10
+
+
+def test_locomo_ingest_length_defaults_to_ten():
+    args = build_locomo_ingest_parser().parse_args(
+        [
+            "--data-path",
+            "data.json",
+            "--config-path",
+            "configuration.yml",
+        ]
+    )
+
+    assert args.length == LOCOMO_INGEST_DEFAULT_LENGTH == 10
+
+
+def test_locomo_ingest_accepts_explicit_length():
+    args = build_locomo_ingest_parser().parse_args(
+        [
+            "--data-path",
+            "data.json",
+            "--config-path",
+            "configuration.yml",
+            "--length",
+            "5",
+        ]
+    )
+
+    assert args.length == 5
+
+
+def test_locomo_ingest_rejects_non_positive_length():
+    with pytest.raises(SystemExit):
+        build_locomo_ingest_parser().parse_args(
+            [
+                "--data-path",
+                "data.json",
+                "--config-path",
+                "configuration.yml",
+                "--length",
+                "0",
+            ]
+        )
 
 
 @pytest.mark.parametrize(

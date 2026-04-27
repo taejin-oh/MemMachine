@@ -214,9 +214,8 @@ def _run_locomo_cell(
     import sys
 
     bench = run_cfg["benchmark"]
-    data_path = bench.get("data_path")
-    if not data_path:
-        raise ValueError("benchmark.data_path is required for locomo")
+    data_path = cm.resolve_data_path(bench, "evaluation/data/locomo10.json")
+    length = int(bench.get("length", 10))
 
     out_json = cell_dir / "locomo_raw.json"
     test_target = params.get("test_target", "retrieval_agent")
@@ -231,6 +230,8 @@ def _run_locomo_cell(
         test_target,
         "--config-path",
         config_path,
+        "--length",
+        str(length),
     ]
     subprocess.run(cmd, env=cm.env_with_repo_root(), check=True)
 

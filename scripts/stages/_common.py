@@ -110,6 +110,26 @@ def session_id_for(run_cfg: dict[str, Any]) -> str:
     return f"eval_tool_{bench}_{run_cfg['run_name']}"
 
 
+def resolve_data_path(bench: dict[str, Any], default_relative: str) -> Path:
+    """Resolve `benchmark.data_path` to an absolute Path under REPO_ROOT.
+
+    Falls back to `default_relative` when missing. Relative paths resolve
+    against REPO_ROOT. Raises FileNotFoundError if the resolved file is
+    absent so the user gets the actual path that was searched.
+    """
+    raw = bench.get("data_path") or default_relative
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = REPO_ROOT / candidate
+    candidate = candidate.resolve()
+    if not candidate.is_file():
+        raise FileNotFoundError(
+            f"benchmark.data_path not found: {candidate} "
+            f"(set benchmark.data_path in run config or place file at default {default_relative})"
+        )
+    return candidate
+
+
 def env_with_repo_root() -> dict[str, str]:
     env = os.environ.copy()
     extra = [

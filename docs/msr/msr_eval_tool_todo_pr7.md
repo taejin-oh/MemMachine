@@ -45,23 +45,21 @@
 
 ---
 
-## 3. LoCoMo 처리 범위 제어
+## 3. LoCoMo 처리 범위 제어 — **해결됨**
 
-**현상**
-- `locomo_search.py:115-117` 에 `start_index = 0`, `end_index = 20` 이 하드코드되어 있다 → 최대 21 개 conversation group 만 처리.
-- PR #7 wrapper 는 이 범위를 외부에서 제어하지 않는다.
-- 결과적으로 `docs/msr/MemMachine_재현평가_설계_0425.md` §2 #5 의 "cat5 제외 잔여 1,094 문항" 은 **PR #7 의 실제 실행에서는 보장되지 않는다**.
+**현상 (해결 전)**
+- `locomo_search.py:115-117` 에 `start_index = 0`, `end_index = 20` 이 하드코드되어 있었다 → 최대 21 개 conversation group 만 처리.
+- PR #7 wrapper 는 이 범위를 외부에서 제어하지 않았다.
 
-**위험**
-- 문서 표현과 실제 실행 범위가 어긋나 결과 해석 오류.
-- 사용자가 paper 와 다른 데이터셋 부분집합으로 평가하고 있다는 사실을 인지하지 못할 수 있음.
+**해결 내역**
+- `locomo_ingest.py` / `locomo_search.py` 에 `--length` argparse 옵션 추가 (default 10 = `locomo10.json` 전체).
+- `locomo_search.py` 의 `end_index = 20` 을 `end_index = args.length` 로 교체, off-by-one 정정 (`idx > end_index` → `idx >= end_index`).
+- `configs/problems/p5.yaml` 에 `benchmark.length: 10` 키 추가.
+- `scripts/stages/ingest.py:_ingest_locomo` 와 `scripts/stages/retrieve.py:_run_locomo_cell` 가 `bench["length"]` 를 subprocess 인자로 전달.
+- `evaluation/retrieval_agent/run_test.sh locomo` 서브커맨드에 `LENGTH` positional argument 추가 (hotpotqa/longmemeval 패턴).
+- `run_benchmark_matrix.sh` 에 `LOCOMO_LENGTH=10` 변수 추가.
 
-**개선 후보**
-- `locomo_search.py` (그리고 필요 시 `locomo_ingest.py`) 에 `--start-index` / `--end-index` / `--length` 옵션 추가
-- `configs/problems/p5.yaml` 에 명시적 `benchmark.start_index` / `benchmark.end_index` 필드 추가
-- `_run_locomo_cell()` 가 위 값들을 subprocess 인자로 전달
-
-**우선순위**: Medium
+**우선순위**: ~~Medium~~ → **DONE**
 
 ---
 
@@ -105,7 +103,7 @@
 |---|:---:|:---:|:---:|
 | 1. HotpotQA session isolation | High | 결과 섞임 | upstream 시그니처 또는 delete 호출 |
 | 2. LoCoMo session isolation | High | 결과 섞임 | upstream 시그니처 또는 delete 호출 |
-| 3. LoCoMo start/end 인덱스 | Medium | 데이터셋 범위 어긋남 | upstream argparse + wrapper 전달 |
+| 3. LoCoMo start/end 인덱스 | ~~Medium~~ DONE | ~~데이터셋 범위 어긋남~~ 해결 | ~~upstream argparse + wrapper 전달~~ 적용 완료 |
 | 4. LoCoMo search_limit | Medium | 침묵 무효 | upstream argparse + wrapper 전달 |
 | 5. chunk 비교 자동화 | Medium | 사용자 오해 | wrapper 만 (upstream 무관) |
 
