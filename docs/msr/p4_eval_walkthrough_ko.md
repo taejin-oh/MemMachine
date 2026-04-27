@@ -835,11 +835,12 @@ evaluation:
 
 | 값 | 코드 위치 |
 |---|---|
-| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:159-223` `build_configuration_yml()` |
-| reranker list → resources.rerankers + primary_reranker 처리 | `scripts/generate_config.py:154-165` |
-| `message_sentence_chunking`, `prepend_user_prefix` 주입 | `scripts/generate_config.py:226-242` `_apply_fixed_to_configuration()` |
-| 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py:329` `deep_merge(...)` |
-| `configuration.generated_path` 박는 곳 | `scripts/generate_config.py:336-337` |
+| reranker list 검증/정규화 (id/provider/config/primary/rrf-hybrid 참조) | `scripts/generate_config.py:146-241` `_validate_and_normalize_rerankers()` |
+| `episode_store`, `episodic_memory`, `retrieval_agent`, `resources` 의 골격 | `scripts/generate_config.py:243-319` `build_configuration_yml()` |
+| `message_sentence_chunking`, `prepend_user_prefix` 주입 | `scripts/generate_config.py:321-338` `_apply_fixed_to_configuration()` |
+| `benchmark.data_path` 절대경로 resolve (LoCoMo 등) | `scripts/generate_config.py:434-441` (`main()` 안) |
+| 4-way merge (base + p4 + json + CLI) | `scripts/generate_config.py:425` `deep_merge(...)` |
+| `configuration.generated_path` 박는 곳 | `scripts/generate_config.py:443-444` |
 
 ### 6) `--from-json` 으로 같은 결과 재현 (선택 검증)
 
@@ -860,15 +861,28 @@ diff 가 `run_name` / `generated_path` 두 줄만 차이 나면 4-way merge 가 
 
 ### 7) 흔한 실패 케이스
 
+generate_config 단계에서 잡히는 에러 (모두 명시적 `ValueError`):
+
 | 증상 | 원인 |
 |---|---|
 | `ERROR: --problem (or 'problem' in JSON) is required` | `--problem` 빠짐 |
 | `mode=profile requires both configuration.model_profile and configuration.db_profile` | 두 인자 중 하나 누락 |
 | `FileNotFoundError: configs/profiles/models/my_model.yaml` | 4-A 에서 파일 복사 안 함 또는 이름 오타 |
-| `KeyError: 'embedder'` 또는 `KeyError: 'rerankers'` | profile YAML 의 yaml 들여쓰기/key 누락 |
-| `model profile 'rerankers' must contain at least one entry` | rerankers 가 빈 list |
-| `primary_reranker=... not found in rerankers ids ...` | `primary_reranker` 가 가리키는 id 가 rerankers 안에 없음 (오타) |
-| `pydantic.ValidationError: api_key Field required` (ingest 시점) | profile YAML 의 placeholder 안 바꿈 |
+| `KeyError: 'embedder'` 또는 `KeyError: 'llm_model'` | profile YAML 의 들여쓰기/key 누락 |
+| `legacy 'reranker:' is no longer supported. Remove it and use only 'rerankers:' list.` | profile YAML 에 새 `rerankers:` 와 옛 `reranker:` 가 동거 |
+| `model profile schema changed: use 'rerankers:' (list) instead of legacy 'reranker:' (dict)` | profile YAML 이 옛 단일 dict 형식만 들고 있음 |
+| `model profile must define 'rerankers' as a non-empty list` | `rerankers:` 키 자체가 없음 |
+| `model profile 'rerankers' must be a list, got dict` | `rerankers:` 가 dict 로 적힘 (`-` 빠짐) |
+| `model profile 'rerankers' must be a non-empty list of entries` | `rerankers: []` 빈 list |
+| `rerankers[<idx>] is missing required 'id'` / `'provider'` | entry 의 필수 키 누락 |
+| `rerankers[<idx>] (id='...') config must be a mapping, got <type>` | `config:` 가 dict 가 아닌 값 (문자열, list 등) |
+| `rerankers contains duplicate id: '...'` | 같은 id 가 list 안에 두 번 |
+| `primary_reranker='...' not found in rerankers ids [...]` | `primary_reranker` 가 가리키는 id 가 list 에 없음 (오타) |
+| `rrf-hybrid reranker '...' requires non-empty config.reranker_ids` | hybrid 의 결합 대상 id 가 비어 있음 |
+| `rrf-hybrid reranker '...' config.reranker_ids must be a non-empty list of strings` | `reranker_ids` 가 list[str] 이 아님 (문자열 단일 등) |
+| `rrf-hybrid reranker '...' references unknown id '...'` | hybrid 가 가리키는 id 가 같은 list 안에 없음 |
+| `rrf-hybrid reranker '...' references itself in reranker_ids` | hybrid 가 자기 자신을 결합 대상으로 |
+| `pydantic.ValidationError: api_key Field required` (ingest 시점) | profile YAML 의 placeholder 안 바꿈 — wrapper 가 아니라 MemMachine 본체 `*_conf.py:parse()` 가 잡음 |
 
 ### 8) 산출 디렉토리
 
@@ -1019,14 +1033,209 @@ rerankers:
 
 ### 검증
 
-`generate_config.py` 가 다음 두 에러를 미리 잡음:
-- `model profile 'rerankers' must contain at least one entry` — list 가 빈 경우
-- `primary_reranker=... not found in rerankers ids [...]` — primary 가 가리키는 id 가 rerankers 에 없는 경우 (오타 등)
+`generate_config.py` 의 `_validate_and_normalize_rerankers()` 가 generate 시점에 명시적 `ValueError` 로 잡는 항목:
+- legacy `reranker:` (단일 dict) 또는 `reranker:` 와 `rerankers:` 동거
+- `rerankers:` 누락 / dict 로 적힘 / 빈 list
+- entry 의 `id` 또는 `provider` 누락 / 중복 `id`
+- `config:` 가 mapping 이 아님
+- `primary_reranker` 가 list 안에 없음
+- rrf-hybrid 의 `reranker_ids` 가 비어있음 / list[str] 아님 / 미지의 id 참조 / 자기 참조
 
-이외는 ingest 단계에서 `RerankersConf.parse()` (`reranker_conf.py:189-237`) 가 잘못된 provider/필드를 잡아냄.
+전체 메시지 표는 4-B (7) 흔한 실패 케이스 참고. 이외 (provider 별 config 필드 검증, api_key 필수 등) 는 ingest 시점에 MemMachine 본체 `RerankersConf.parse()` (`reranker_conf.py:189-237`) 와 `*_conf.py` 의 Pydantic 모델이 잡음.
+
+`scripts/test_generate_config_rerankers.py` 에 위 16 케이스가 unit test 로 박혀 있음:
+```sh
+uv run pytest scripts/test_generate_config_rerankers.py -v
+```
+
+---
+
+## 4-C: ingest 단독 실행 — DB 에 진짜 적재되는 단계
+
+여기서부터 **DB 및 embedding provider 호출이 실제로 발생**. LLM 답변 생성 호출은 ingest 가 아니라 retrieve 단계에서 발생함. 4-B 까지는 로컬 파일만 만들었지만 4-C 는 외부 시스템에 영향이 가는 단계라 idempotency / 재시도 / 정리 정책이 중요.
+
+### 1) 명령 한 줄
+
+```sh
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage ingest
+```
+
+`--stage all` 이 아니라 `--stage ingest` 만. **가장 비싼 단계라 분리 실행 권장**.
+
+### 2) 내부 흐름
+
+`scripts/run_pipeline.py:89-91` → `scripts/stages/ingest.py:run()` 호출.
+
+```python
+# scripts/stages/ingest.py:91-131 (run 함수)
+def run(run_cfg):
+    out_dir = cm.results_dir_for(run_cfg)        # results/p4_pilot/
+    out_path = out_dir / "ingest.jsonl"
+
+    if _already_ingested(out_path):              # ◄── idempotency 체크
+        print(f"[ingest] skip — {out_path} already marked ok")
+        return out_path
+
+    config_path = cm.resolve_config_path(run_cfg) # configs/generated/p4_pilot_configuration.yml
+    session_id = cm.session_id_for(run_cfg)       # eval_tool_longmemeval_p4_pilot
+    bench_name = run_cfg["benchmark"]["name"]     # longmemeval / hotpot / locomo
+
+    if bench_name == "longmemeval":
+        info = _ingest_longmemeval(run_cfg, config_path, session_id)
+    elif bench_name == "hotpot":
+        info = _ingest_hotpot(...)
+    elif bench_name == "locomo":
+        info = _ingest_locomo(...)
+
+    cm.write_jsonl(out_path, [{"status": "ok", ...}])  # ◄── ok 마커 기록
+```
+
+LongMemEval 분기는 기존 코드를 직접 import 해서 `length`/`split` 만 넘김. LoCoMo 분기는 subprocess 로 `evaluation/retrieval_agent/locomo_ingest.py` 를 띄우면서 `--data-path` 를 넘김.
+
+### 3) ingest 시 실제로 어디에 무엇이 저장되나 (LongMemEval 기준)
+
+`length: 5` 라고 가정. 한 sample 안에 `haystack_sessions` (질문 답에 필요한 과거 대화 세션들) + `question`/`answer`/`supporting_facts` 가 있음. ingest 단계는 **질문은 안 건드리고 `haystack_sessions` 만 적재**.
+
+각 sample 마다:
+1. `_collect_turn_contents()` 가 해당 sample 의 모든 turn 을 episode content 로 변환 (긴 content 는 max_chars 기준으로 split → episode 자체 수가 늘어남)
+2. 각 episode 에 `session_key=<session_id>` 가 박힘 (`agent_utils.py:458`)
+3. `EpisodicMemory.add_memory_episodes()` 호출 — eval wrapper 는 `agent_utils.init_memmachine_params()` 에서 `short_term_memory=None` 으로 EpisodicMemory 를 만들기 때문에 (`agent_utils.py:461`) **long-term memory 만 사용**
+4. `LongTermMemory` → `DeclarativeMemory` 가 episode 별로 derivative 를 만들어 embedding + Neo4j 노드 저장. `message_sentence_chunking=true` 이면 `_derive_derivatives()` 가 episode 본문을 sentence 단위로 쪼개 **검색용 derivative/embedding 수가 늘어남** (episode 자체는 그대로)
+
+> **단정 금지** — configuration.yml 에 `profile_storage` (Postgres) 가 포함돼 있어도 **현재 eval wrapper 의 LongMemEval ingest 경로에서 Postgres session row 가 반드시 생성된다고 보장하지 않음**. 본체 동작은 환경/설정에 따라 다를 수 있어 확인용으로만 쓸 것.
+
+### 4) `session_id` 의 격리 역할
+
+`scripts/stages/_common.py:session_id_for()` 가 만드는 ID:
+```
+eval_tool_{benchmark}_{run_name}    # 예: eval_tool_longmemeval_p4_pilot
+```
+
+이 값이 EpisodicMemory 의 `session_key` 로 들어가고, declarative_memory 가 노드 저장 시 `mangle_property_key()` 를 적용해 **`filterable_session_key`** 라는 property name 으로 박음 (`packages/server/src/memmachine_server/episodic_memory/declarative_memory/data_types.py:87` + `declarative_memory.py:128-130`).
+
+같은 DB 인스턴스에서 다른 `run_name` 으로 ingest 하면 `filterable_session_key` 가 달라서 episode 가 섞이지 않음. retrieve 도 같은 session_key 로만 검색.
+
+> **주의** — 이건 LongMemEval 한정. **HotpotQA(p2) 는 upstream 코드가 `hotpotqa_group` 으로 session_id 하드코드** (`USAGE.md:200`). p2 를 같은 DB 에서 두 번 돌리면 episode 가 섞임. p5(LoCoMo) 는 `group_{idx}` 형식. p2/p5 반복 실행 시 공식 delete 경로 (5절) 로 정리 필요.
+
+### 5) p5 (LoCoMo) 의 추가 흐름
+
+LoCoMo 는 HuggingFace 가 아니라 **로컬 JSON 경로** 가 필요. PR #19 부터 `configs/problems/p5.yaml` 에 default 가 박혀있어서 첫 실행도 자동으로 동작:
+
+```yaml
+# configs/problems/p5.yaml
+benchmark:
+  name: locomo
+  data_path: evaluation/data/locomo10.json   # repo-root 상대
+```
+
+PR #20 부터 `generate_config.py` 가 이 상대경로를 **절대경로로 resolve 해서 run YAML 에 박음**. `configs/runs/p5_pilot.yaml` 안에는 절대경로가 보임:
+
+```yaml
+benchmark:
+  name: locomo
+  data_path: /home/user/MemMachine/evaluation/data/locomo10.json
+```
+
+이 결과 LoCoMo subprocess (`locomo_ingest.py --data-path ...`) 는 cwd 와 무관하게 동일 파일을 가리킴. 다른 위치의 데이터를 쓰고 싶으면 JSON override 또는 직접 편집으로 절대경로를 덮어 쓰면 됨.
+
+### 6) idempotency — 같은 run 으로 두 번 호출
+
+`_already_ingested()` (`ingest.py:25-32`) 가 `results/{run_name}/ingest.jsonl` 마지막 줄을 보고 `status: "ok"` 면 skip:
+
+```sh
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage ingest
+# [ingest] benchmark=longmemeval  config=...  session=eval_tool_longmemeval_p4_pilot
+# [ingest] ok → results/p4_pilot/ingest.jsonl
+
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage ingest  # 두 번째
+# [ingest] skip — results/p4_pilot/ingest.jsonl already marked ok
+```
+
+**중요**: skip 은 jsonl 파일 존재 여부로만 판단. **DB 자체는 안 봄.** jsonl 만 있고 DB 가 비었으면 (수동 정리, 다른 머신 등) skip 되어 retrieve 가 빈 검색만 함. 의심스러우면 jsonl 삭제 후 재시도.
+
+### 7) 산출물 — `results/{run_name}/ingest.jsonl`
+
+```json
+{"status": "ok", "started_at": "...", "finished_at": "...", "session_id": "eval_tool_longmemeval_p4_pilot", "benchmark": "longmemeval", "num_questions": 5}
+```
+한 줄짜리 마커. `num_questions` 가 요청 `length` 와 **대체로** 일치하는지 확인. `load_longmemeval_dataset()` 이 `min(length, len(dataset))` 만큼 로드하므로 `length` 가 dataset 크기보다 크면 실제 dataset 크기까지만 로드되어 `num_questions < length` 가 정상.
+
+### 8) DB 직접 확인 (옵션, 탐색용)
+
+#### Neo4j — 정확 쿼리
+```cypher
+MATCH (n)
+WHERE n.filterable_session_key = 'eval_tool_longmemeval_p4_pilot'
+RETURN labels(n), count(n);
+```
+property name 은 `filterable_<original key>` 형식. `original key` 는 declarative_memory 가 episode 의 `session_key` 를 그대로 박은 값 (`long_term_memory.py:108`).
+
+#### Neo4j — 탐색용 (schema 가 다를 때 안전)
+```cypher
+MATCH (n)
+WHERE any(k IN keys(n) WHERE toString(n[k]) CONTAINS 'eval_tool_longmemeval_p4_pilot')
+RETURN labels(n), keys(n), count(n)
+LIMIT 5;
+```
+실제 노드의 라벨/속성을 한 번 보고 위 정확 쿼리의 property name 을 확정하는 데 사용.
+
+#### Postgres
+환경/본체 설정에 따라 row 가 생길 수 있으나 **현재 eval wrapper 경로에서는 필수 확인 항목이 아님**. 디버깅 시 `\dt` 로 schema 본 후 추정.
+
+### 9) 흔한 실패 케이스
+
+| 증상 | 원인 |
+|---|---|
+| `ConnectionError: bolt://localhost:7687` | Neo4j 안 떠 있음. `nc -zv localhost 7687` 부터 |
+| `OSError: connection refused` (Postgres) | Postgres 안 떠 있음 (eval wrapper 경로에선 필수는 아니지만 본체가 초기화 단계에서 연결을 시도할 수 있음) |
+| `pydantic.ValidationError: api_key Field required` | profile YAML 의 `<OPENAI_API_KEY>` placeholder 그대로 |
+| `huggingface_hub.errors.RepositoryNotFoundError` 등 (LongMemEval) | dataset 다운 실패 — 3단계 옵션 A (HF 캐시 옮기기) 참고 |
+| `benchmark.data_path is required for locomo` | p5.yaml 에서 `data_path` 가 빠짐. PR #19 이후 default 박힘 — 그래도 빠지면 사용자 override 가 덮은 것 |
+| `FileNotFoundError: ...locomo10.json` | data_path 가 가리키는 파일이 없음. PR #20 이후 절대경로로 resolve 되므로 그 절대경로 확인 |
+| ingest 가 도중에 멈춤 | embedder rate-limit. `evaluation.ingest_concurrency` 줄이거나 (`base.yaml:31`) `max_retry_interval_seconds` 조정 |
+| ingest OK 끝났는데 episode 0개 | `haystack_sessions` 가 빈 dataset, 또는 `_collect_turn_contents()` 가 빈 content 로 처리 |
+
+### 10) 중간에 죽었을 때 복구
+
+ingest.jsonl 이 안 만들어졌으면 (= status ok 마커 없음):
+- 재실행 시 처음부터 다시 함
+- 그런데 이전 시도에서 일부 episode 는 이미 DB 에 들어가있어 → **중복 ingest** 가능
+
+대응 — **공식 delete 경로를 우선** 사용:
+
+#### LongMemEval — `longmemeval_delete()` (권장)
+```sh
+python evaluation/retrieval_agent/longmemeval_test.py \
+    --run-type delete \
+    --test-target memmachine \
+    --session-id eval_tool_longmemeval_p4_pilot \
+    --config-path configs/generated/p4_pilot_configuration.yml
+```
+
+#### HotpotQA
+```sh
+python evaluation/retrieval_agent/hotpotQA_test.py \
+    --run-type delete \
+    --test-target memmachine \
+    --config-path configs/generated/p2_pilot_configuration.yml
+```
+
+#### LoCoMo
+```sh
+python evaluation/retrieval_agent/locomo_delete.py \
+    --data-path /abs/path/locomo10.json \
+    --config-path configs/generated/p5_pilot_configuration.yml
+```
+
+공식 경로로도 남는 데이터가 있거나 schema 확인이 필요하면 마지막 수단으로 8절의 탐색용 cypher 로 확인 후 Neo4j 수동 정리.
+
+### 11) 4-D 가기 전 체크리스트
+
+- [ ] `results/{run_name}/ingest.jsonl` 존재 + `status: ok` + `num_questions` 가 요청 `length` 와 대체로 일치 (dataset 크기에 따라 작을 수 있음)
+- [ ] (옵션) Neo4j 에서 `filterable_session_key` 기준 노드 count > 0
+- [ ] stderr 에 retry / rate-limit warning 이 없거나 적음
 
 ---
 
 다음 메모:
-- **4-C**: ingest 단독 실행, DB 적재 확인
-- **4-D**: retrieve / judge / analyze
+- **4-D**: retrieve → generate → judge → analyze. sweep cell 단위 검증, jsonl 산출물 모양, 실패 시 cell 단위 재실행 정책
