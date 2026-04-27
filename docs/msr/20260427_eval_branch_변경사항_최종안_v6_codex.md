@@ -228,3 +228,33 @@ ingest → retrieve → generate → judge → analyze 단계로 분리.
 - 본 문서는 **브랜치 변경사항 정리/검증 관점 문서**이며, 테스트 통과의 공식 증빙 문서가 아니다.
 - 테스트 pass/fail 단정은 PR의 Testing 로그 또는 CI 결과를 기준으로 별도 확인한다.
 - 문서 내 구현 상태(적용/미적용)와 운영 한계(EDWIN 미적용, JSON-str off)는 "해석 경계"를 명확히 하기 위한 기술이며, 성능 수치의 확정적 보증을 의미하지 않는다.
+
+---
+
+## G. 리뷰어용 빠른 추적 절차 (inline 코멘트 대응)
+
+아래 명령으로 "문서 주장 ↔ 실제 코드"를 즉시 대조할 수 있다.
+
+```bash
+# 1) fork 기준점 이후 전체 변화량
+
+git rev-list --count 6b1988b..HEAD
+git diff --numstat 6b1988b..HEAD | awk '{add+=$1; del+=$2; c++} END {print c, add, del}'
+
+# 2) LongMemEval 토글/파라미터/ingest 마커
+rg -n "prepend_user_prefix|DEFAULT_SEARCH_LIMIT|--search-limit|INGEST_START|INGEST_OK|INGEST_FAIL" \
+  evaluation/retrieval_agent/longmemeval_test.py \
+  evaluation/retrieval_agent/run_test.sh \
+  evaluation/retrieval_agent/run_benchmark_matrix.sh
+
+# 3) chunk wiring / STM summarization / wrapper guard
+rg -n "message_sentence_chunking|summarization_enabled|session_id_for|_already_ingested|_add_pareto|_add_multisession_decomposition|n_runs" \
+  packages/server/src/memmachine_server/common/configuration/episodic_config.py \
+  packages/server/src/memmachine_server/episodic_memory/short_term_memory/short_term_memory.py \
+  packages/server/src/memmachine_server/episodic_memory/short_term_memory/service_locator.py \
+  evaluation/utils/agent_utils.py \
+  scripts/run_pipeline.py \
+  scripts/stages/*.py
+```
+
+주의: 본 문서는 위 추적을 돕는 인덱스이며, 테스트 pass/fail의 1차 근거는 CI/실행 로그다.
