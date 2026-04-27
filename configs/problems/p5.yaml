@@ -5,7 +5,9 @@ description: "LoCoMo — cat5 제외, length 만큼의 conversation group 으로
 
 benchmark:
   name: locomo
-  data_path: evaluation/data/locomo10.json   # repo-root 기준 상대경로 (절대경로도 가능).
+  # repo-root 기준 상대경로. run_pipeline.py 를 repo root 에서 실행할 것을 전제 (subprocess 가 같은 cwd 사용).
+  # 다른 cwd 에서 실행하거나 데이터를 외부에 두면 절대경로로 덮어 쓰세요 (CLI 또는 JSON override 또는 직접 편집).
+  data_path: evaluation/data/locomo10.json
   length: 10   # locomo10.json 의 conversation group 수 (전체). CLI `--length N` 으로 override 가능.
   # cat5 (adversarial) skip 은 evaluation/retrieval_agent/locomo_search.py 에 자동 포함.
 
