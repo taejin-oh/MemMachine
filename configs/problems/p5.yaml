@@ -5,6 +5,9 @@ description: "LoCoMo — cat5 제외, 기존 locomo_search.py 처리 범위 기�
 
 benchmark:
   name: locomo
+  # repo-root 기준 상대경로. run_pipeline.py 를 repo root 에서 실행할 것을 전제 (subprocess 가 같은 cwd 사용).
+  # 다른 cwd 에서 실행하거나 데이터를 외부에 두면 절대경로로 덮어 쓰세요 (CLI 또는 JSON override 또는 직접 편집).
+  data_path: evaluation/data/locomo10.json
   # cat5 (adversarial) skip 은 evaluation/retrieval_agent/locomo_search.py:135 에 자동 포함.
   # 단 같은 파일의 start_index=0 / end_index=20 (line 115-117) 제한을 따르므로
   # "전체 1094 문항 평가" 가 보장되지는 않음 — docs/msr/msr_eval_tool_todo_pr7.md 참조.
