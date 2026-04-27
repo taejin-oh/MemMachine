@@ -193,7 +193,12 @@ CLI 인자와 JSON 이 충돌하면 CLI 가 우선.
 → 현 PR 에서는 placeholder + hook 자리만 있고 실제 적용 미구현 (`DECISIONS.md` D-003). 답변 prompt 는 기본 ANSWER_PROMPT 사용. EDWIN 텍스트 확보 시 `prompts/EDWIN{1,3}.txt` 에 저장하고 `scripts/stages/generate.py` 의 hook 에 적용 코드 추가하면 됩니다.
 
 **Q5. judge LLM 을 답변 LLM 과 다르게 쓰고 싶어요.**
-→ working `configuration.yml` 의 `resources.language_models` 에 judge 모델 ID 가 등록되어 있어야 합니다 (`mode=existing` 으로 본인이 직접 만든 config 를 쓰면 가장 간단). 그 후 `generate_config.py --judge-model {ID}` 를 주면 judge 단계가 임시 사본에 `retrieval_agent.llm_model` 을 그 ID 로 swap 합니다. 미정의 ID 면 명시적 에러.
+→ 두 가지 경로가 있습니다.
+
+1. **별도 provider / base_url / api_key / model 로 judge 를 띄우려면** model profile 에 optional `judge_llm:` 블록을 추가하세요 (`configs/profiles/models/_example.yaml` 의 주석 처리된 예시 참고). `generate_config.py` 가 이를 `resources.language_models` 에 별도 entry 로 등록하고, working `configuration.yml` 의 `retrieval_agent.judge_llm_model` 에 그 ID 를 연결합니다. `judge_llm.provider` 는 `openai-responses` / `openai-chat-completions` / `amazon-bedrock` 중 하나여야 합니다.
+2. **이미 등록된 다른 ID 로 pointer 만 swap 하려면** `generate_config.py --judge-model {ID}` 를 쓰세요 (또는 run YAML 에 `judge.llm_model_id` 를 직접 적어도 됩니다). judge 단계가 임시 사본에서 `retrieval_agent.judge_llm_model` 만 그 ID 로 바꾸며, `retrieval_agent.llm_model` (답변 LLM) 은 절대 건드리지 않습니다. 미정의 ID 면 명시적 에러.
+
+`judge_llm:` 도 `--judge-model` 도 없으면 judge 는 `retrieval_agent.llm_model` 로 fallback 하므로 기존 프로파일은 그대로 동작합니다.
 
 **Q6. 반복 실행 (N runs) / 자동 판정?**
 → 현재 `n_runs=1` 만 지원. `n_runs > 1` 면 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work.

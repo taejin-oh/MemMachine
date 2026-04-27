@@ -1,9 +1,9 @@
 # Model profile placeholder
 #
-# 한 모델 프로파일 = (embedder + rerankers + llm_model) 셋
+# 한 모델 프로파일 = (embedder + rerankers + llm_model + 선택적 judge_llm) 셋
 # generate_config.py 가 이 셋을 읽어 configuration.yml 의
 #   - episodic_memory.long_term_memory.embedder / reranker
-#   - retrieval_agent.llm_model / reranker
+#   - retrieval_agent.llm_model / reranker / judge_llm_model
 #   - resources.embedders / language_models / rerankers
 # 섹션을 자동 구성합니다.
 #
@@ -46,3 +46,16 @@ llm_model:
     api_key: "<OPENAI_API_KEY>"
     base_url: https://api.openai.com/v1
     model: gpt-4o-mini
+
+# (선택) Judge LLM. 생략하면 위의 llm_model 을 그대로 judge 로 재사용합니다.
+# 답변 LLM 과 다른 endpoint / api_key / model 로 judge 를 띄우고 싶을 때만
+# 아래 블록을 채우세요. provider 는 evaluation/retrieval_agent/llm_judge.py 가
+# 지원하는 값이어야 합니다: openai-responses / openai-chat-completions / amazon-bedrock.
+# id 가 llm_model.id 와 같다면 provider/config 도 동일해야 합니다 (충돌 방지).
+# judge_llm:
+#   id: my_judge
+#   provider: openai-chat-completions
+#   config:
+#     api_key: "<OPENAI_API_KEY>"
+#     base_url: https://api.openai.com/v1
+#     model: gpt-4o
