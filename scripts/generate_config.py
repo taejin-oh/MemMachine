@@ -151,7 +151,12 @@ def _validate_and_normalize_rerankers(
     Each normalized entry has 'id', 'provider', 'config' (defaulted to {}).
     Raises ValueError with actionable messages on schema/consistency issues.
     """
-    if "reranker" in model_profile and "rerankers" not in model_profile:
+    if "reranker" in model_profile:
+        if "rerankers" in model_profile:
+            raise ValueError(
+                "legacy 'reranker:' is no longer supported. Remove it and use "
+                "only 'rerankers:' list."
+            )
         raise ValueError(
             "model profile schema changed: use 'rerankers:' (list) instead of "
             "legacy 'reranker:' (dict). Wrap the existing block as a single-item "
@@ -159,6 +164,12 @@ def _validate_and_normalize_rerankers(
             "primary_reranker is optional (defaults to the first list item)."
         )
     raw_list = model_profile.get("rerankers")
+    if raw_list is None:
+        raise ValueError("model profile must define 'rerankers' as a non-empty list")
+    if not isinstance(raw_list, list):
+        raise ValueError(
+            f"model profile 'rerankers' must be a list, got {type(raw_list).__name__}"
+        )
     if not raw_list:
         raise ValueError(
             "model profile 'rerankers' must be a non-empty list of entries"
@@ -181,10 +192,16 @@ def _validate_and_normalize_rerankers(
             )
         if rid in seen_ids:
             raise ValueError(f"rerankers contains duplicate id: {rid!r}")
+        config = entry.get("config")
+        if config is None:
+            config = {}
+        elif not isinstance(config, dict):
+            raise ValueError(
+                f"rerankers[{idx}] (id={rid!r}) config must be a mapping, got "
+                f"{type(config).__name__}"
+            )
         seen_ids.add(rid)
-        normalized.append(
-            {"id": rid, "provider": provider, "config": entry.get("config") or {}}
-        )
+        normalized.append({"id": rid, "provider": provider, "config": config})
 
     primary_id = model_profile.get("primary_reranker") or normalized[0]["id"]
     if primary_id not in seen_ids:
@@ -202,6 +219,11 @@ def _validate_and_normalize_rerankers(
             raise ValueError(
                 f"rrf-hybrid reranker {entry['id']!r} requires non-empty "
                 "config.reranker_ids"
+            )
+        if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+            raise ValueError(
+                f"rrf-hybrid reranker {entry['id']!r} config.reranker_ids must be "
+                "a non-empty list of strings"
             )
         for ref in ids:
             if ref == entry["id"]:

@@ -187,3 +187,46 @@ def test_rrf_hybrid_empty_reranker_ids_raises():
     )
     with pytest.raises(ValueError, match=r"non-empty config\.reranker_ids"):
         build_configuration_yml(profile, _DB_PROFILE)
+
+
+def test_rerankers_must_be_list():
+    profile = dict(_BASE_MODEL)
+    profile["rerankers"] = {"id": "my_bm25", "provider": "bm25"}
+    with pytest.raises(ValueError, match=r"must be a list"):
+        _validate_and_normalize_rerankers(profile)
+
+
+def test_rerankers_none_raises():
+    profile = dict(_BASE_MODEL)
+    with pytest.raises(ValueError, match=r"must define 'rerankers'"):
+        _validate_and_normalize_rerankers(profile)
+
+
+def test_reranker_config_must_be_mapping():
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": "wrong"}])
+    with pytest.raises(ValueError, match=r"config must be a mapping"):
+        _validate_and_normalize_rerankers(profile)
+
+
+def test_rrf_hybrid_reranker_ids_must_be_list_of_strings():
+    profile = _model(
+        [
+            {"id": "my_bm25", "provider": "bm25"},
+            {
+                "id": "my_hybrid",
+                "provider": "rrf-hybrid",
+                "config": {"reranker_ids": "my_bm25"},
+            },
+        ],
+        primary="my_hybrid",
+    )
+    with pytest.raises(ValueError, match=r"list of strings"):
+        build_configuration_yml(profile, _DB_PROFILE)
+
+
+def test_legacy_reranker_with_rerankers_present_raises():
+    profile = dict(_BASE_MODEL)
+    profile["reranker"] = {"id": "old", "provider": "bm25"}
+    profile["rerankers"] = [{"id": "new", "provider": "bm25"}]
+    with pytest.raises(ValueError, match=r"no longer supported"):
+        _validate_and_normalize_rerankers(profile)
