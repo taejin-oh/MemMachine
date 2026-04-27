@@ -1052,7 +1052,7 @@ uv run pytest scripts/test_generate_config_rerankers.py -v
 
 ## 4-C: ingest 단독 실행 — DB 에 진짜 적재되는 단계
 
-여기서부터 **DB·LLM 호출이 실제로 발생**. 4-B 까지는 로컬 파일만 만들었지만 4-C 는 외부 시스템에 영향이 가는 단계라 idempotency / 재시도 / 정리 정책이 중요.
+여기서부터 **DB 및 embedding provider 호출이 실제로 발생**. LLM 답변 생성 호출은 ingest 가 아니라 retrieve 단계에서 발생함. 4-B 까지는 로컬 파일만 만들었지만 4-C 는 외부 시스템에 영향이 가는 단계라 idempotency / 재시도 / 정리 정책이 중요.
 
 ### 1) 명령 한 줄
 
@@ -1092,18 +1092,17 @@ def run(run_cfg):
 
 LongMemEval 분기는 기존 코드를 직접 import 해서 `length`/`split` 만 넘김. LoCoMo 분기는 subprocess 로 `evaluation/retrieval_agent/locomo_ingest.py` 를 띄우면서 `--data-path` 를 넘김.
 
-### 3) DB 에 무엇이 들어가나 (LongMemEval 기준)
+### 3) ingest 시 실제로 어디에 무엇이 저장되나 (LongMemEval 기준)
 
-`length: 5` 라고 가정. 한 sample 안에 `haystack_sessions` (질문 답에 필요한 과거 대화 세션들) + `question`/`answer`/`supporting_facts` 가 있음. ingest 단계는 **질문은 안 건드리고 `haystack_sessions` 만 DB 에 적재**.
+`length: 5` 라고 가정. 한 sample 안에 `haystack_sessions` (질문 답에 필요한 과거 대화 세션들) + `question`/`answer`/`supporting_facts` 가 있음. ingest 단계는 **질문은 안 건드리고 `haystack_sessions` 만 적재**.
 
 각 sample 마다:
-1. `haystack_sessions` 의 모든 turn 을 episode 로 변환
-2. `message_sentence_chunking: true` 이면 message 를 문장 단위로 추가 chunk
-3. embedder 로 벡터화
-4. Neo4j (vector_graph_store) 에 episode 노드 + embedding + 그래프 관계 저장
-5. Postgres (profile_storage) 에 session 메타데이터 저장
+1. `_collect_turn_contents()` 가 해당 sample 의 모든 turn 을 episode content 로 변환 (긴 content 는 max_chars 기준으로 split → episode 자체 수가 늘어남)
+2. 각 episode 에 `session_key=<session_id>` 가 박힘 (`agent_utils.py:458`)
+3. `EpisodicMemory.add_memory_episodes()` 호출 — eval wrapper 는 `agent_utils.init_memmachine_params()` 에서 `short_term_memory=None` 으로 EpisodicMemory 를 만들기 때문에 (`agent_utils.py:461`) **long-term memory 만 사용**
+4. `LongTermMemory` → `DeclarativeMemory` 가 episode 별로 derivative 를 만들어 embedding + Neo4j 노드 저장. `message_sentence_chunking=true` 이면 `_derive_derivatives()` 가 episode 본문을 sentence 단위로 쪼개 **검색용 derivative/embedding 수가 늘어남** (episode 자체는 그대로)
 
-5 question × 평균 ~50 turn × 평균 ~3 sentence chunk = **수백 개의 episode**. `length: 500` 이면 곱하기 100.
+> **단정 금지** — configuration.yml 에 `profile_storage` (Postgres) 가 포함돼 있어도 **현재 eval wrapper 의 LongMemEval ingest 경로에서 Postgres session row 가 반드시 생성된다고 보장하지 않음**. 본체 동작은 환경/설정에 따라 다를 수 있어 확인용으로만 쓸 것.
 
 ### 4) `session_id` 의 격리 역할
 
@@ -1112,13 +1111,15 @@ LongMemEval 분기는 기존 코드를 직접 import 해서 `length`/`split` 만
 eval_tool_{benchmark}_{run_name}    # 예: eval_tool_longmemeval_p4_pilot
 ```
 
-같은 DB 인스턴스에서 다른 `run_name` 으로 ingest 하면 **session_id 가 달라서 episode 가 섞이지 않음**. retrieve 단계도 같은 session_id 로만 검색해서 본인 run 의 episode 만 봄.
+이 값이 EpisodicMemory 의 `session_key` 로 들어가고, declarative_memory 가 노드 저장 시 `mangle_property_key()` 를 적용해 **`filterable_session_key`** 라는 property name 으로 박음 (`packages/server/src/memmachine_server/episodic_memory/declarative_memory/data_types.py:87` + `declarative_memory.py:128-130`).
 
-> **주의** — 이건 LongMemEval 한정. **HotpotQA(p2) 는 upstream 코드가 `hotpotqa_group` 으로 session_id 하드코드** (`USAGE.md:200`). p2 를 같은 DB 에서 두 번 돌리면 episode 가 섞임. p5(LoCoMo) 는 `group_{idx}` 형식. p2/p5 반복 실행 시 `evaluation/retrieval_agent/hotpotQA_test.py --run-type delete` 또는 `locomo_delete.py` 로 정리 필요.
+같은 DB 인스턴스에서 다른 `run_name` 으로 ingest 하면 `filterable_session_key` 가 달라서 episode 가 섞이지 않음. retrieve 도 같은 session_key 로만 검색.
+
+> **주의** — 이건 LongMemEval 한정. **HotpotQA(p2) 는 upstream 코드가 `hotpotqa_group` 으로 session_id 하드코드** (`USAGE.md:200`). p2 를 같은 DB 에서 두 번 돌리면 episode 가 섞임. p5(LoCoMo) 는 `group_{idx}` 형식. p2/p5 반복 실행 시 공식 delete 경로 (5절) 로 정리 필요.
 
 ### 5) p5 (LoCoMo) 의 추가 흐름
 
-LoCoMo 는 HuggingFace 가 아니라 **로컬 JSON 경로** 가 필요함. PR #19 부터 `configs/problems/p5.yaml` 에 default 가 박혀있어서 첫 실행도 자동으로 동작:
+LoCoMo 는 HuggingFace 가 아니라 **로컬 JSON 경로** 가 필요. PR #19 부터 `configs/problems/p5.yaml` 에 default 가 박혀있어서 첫 실행도 자동으로 동작:
 
 ```yaml
 # configs/problems/p5.yaml
@@ -1127,7 +1128,7 @@ benchmark:
   data_path: evaluation/data/locomo10.json   # repo-root 상대
 ```
 
-PR #20 부터 `generate_config.py` 가 이 상대경로를 **절대경로로 resolve 해서 run YAML 에 박음**. 즉 `configs/runs/p5_pilot.yaml` 안에는 절대경로가 보임:
+PR #20 부터 `generate_config.py` 가 이 상대경로를 **절대경로로 resolve 해서 run YAML 에 박음**. `configs/runs/p5_pilot.yaml` 안에는 절대경로가 보임:
 
 ```yaml
 benchmark:
@@ -1135,7 +1136,7 @@ benchmark:
   data_path: /home/user/MemMachine/evaluation/data/locomo10.json
 ```
 
-이 결과 LoCoMo subprocess (`locomo_ingest.py --data-path ...`) 는 cwd 와 무관하게 동일 파일을 가리킴. 다른 위치의 데이터를 쓰고 싶으면 `--use-existing-config` 와 무관하게 그냥 절대경로로 덮어 쓰면 됨 (CLI 인자가 없으므로 JSON override 또는 직접 편집).
+이 결과 LoCoMo subprocess (`locomo_ingest.py --data-path ...`) 는 cwd 와 무관하게 동일 파일을 가리킴. 다른 위치의 데이터를 쓰고 싶으면 JSON override 또는 직접 편집으로 절대경로를 덮어 쓰면 됨.
 
 ### 6) idempotency — 같은 run 으로 두 번 호출
 
@@ -1157,40 +1158,42 @@ python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage inges
 ```json
 {"status": "ok", "started_at": "...", "finished_at": "...", "session_id": "eval_tool_longmemeval_p4_pilot", "benchmark": "longmemeval", "num_questions": 5}
 ```
-한 줄짜리 마커. `num_questions` 가 `length` 와 일치하는지 확인.
+한 줄짜리 마커. `num_questions` 가 요청 `length` 와 **대체로** 일치하는지 확인. `load_longmemeval_dataset()` 이 `min(length, len(dataset))` 만큼 로드하므로 `length` 가 dataset 크기보다 크면 실제 dataset 크기까지만 로드되어 `num_questions < length` 가 정상.
 
-### 8) DB 직접 확인 (옵션)
+### 8) DB 직접 확인 (옵션, 탐색용)
 
-#### Neo4j
-```sh
-cypher-shell -u neo4j -p '<password>' \
-  "MATCH (n) WHERE n.session_id = 'eval_tool_longmemeval_p4_pilot' RETURN count(n);"
-```
-또는 Neo4j browser (`http://localhost:7474`):
+#### Neo4j — 정확 쿼리
 ```cypher
-MATCH (n) WHERE n.session_id = 'eval_tool_longmemeval_p4_pilot' RETURN count(n);
+MATCH (n)
+WHERE n.filterable_session_key = 'eval_tool_longmemeval_p4_pilot'
+RETURN labels(n), count(n);
 ```
-0 이면 ingest 가 실제로 안 된 거 (jsonl 만 만든 상태).
+property name 은 `filterable_<original key>` 형식. `original key` 는 declarative_memory 가 episode 의 `session_key` 를 그대로 박은 값 (`long_term_memory.py:108`).
+
+#### Neo4j — 탐색용 (schema 가 다를 때 안전)
+```cypher
+MATCH (n)
+WHERE any(k IN keys(n) WHERE toString(n[k]) CONTAINS 'eval_tool_longmemeval_p4_pilot')
+RETURN labels(n), keys(n), count(n)
+LIMIT 5;
+```
+실제 노드의 라벨/속성을 한 번 보고 위 정확 쿼리의 property name 을 확정하는 데 사용.
 
 #### Postgres
-```sh
-psql -h localhost -U memmachine -d memmachine \
-  -c "SELECT count(*) FROM sessions WHERE session_id = 'eval_tool_longmemeval_p4_pilot';"
-```
-테이블명/컬럼명은 MemMachine 본체 schema 따름. 없으면 `\dt` 로 본 후 추정.
+환경/본체 설정에 따라 row 가 생길 수 있으나 **현재 eval wrapper 경로에서는 필수 확인 항목이 아님**. 디버깅 시 `\dt` 로 schema 본 후 추정.
 
 ### 9) 흔한 실패 케이스
 
 | 증상 | 원인 |
 |---|---|
 | `ConnectionError: bolt://localhost:7687` | Neo4j 안 떠 있음. `nc -zv localhost 7687` 부터 |
-| `OSError: connection refused` (Postgres) | Postgres 안 떠 있음 |
+| `OSError: connection refused` (Postgres) | Postgres 안 떠 있음 (eval wrapper 경로에선 필수는 아니지만 본체가 초기화 단계에서 연결을 시도할 수 있음) |
 | `pydantic.ValidationError: api_key Field required` | profile YAML 의 `<OPENAI_API_KEY>` placeholder 그대로 |
 | `huggingface_hub.errors.RepositoryNotFoundError` 등 (LongMemEval) | dataset 다운 실패 — 3단계 옵션 A (HF 캐시 옮기기) 참고 |
 | `benchmark.data_path is required for locomo` | p5.yaml 에서 `data_path` 가 빠짐. PR #19 이후 default 박힘 — 그래도 빠지면 사용자 override 가 덮은 것 |
 | `FileNotFoundError: ...locomo10.json` | data_path 가 가리키는 파일이 없음. PR #20 이후 절대경로로 resolve 되므로 그 절대경로 확인 |
-| ingest 가 도중에 멈춤 | LLM rate-limit. `evaluation.ingest_concurrency` 줄이거나 (`base.yaml:31`) `max_retry_interval_seconds` 조정 |
-| ingest OK 끝났는데 episode 0개 | `haystack_sessions` 가 빈 dataset, 또는 chunking 설정이 모든 chunk 를 빈 문자열로 처리 |
+| ingest 가 도중에 멈춤 | embedder rate-limit. `evaluation.ingest_concurrency` 줄이거나 (`base.yaml:31`) `max_retry_interval_seconds` 조정 |
+| ingest OK 끝났는데 episode 0개 | `haystack_sessions` 가 빈 dataset, 또는 `_collect_turn_contents()` 가 빈 content 로 처리 |
 
 ### 10) 중간에 죽었을 때 복구
 
@@ -1198,18 +1201,38 @@ ingest.jsonl 이 안 만들어졌으면 (= status ok 마커 없음):
 - 재실행 시 처음부터 다시 함
 - 그런데 이전 시도에서 일부 episode 는 이미 DB 에 들어가있어 → **중복 ingest** 가능
 
-대응:
-1. **clean restart (안전)**:
-   - LongMemEval: Neo4j `MATCH (n) WHERE n.session_id = 'eval_tool_longmemeval_{run_name}' DETACH DELETE n;` + Postgres 의 해당 session_id row 삭제
-   - HotpotQA: `python evaluation/retrieval_agent/hotpotQA_test.py --run-type delete --config-path <configuration.yml> --test-target memmachine`
-   - LoCoMo: `python evaluation/retrieval_agent/locomo_delete.py ...`
-2. **중복 무시**: MemMachine 본체가 같은 (session_id, episode_content) 를 dedupe 한다면 그냥 재실행. 본체 동작 확실치 않으면 1번이 안전.
+대응 — **공식 delete 경로를 우선** 사용:
+
+#### LongMemEval — `longmemeval_delete()` (권장)
+```sh
+python evaluation/retrieval_agent/longmemeval_test.py \
+    --run-type delete \
+    --test-target memmachine \
+    --session-id eval_tool_longmemeval_p4_pilot \
+    --config-path configs/generated/p4_pilot_configuration.yml
+```
+
+#### HotpotQA
+```sh
+python evaluation/retrieval_agent/hotpotQA_test.py \
+    --run-type delete \
+    --test-target memmachine \
+    --config-path configs/generated/p2_pilot_configuration.yml
+```
+
+#### LoCoMo
+```sh
+python evaluation/retrieval_agent/locomo_delete.py \
+    --data-path /abs/path/locomo10.json \
+    --config-path configs/generated/p5_pilot_configuration.yml
+```
+
+공식 경로로도 남는 데이터가 있거나 schema 확인이 필요하면 마지막 수단으로 8절의 탐색용 cypher 로 확인 후 Neo4j 수동 정리.
 
 ### 11) 4-D 가기 전 체크리스트
 
-- [ ] `results/{run_name}/ingest.jsonl` 존재 + `status: ok` + `num_questions` 일치
-- [ ] (옵션) Neo4j 에서 episode 노드 count > 0
-- [ ] (옵션) Postgres 에서 session row >= 1
+- [ ] `results/{run_name}/ingest.jsonl` 존재 + `status: ok` + `num_questions` 가 요청 `length` 와 대체로 일치 (dataset 크기에 따라 작을 수 있음)
+- [ ] (옵션) Neo4j 에서 `filterable_session_key` 기준 노드 count > 0
 - [ ] stderr 에 retry / rate-limit warning 이 없거나 적음
 
 ---
