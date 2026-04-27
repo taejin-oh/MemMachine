@@ -59,8 +59,10 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
 
     config = Configuration.load_yml_file(config_path)
     lms = config.resources.language_models
-    judge_id = config.retrieval_agent.judge_llm_model
-    llm_id = judge_id if judge_id is not None else config.retrieval_agent.llm_model
+    # `or` (not `is not None`) so that an empty-string judge_llm_model is
+    # treated as unset and falls back to the answer llm_model — matches the
+    # documented "unset → fallback" intent.
+    llm_id = config.retrieval_agent.judge_llm_model or config.retrieval_agent.llm_model
     if not llm_id:
         raise ValueError(
             "judge LLM is not configured: set retrieval_agent.judge_llm_model "

@@ -208,6 +208,18 @@ def test_create_judge_fn_falls_back_to_answer_llm(tmp_path, monkeypatch):
     assert _FakeOpenAI.last_init["base_url"] == _JUDGE_URL
 
 
+def test_create_judge_fn_empty_string_judge_falls_back(tmp_path, monkeypatch):
+    """An empty-string judge_llm_model is treated as unset and falls back to llm_model."""
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    monkeypatch.setattr(_FakeOpenAI, "last_init", None)
+
+    fixture = _write_fixture(tmp_path, llm_model="ollama_model", judge_llm_model="")
+    create_judge_fn(str(fixture))
+
+    assert _FakeOpenAI.last_init is not None
+    assert _FakeOpenAI.last_init["base_url"] == _JUDGE_URL
+
+
 def test_create_judge_fn_raises_when_both_unset(tmp_path):
     """ValueError when neither judge_llm_model nor llm_model is set."""
     base = yaml.safe_load(_SAMPLE.read_text())
