@@ -149,12 +149,13 @@ _JUDGE_URL = "https://judge.example/v1"
 
 
 def _write_fixture(tmp_path, *, judge_llm_model, llm_model="openai_model"):
-    """Build a configuration.yml fixture with two openai-chat-completions LLMs.
+    """Build a configuration.yml fixture with two distinguishable LLM resources.
 
-    Sample defines `openai_model` and `ollama_model` under
-    openai-chat-completions; we reuse them as the two judge candidates and
-    overwrite their base_url to unambiguous unique values so the test can
-    confirm exactly which one create_judge_fn picked.
+    The sample config defines `openai_model` (provider openai-responses) and
+    `ollama_model` (provider openai-chat-completions). We overwrite their
+    base_url to unambiguous unique values so the test can confirm exactly
+    which entry create_judge_fn picked, regardless of whether the answer or
+    judge role is assigned to either ID.
     """
     base = yaml.safe_load(_SAMPLE.read_text())
     lms = base["resources"]["language_models"]
@@ -184,7 +185,7 @@ class _FakeOpenAI:
 def test_create_judge_fn_picks_judge_llm_entry(tmp_path, monkeypatch):
     """When judge_llm_model is set, the judge resource (not llm_model) is used."""
     monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
-    _FakeOpenAI.last_init = None
+    monkeypatch.setattr(_FakeOpenAI, "last_init", None)
 
     fixture = _write_fixture(
         tmp_path, llm_model="openai_model", judge_llm_model="ollama_model"
@@ -198,7 +199,7 @@ def test_create_judge_fn_picks_judge_llm_entry(tmp_path, monkeypatch):
 def test_create_judge_fn_falls_back_to_answer_llm(tmp_path, monkeypatch):
     """Without judge_llm_model, create_judge_fn uses retrieval_agent.llm_model."""
     monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
-    _FakeOpenAI.last_init = None
+    monkeypatch.setattr(_FakeOpenAI, "last_init", None)
 
     fixture = _write_fixture(tmp_path, llm_model="ollama_model", judge_llm_model=None)
     create_judge_fn(str(fixture))

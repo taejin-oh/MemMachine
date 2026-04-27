@@ -59,7 +59,8 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
 
     config = Configuration.load_yml_file(config_path)
     lms = config.resources.language_models
-    llm_id = config.retrieval_agent.judge_llm_model or config.retrieval_agent.llm_model
+    judge_id = config.retrieval_agent.judge_llm_model
+    llm_id = judge_id if judge_id is not None else config.retrieval_agent.llm_model
     if not llm_id:
         raise ValueError(
             "judge LLM is not configured: set retrieval_agent.judge_llm_model "
@@ -145,6 +146,11 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
             f"Judge LLM '{llm_id}' is not defined under resources.language_models. "
             f"Available IDs: {sorted(known_ids)}."
         )
+    # Defense-in-depth: today LanguageModelsConf only knows about the three
+    # provider tables we already iterated, so this branch is unreachable from
+    # any Pydantic-validated configuration. Kept so future provider additions
+    # at the schema layer surface as a clear judge-side error rather than a
+    # silent miss.
     raise ValueError(
         f"Judge LLM '{llm_id}' is defined, but its provider is not supported "
         "by llm_judge.py. Supported judge providers: openai-responses, "
