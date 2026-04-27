@@ -549,10 +549,11 @@ llm_model:
     base_url: https://gw.your-corp.com/v1
     model: <gateway 가 알아듣는 chat 모델>
 
-reranker:
-  id: my_reranker
-  provider: bm25
-  config: {}
+rerankers:
+  - id: my_reranker
+    provider: bm25
+    config: {}
+# rerankers 가 1개면 primary_reranker 는 생략 가능 (첫 항목 자동 선택)
 ```
 
 #### 케이스 C: 완전 오프라인 (로컬 GPU 가정)
@@ -572,10 +573,11 @@ llm_model:
     base_url: http://localhost:11434/v1
     model: llama3.1                   # 미리 ollama pull
 
-reranker:
-  id: my_reranker
-  provider: bm25
-  config: {}
+rerankers:
+  - id: my_reranker
+    provider: bm25
+    config: {}
+# rerankers 가 1개면 primary_reranker 는 생략 가능 (첫 항목 자동 선택)
 ```
 
 ### 6) `my_db.yaml` — DB 두 개
