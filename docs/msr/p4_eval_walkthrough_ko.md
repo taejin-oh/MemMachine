@@ -347,7 +347,7 @@ resources:
       config: { k1: 1.5, b: 0.75, ... }
 ```
 
-**두 부분으로 나뉜 이유 — "이름표 + 정의" 분리**: 같은 LLM 이 답변·judge 둘 다, 같은 reranker 가 retrieval_agent·long_term_memory 양쪽에서 쓰임. 변수 선언(`resources`)과 변수 사용(`retrieval_agent.llm_model`) 의 분리.
+**두 부분으로 나뉜 이유 — "이름표 + 정의" 분리**: 같은 reranker 가 retrieval_agent·long_term_memory 양쪽에서 쓰이고, 답변·judge LLM 도 보통 같은 한 entry 를 공유 (`judge_llm:` 블록을 따로 두면 두 entry 로 분리 가능 — `retrieval_agent.judge_llm_model` 이 가리킴). 변수 선언(`resources`)과 변수 사용(`retrieval_agent.llm_model` / `retrieval_agent.judge_llm_model`) 의 분리.
 
 ### 1) profile YAML → configuration.yml 매핑
 
