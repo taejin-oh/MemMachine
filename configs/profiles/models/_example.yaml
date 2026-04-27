@@ -1,11 +1,15 @@
 # Model profile placeholder
 #
-# 한 모델 프로파일 = (embedder + reranker + llm_model) 셋
+# 한 모델 프로파일 = (embedder + rerankers + llm_model) 셋
 # generate_config.py 가 이 셋을 읽어 configuration.yml 의
 #   - episodic_memory.long_term_memory.embedder / reranker
 #   - retrieval_agent.llm_model / reranker
 #   - resources.embedders / language_models / rerankers
 # 섹션을 자동 구성합니다.
+#
+# rerankers 는 list. 단일 reranker 면 항목 1개. rrf-hybrid 같은 메타 reranker 를
+# 쓰려면 그 안에 결합할 reranker 들과 hybrid 자체를 같이 등록하고
+# primary_reranker 로 위쪽이 가리킬 id 를 지정합니다.
 #
 # 사용법: 이 파일을 복사해 configs/profiles/models/{내가정한이름}.yaml 로 저장,
 #         아래 placeholder 를 실제 값으로 채운 뒤
@@ -20,15 +24,20 @@ embedder:
     model: text-embedding-3-small
     dimensions: 1536
 
-reranker:
-  id: my_reranker
-  provider: bm25
-  config:
-    k1: 1.5
-    b: 0.75
-    epsilon: 0.25
-    language: english
-    tokenizer: default
+rerankers:
+  - id: my_reranker
+    provider: bm25
+    config:
+      k1: 1.5
+      b: 0.75
+      epsilon: 0.25
+      language: english
+      tokenizer: default
+
+# 단일 reranker 면 생략 가능 (rerankers 의 첫 항목이 자동 선택).
+# rrf-hybrid 등 여러 항목을 등록한 경우 위쪽 (episodic_memory / retrieval_agent)
+# 이 가리킬 reranker id 를 명시합니다.
+# primary_reranker: my_reranker
 
 llm_model:
   id: my_llm
