@@ -143,6 +143,103 @@ def load_json_overrides(path: str | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _validate_and_normalize_rerankers(
+    model_profile: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
+    """Validate model profile rerankers and return (normalized_list, primary_id).
+
+    Each normalized entry has 'id', 'provider', 'config' (defaulted to {}).
+    Raises ValueError with actionable messages on schema/consistency issues.
+    """
+    if "reranker" in model_profile:
+        if "rerankers" in model_profile:
+            raise ValueError(
+                "legacy 'reranker:' is no longer supported. Remove it and use "
+                "only 'rerankers:' list."
+            )
+        raise ValueError(
+            "model profile schema changed: use 'rerankers:' (list) instead of "
+            "legacy 'reranker:' (dict). Wrap the existing block as a single-item "
+            "list:\n  rerankers:\n    - <existing reranker fields>\n"
+            "primary_reranker is optional (defaults to the first list item)."
+        )
+    raw_list = model_profile.get("rerankers")
+    if raw_list is None:
+        raise ValueError("model profile must define 'rerankers' as a non-empty list")
+    if not isinstance(raw_list, list):
+        raise ValueError(
+            f"model profile 'rerankers' must be a list, got {type(raw_list).__name__}"
+        )
+    if not raw_list:
+        raise ValueError(
+            "model profile 'rerankers' must be a non-empty list of entries"
+        )
+
+    seen_ids: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    for idx, entry in enumerate(raw_list):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"rerankers[{idx}] must be a mapping, got {type(entry).__name__}"
+            )
+        rid = entry.get("id")
+        provider = entry.get("provider")
+        if not rid:
+            raise ValueError(f"rerankers[{idx}] is missing required 'id'")
+        if not provider:
+            raise ValueError(
+                f"rerankers[{idx}] (id={rid!r}) is missing required 'provider'"
+            )
+        if rid in seen_ids:
+            raise ValueError(f"rerankers contains duplicate id: {rid!r}")
+        config = entry.get("config")
+        if config is None:
+            config = {}
+        elif not isinstance(config, dict):
+            raise ValueError(
+                f"rerankers[{idx}] (id={rid!r}) config must be a mapping, got "
+                f"{type(config).__name__}"
+            )
+        seen_ids.add(rid)
+        normalized.append({"id": rid, "provider": provider, "config": config})
+
+    primary_id = model_profile.get("primary_reranker") or normalized[0]["id"]
+    if primary_id not in seen_ids:
+        raise ValueError(
+            f"primary_reranker={primary_id!r} not found in rerankers ids "
+            f"{sorted(seen_ids)}"
+        )
+
+    for entry in normalized:
+        if entry["provider"] != "rrf-hybrid":
+            continue
+        cfg = entry["config"]
+        ids = cfg.get("reranker_ids")
+        if not ids:
+            raise ValueError(
+                f"rrf-hybrid reranker {entry['id']!r} requires non-empty "
+                "config.reranker_ids"
+            )
+        if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+            raise ValueError(
+                f"rrf-hybrid reranker {entry['id']!r} config.reranker_ids must be "
+                "a non-empty list of strings"
+            )
+        for ref in ids:
+            if ref == entry["id"]:
+                raise ValueError(
+                    f"rrf-hybrid reranker {entry['id']!r} references itself in "
+                    "reranker_ids"
+                )
+            if ref not in seen_ids:
+                raise ValueError(
+                    f"rrf-hybrid reranker {entry['id']!r} references unknown id "
+                    f"{ref!r} (known: {sorted(seen_ids)})"
+                )
+
+    return normalized, primary_id
+
+
 def build_configuration_yml(
     model_profile: dict[str, Any], db_profile: dict[str, Any]
 ) -> dict[str, Any]:
@@ -151,18 +248,9 @@ def build_configuration_yml(
     Mirrors the structure documented in evaluation/retrieval_agent/README.md (Sample 1).
     """
     embedder = model_profile["embedder"]
-    rerankers_list = model_profile["rerankers"]
-    if not rerankers_list:
-        raise ValueError("model profile 'rerankers' must contain at least one entry")
-    primary_reranker_id = (
-        model_profile.get("primary_reranker") or rerankers_list[0]["id"]
+    rerankers_list, primary_reranker_id = _validate_and_normalize_rerankers(
+        model_profile
     )
-    rerankers_by_id = {r["id"]: r for r in rerankers_list}
-    if primary_reranker_id not in rerankers_by_id:
-        raise ValueError(
-            f"primary_reranker={primary_reranker_id!r} not found in rerankers ids "
-            f"{list(rerankers_by_id)}"
-        )
     llm_model = model_profile["llm_model"]
     vgs = db_profile["vector_graph_store"]
     profile_db = db_profile["profile_storage"]
