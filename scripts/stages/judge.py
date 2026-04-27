@@ -4,10 +4,11 @@ Reads generate.jsonl, calls evaluate_llm_judge() on each row, writes judge.jsonl
 with an added `llm_score` (1=CORRECT, 0=WRONG) field.
 
 If `judge.llm_model_id` is set in the run config, a temporary copy of the
-configuration.yml is created with `retrieval_agent.llm_model` swapped to that
-ID, so the judge LLM can differ from the answer LLM. The model ID must already
-exist under `resources.language_models` in the configuration.yml (typically by
-adding it to the model profile YAML before running generate_config.py).
+configuration.yml is created with `retrieval_agent.judge_llm_model` swapped to
+that ID. `retrieval_agent.llm_model` (answer LLM pointer) is never touched here.
+The model ID must already exist under `resources.language_models` in the
+configuration.yml (typically by adding `judge_llm:` to the model profile YAML
+before running generate_config.py).
 """
 
 from __future__ import annotations
@@ -22,7 +23,13 @@ from . import _common as cm
 
 
 def _judge_config_path(run_cfg: dict[str, Any], base_config_path: str) -> str:
-    """Return a configuration.yml path with retrieval_agent.llm_model swapped if requested."""
+    """Return a configuration.yml path with retrieval_agent.judge_llm_model swapped if requested.
+
+    When run_cfg.judge.llm_model_id is unset, returns base_config_path unchanged
+    so create_judge_fn() reads whatever judge_llm_model the model profile baked
+    in (or falls back to retrieval_agent.llm_model). Never mutates
+    retrieval_agent.llm_model — the answer LLM pointer is preserved end-to-end.
+    """
     judge_id = (run_cfg.get("judge") or {}).get("llm_model_id")
     if not judge_id:
         return base_config_path
@@ -38,7 +45,7 @@ def _judge_config_path(run_cfg: dict[str, Any], base_config_path: str) -> str:
             f"{sorted(available.keys())}. Add it to the model profile YAML."
         )
 
-    cfg.setdefault("retrieval_agent", {})["llm_model"] = judge_id
+    cfg.setdefault("retrieval_agent", {})["judge_llm_model"] = judge_id
 
     out_dir = cm.results_dir_for(run_cfg)
     tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
@@ -53,7 +60,7 @@ def _judge_config_path(run_cfg: dict[str, Any], base_config_path: str) -> str:
         yaml.safe_dump(cfg, tmp, sort_keys=False, allow_unicode=True)
     finally:
         tmp.close()
-    print(f"[judge] using swapped config (judge_llm={judge_id}) → {tmp.name}")
+    print(f"[judge] using swapped config (judge_llm_model={judge_id}) → {tmp.name}")
     return tmp.name
 
 

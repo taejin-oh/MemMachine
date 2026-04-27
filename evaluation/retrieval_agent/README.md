@@ -8,11 +8,36 @@ The file controls every component used during a run:
 | Concern | Config section |
 |---|---|
 | Language model for the retrieval agent & answers | `retrieval_agent.llm_model` |
-| Language model for the LLM judge (evaluation) | `retrieval_agent.llm_model` |
+| Language model for the LLM judge (evaluation) | `retrieval_agent.judge_llm_model` (falls back to `retrieval_agent.llm_model`) |
 | Embedder for long-term memory | `episodic_memory.long_term_memory.embedder` |
 | Reranker | `retrieval_agent.reranker` or `episodic_memory.long_term_memory.reranker` |
 | Vector graph store (Neo4j) | `episodic_memory.long_term_memory.vector_graph_store` |
 | All resource definitions | `resources.embedders`, `resources.language_models`, `resources.rerankers`, `resources.databases` |
+
+### Judge LLM configuration: three terms
+
+The judge involves three distinct fields. They live in different files and play
+different roles — keeping them straight avoids confusion:
+
+| Term | Where | Role |
+|---|---|---|
+| `judge_llm:` block | model profile YAML (`configs/profiles/models/*.yaml`) | Defines the judge LLM **resource** (`id` / `provider` / `config`). Optional — omit to reuse `llm_model` for the judge. |
+| `retrieval_agent.judge_llm_model` | generated `configuration.yml` | Pointer the judge runtime actually reads. `generate_config.py` populates it from the profile (or falls back to `llm_model.id`). |
+| `judge.llm_model_id` / `--judge-model` | run config / CLI | Runtime override that swaps **only** the pointer to an ID already registered in `resources.language_models`. Never touches `retrieval_agent.llm_model`. |
+
+`judge_llm.provider` must be one currently supported by
+`evaluation/retrieval_agent/llm_judge.py`: `openai-responses`,
+`openai-chat-completions`, or `amazon-bedrock`.
+
+> **Current limitation**: `judge_llm:` is a single optional block, so a model
+> profile can register at most one extra judge candidate alongside the answer
+> LLM. Registering several judge candidates and selecting between them via
+> `--judge-model` is out of scope for now and would require a list-shaped
+> extension (e.g. `extra_language_models:`).
+
+The legacy `evaluation/episodic_memory/llm_judge.py` (hardcoded to
+`gpt-4o-mini`) is unrelated to this pipeline; the retrieval-agent runs use only
+`evaluation/retrieval_agent/llm_judge.py`.
 
 `run_test.sh` checks for the file at startup and exits with an error if it is
 missing.
@@ -395,7 +420,8 @@ session_manager:
 
 | Field | Description |
 |---|---|
-| `llm_model` | ID of the language model used by the retrieval agent, answer generation, **and** the LLM judge during evaluation. Must match a key under `resources.language_models`. |
+| `llm_model` | ID of the language model used by the retrieval agent and answer generation. Must match a key under `resources.language_models`. |
+| `judge_llm_model` | (Optional) ID of the language model used by the LLM judge during evaluation. Falls back to `llm_model` when unset. Must match a key under `resources.language_models`. Populated from the model profile's optional `judge_llm:` block. |
 | `reranker` | ID of the reranker used by the retrieval agent. Overrides `episodic_memory.long_term_memory.reranker` when set. |
 
 ### `episodic_memory.long_term_memory`

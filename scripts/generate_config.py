@@ -252,6 +252,53 @@ def _validate_and_normalize_rerankers(
     return normalized, primary_id
 
 
+def _validate_judge_llm(
+    model_profile: dict[str, Any],
+    llm_model: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Validate optional model-profile `judge_llm` block.
+
+    Returns a normalized {id, provider, config} dict, or None when the profile
+    omits `judge_llm` (callers fall back to the answer llm_model).
+
+    If `judge_llm.id` matches `llm_model.id`, provider and config must be
+    deep-equal; otherwise we'd silently overwrite the answer LLM resource entry.
+    """
+    raw = model_profile.get("judge_llm")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"model profile 'judge_llm' must be a mapping, got {type(raw).__name__}"
+        )
+    rid = raw.get("id")
+    provider = raw.get("provider")
+    if not rid:
+        raise ValueError("judge_llm is missing required 'id'")
+    if not provider:
+        raise ValueError(f"judge_llm (id={rid!r}) is missing required 'provider'")
+    config = raw.get("config")
+    if config is None:
+        config = {}
+    elif not isinstance(config, dict):
+        raise ValueError(
+            f"judge_llm (id={rid!r}) config must be a mapping, got "
+            f"{type(config).__name__}"
+        )
+
+    if rid == llm_model["id"]:
+        same_provider = provider == llm_model["provider"]
+        same_config = config == (llm_model.get("config") or {})
+        if not (same_provider and same_config):
+            raise ValueError(
+                f"judge_llm id {rid!r} conflicts with llm_model id using "
+                "different provider/config. Use a different judge_llm.id or "
+                "make provider/config identical."
+            )
+
+    return {"id": rid, "provider": provider, "config": config}
+
+
 def build_configuration_yml(
     model_profile: dict[str, Any], db_profile: dict[str, Any]
 ) -> dict[str, Any]:
@@ -264,8 +311,22 @@ def build_configuration_yml(
         model_profile
     )
     llm_model = model_profile["llm_model"]
+    judge_entry = _validate_judge_llm(model_profile, llm_model)
+    judge_id = judge_entry["id"] if judge_entry else llm_model["id"]
     vgs = db_profile["vector_graph_store"]
     profile_db = db_profile["profile_storage"]
+
+    language_models: dict[str, Any] = {
+        llm_model["id"]: {
+            "provider": llm_model["provider"],
+            "config": llm_model["config"],
+        },
+    }
+    if judge_entry and judge_entry["id"] != llm_model["id"]:
+        language_models[judge_entry["id"]] = {
+            "provider": judge_entry["provider"],
+            "config": judge_entry["config"],
+        }
 
     return {
         "episode_store": {
@@ -298,6 +359,7 @@ def build_configuration_yml(
         "retrieval_agent": {
             "llm_model": llm_model["id"],
             "reranker": primary_reranker_id,
+            "judge_llm_model": judge_id,
         },
         "semantic_memory": {
             "enabled": False,
@@ -317,12 +379,7 @@ def build_configuration_yml(
                     "config": embedder["config"],
                 },
             },
-            "language_models": {
-                llm_model["id"]: {
-                    "provider": llm_model["provider"],
-                    "config": llm_model["config"],
-                },
-            },
+            "language_models": language_models,
             "rerankers": {
                 r["id"]: {"provider": r["provider"], "config": r["config"]}
                 for r in rerankers_list
