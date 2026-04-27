@@ -427,6 +427,16 @@ def main() -> int:
     if not merged.get("run_name"):
         merged["run_name"] = slugify(f"p{problem}_run")
 
+    # Resolve benchmark.data_path to an absolute path so the run YAML is
+    # cwd-independent (LoCoMo subprocess, future runs from arbitrary cwds, etc).
+    bench = merged.get("benchmark") or {}
+    data_path = bench.get("data_path")
+    if data_path:
+        p = Path(str(data_path)).expanduser()
+        if not p.is_absolute():
+            p = (REPO_ROOT / p).resolve()
+        merged["benchmark"]["data_path"] = str(p)
+
     # Always produce a run-local working configuration.yml (D-002 / round-2 fix).
     generated_path = maybe_generate_configuration_yml(merged)
     merged.setdefault("configuration", {})["generated_path"] = generated_path
