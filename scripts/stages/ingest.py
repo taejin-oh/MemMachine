@@ -71,6 +71,7 @@ def _ingest_locomo(
         raise ValueError(
             "benchmark.data_path is required for locomo (path to LoCoMo source JSON)"
         )
+    length = int(bench.get("length", 10))
 
     cmd = [
         sys.executable,
@@ -79,11 +80,14 @@ def _ingest_locomo(
         str(data_path),
         "--config-path",
         config_path,
+        "--length",
+        str(length),
     ]
     completed = subprocess.run(cmd, env=cm.env_with_repo_root(), check=True)
     return {
         "benchmark": "locomo",
         "data_path": str(data_path),
+        "length": length,
         "subprocess_rc": completed.returncode,
     }
 

@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 from evaluation.retrieval_agent.cli_utils import positive_int  # noqa: E402
 
 DEFAULT_CONCURRENCY = 10
+DEFAULT_LENGTH = 10
 
 
 def datetime_from_locomo_time(locomo_time_str: str) -> datetime:
@@ -36,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=DEFAULT_CONCURRENCY,
         help="Maximum number of concurrent LoCoMo ingestion tasks",
+    )
+    parser.add_argument(
+        "--length",
+        type=positive_int,
+        default=DEFAULT_LENGTH,
+        help="Number of conversations to ingest",
     )
     return parser
 
@@ -132,7 +139,7 @@ async def main():
     semaphore = asyncio.Semaphore(args.concurrency)
     tasks = [
         async_with(semaphore, process_conversation(idx, item))
-        for idx, item in enumerate(locomo_data)
+        for idx, item in enumerate(locomo_data[: args.length])
     ]
     await asyncio.gather(*tasks)
 

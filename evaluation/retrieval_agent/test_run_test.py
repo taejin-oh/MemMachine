@@ -69,6 +69,7 @@ def test_locomo_rejects_search_concurrency_for_ingest():
             "exp1",
             "ingest",
             "retrieval_agent",
+            "10",
             "--search-concurrency",
             "1",
         ],
@@ -80,6 +81,26 @@ def test_locomo_rejects_search_concurrency_for_ingest():
 
     assert result.returncode == 1
     assert "--search-concurrency can only be used with search runs" in result.stdout
+
+
+def test_locomo_ingest_requires_length():
+    result = subprocess.run(
+        [
+            "bash",
+            str(RUN_TEST),
+            "locomo",
+            "exp1",
+            "ingest",
+            "retrieval_agent",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Locomo Usage" in result.stdout
 
 
 def test_wikimultihop_rejects_ingest_concurrency():
@@ -425,6 +446,7 @@ def test_ingest_emits_standard_logs_and_status_marker(tmp_path):
             "exp1",
             "ingest",
             "retrieval_agent",
+            "10",
         ],
         cwd=repo_root,
         capture_output=True,

@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 
 usage_locomo() {
-    echo "Locomo Usage: $0 locomo RESULT_POSTFIX RUN_TYPE TEST_TARGET [options]"
+    echo "Locomo Usage:"
+    echo "  $0 locomo RESULT_POSTFIX {ingest|search} TEST_TARGET LENGTH"
+    echo "  $0 locomo RESULT_POSTFIX delete TEST_TARGET"
     echo
     echo "Arguments:"
     echo "  RESULT_POSTFIX    Custom postfix for output files"
     echo "  RUN_TYPE          Run ingestion, search, or delete [ingest | search | delete]"
     echo "  TEST_TARGET       [memmachine | retrieval_agent | llm]"
+    echo "  LENGTH            Number of conversations to run [1 - 10] (ingest/search only)"
     echo "Options:"
     echo "  --ingest-concurrency N"
     echo "                     Optional max concurrent LoCoMo ingestion tasks"
@@ -202,7 +205,11 @@ validate_args() {
 
     case "$1" in
         locomo)
-            if [ "$#" -ne 4 ]; then
+            if [ "${3:-}" = "delete" ]; then
+                if [ "$#" -ne 4 ]; then
+                    show_help locomo
+                fi
+            elif [ "$#" -ne 5 ]; then
                 show_help locomo
             fi
             if [ -n "${INGEST_CONCURRENCY:-}" ] && [ "$3" != "ingest" ]; then
@@ -351,7 +358,13 @@ run_test() {
         locomo)
             RESULT_POSTFIX=$2
             INGEST=$3
-            TEST_TARGET=$4
+            if [ "$INGEST" = "delete" ]; then
+                TEST_TARGET=$4
+                LENGTH=""
+            else
+                TEST_TARGET=$4
+                LENGTH=$5
+            fi
             ;;
         wikimultihop)
             RESULT_POSTFIX=$2
@@ -430,6 +443,10 @@ run_test() {
             INGEST_CMD=("${PYTHON_CMD[@]}" -u "$SCRIPT_DIR/locomo_ingest.py" --data-path "$SCRIPT_DIR/../data/locomo10.json" --config-path "$CONFIG_FILE")
             SEARCH_CMD=("${PYTHON_CMD[@]}" -u "$SCRIPT_DIR/locomo_search.py" --data-path "$SCRIPT_DIR/../data/locomo10.json" --eval-result-path "$RESULT_FILE" --test-target "$TEST_TARGET" --config-path "$CONFIG_FILE")
             DELETE_CMD=("${PYTHON_CMD[@]}" -u "$SCRIPT_DIR/locomo_delete.py" --data-path "$SCRIPT_DIR/../data/locomo10.json" --config-path "$CONFIG_FILE")
+            if [ -n "${LENGTH:-}" ]; then
+                INGEST_CMD+=(--length "$LENGTH")
+                SEARCH_CMD+=(--length "$LENGTH")
+            fi
             if [ -n "${INGEST_CONCURRENCY:-}" ]; then
                 INGEST_CMD+=(--concurrency "$INGEST_CONCURRENCY")
             fi

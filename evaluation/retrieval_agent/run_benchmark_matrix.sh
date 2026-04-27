@@ -20,6 +20,7 @@ HOTPOT_LENGTH=500
 HOTPOT_SPLIT="validation"
 HOTPOT_TARGET_VALUES=(memmachine retrieval_agent)
 
+LOCOMO_LENGTH=10
 LOCOMO_TARGET_VALUES=(memmachine retrieval_agent)
 
 usage() {
@@ -28,7 +29,7 @@ Usage: ./run_benchmark_matrix.sh [--dry-run] [--skip-ingest] [--summary-path PAT
 
 Runs the benchmark matrix in one command:
   - LongMemEvalS: chunk {off,on} x prefix {off,on} x k {10,20,30,50,100}, length=500
-  - LoCoMo: mode {memmachine,retrieval_agent}
+  - LoCoMo: mode {memmachine,retrieval_agent}, length=10
   - HotpotQA(validation): mode {memmachine,retrieval_agent}, length=500
 
 Options:
@@ -230,11 +231,11 @@ log_summary "=== LoCoMo matrix: mode ==="
 for mode in "${LOCOMO_TARGET_VALUES[@]}"; do
     postfix="locomo_${mode}"
     if [ "$SKIP_INGEST" = false ]; then
-        run_cmd "$RUN_TEST" locomo "$postfix" ingest "$mode"
+        run_cmd "$RUN_TEST" locomo "$postfix" ingest "$mode" "$LOCOMO_LENGTH"
     else
         log_summary "[SKIP] ingest locomo ${postfix}"
     fi
-    run_cmd "$RUN_TEST" locomo "$postfix" search "$mode"
+    run_cmd "$RUN_TEST" locomo "$postfix" search "$mode" "$LOCOMO_LENGTH"
 done
 
 log_summary "=== HotpotQA matrix: mode ==="

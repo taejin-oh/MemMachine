@@ -219,7 +219,7 @@
 
 | 구분 | 값 |
 |---|---|
-| 벤치마크 | LoCoMo 1,540 (cat5 adversarial 446 제외 → 잔여 1,094 문항이 paper 운영점). 단 PR #7 wrapper 는 `locomo_search.py:115-117` 의 `start_index=0` / `end_index=20` 제한을 따르므로 실제 처리 범위는 그 인덱스 로직 기준 — 전체 1,094 보장 아님. 자세한 todo 는 `docs/msr/msr_eval_tool_todo_pr7.md` |
+| 벤치마크 | LoCoMo 1,540 (cat5 adversarial 446 제외 → 잔여 1,094 문항이 paper 운영점). ~~단 PR #7 wrapper 는 `locomo_search.py:115-117` 의 `start_index=0` / `end_index=20` 제한을 따르므로 실제 처리 범위는 그 인덱스 로직 기준 — 전체 1,094 보장 아님.~~ → 후속 PR 에서 `--length` 옵션 추가, `p5.yaml benchmark.length` (기본 10 = `locomo10.json` 전체) 로 제어 가능 (`msr_eval_tool_todo_pr7.md` #3 DONE). |
 | 독립변수 | 모드 ∈ {Memory, Agent} |
 | 고정변수 | Answer LLM (사내 오픈 LLM — TBD), embedding, reranker, DB snapshot |
 | 종속변수 | 카테고리별 `llm_score` (주목: Temporal vs Single-hop) |
@@ -229,7 +229,7 @@
 | 판정 기준 | 성공: Temporal 이 Single-hop 대비 결합 σ 2배 초과 낮음 / 부분: σ 1~2배 / 실패: Temporal ≥ Single-hop (analyze 출력값 기준 수기 판단) |
 | Judge prompt | 공통 `ACCURACY_PROMPT` (태스크 분기 없음) |
 
-**LoCoMo cat2(multi-hop) 측정 범위 (v4 추가)**: 본 과제는 LoCoMo cat2(multi-hop) 자체 측정을 수행하지 않는다. #2 의 LoCoMo Multi-hop 인용으로 대체 (§2 #2 "LoCoMo Multi-hop 측정 운영 결정" 참조). 본 후보(#5)는 cat5 adversarial 446 제외 후 잔여 1,094 문항의 카테고리별 점수에서 Temporal vs Single-hop 비교에 집중 — 단, PR #7 wrapper 의 LoCoMo subprocess 경로는 `locomo_search.py:115-117` start/end_index 제한을 따르므로 실제 실행 범위는 upstream 코드 기준 (`docs/msr/msr_eval_tool_todo_pr7.md` 참조).
+**LoCoMo cat2(multi-hop) 측정 범위 (v4 추가)**: 본 과제는 LoCoMo cat2(multi-hop) 자체 측정을 수행하지 않는다. #2 의 LoCoMo Multi-hop 인용으로 대체 (§2 #2 "LoCoMo Multi-hop 측정 운영 결정" 참조). 본 후보(#5)는 cat5 adversarial 446 제외 후 잔여 1,094 문항의 카테고리별 점수에서 Temporal vs Single-hop 비교에 집중 — ~~단, PR #7 wrapper 의 LoCoMo subprocess 경로는 `locomo_search.py:115-117` start/end_index 제한을 따르므로 실제 실행 범위는 upstream 코드 기준~~ (후속 PR 에서 `--length` 옵션으로 해결, `msr_eval_tool_todo_pr7.md` #3 DONE).
 
 ---
 
