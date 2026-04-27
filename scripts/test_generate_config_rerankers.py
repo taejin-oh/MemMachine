@@ -230,3 +230,109 @@ def test_legacy_reranker_with_rerankers_present_raises():
     profile["rerankers"] = [{"id": "new", "provider": "bm25"}]
     with pytest.raises(ValueError, match=r"no longer supported"):
         _validate_and_normalize_rerankers(profile)
+
+
+def test_summarization_default_false_in_generated_config():
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    stm = cfg["episodic_memory"]["short_term_memory"]
+    assert stm["summarization_enabled"] is False
+
+
+def test_summarization_fixed_override_true():
+    from scripts.generate_config import _apply_fixed_to_configuration
+
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    _apply_fixed_to_configuration(cfg, {"summarization_enabled": True})
+    assert cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] is True
+
+
+def test_summarization_fixed_override_false_explicit():
+    from scripts.generate_config import _apply_fixed_to_configuration
+
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] = True
+    _apply_fixed_to_configuration(cfg, {"summarization_enabled": False})
+    assert cfg["episodic_memory"]["short_term_memory"]["summarization_enabled"] is False
+
+
+def _ns(**overrides):
+    """Build an argparse.Namespace with all parse_args attrs defaulting to None."""
+    import argparse
+
+    defaults = {
+        "problem": None,
+        "run_name": None,
+        "model_profile": None,
+        "db_profile": None,
+        "use_existing_config": None,
+        "k_list": None,
+        "judge_model": None,
+        "length": None,
+        "n_runs": None,
+        "reuse_run": None,
+        "summarization": None,
+        "from_json": None,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_summarization_cli_on_sets_fixed_true():
+    from scripts.generate_config import cli_to_overrides
+
+    out = cli_to_overrides(_ns(summarization="on"))
+    assert out["fixed"]["summarization_enabled"] is True
+
+
+def test_summarization_cli_off_sets_fixed_false():
+    from scripts.generate_config import cli_to_overrides
+
+    out = cli_to_overrides(_ns(summarization="off"))
+    assert out["fixed"]["summarization_enabled"] is False
+
+
+def test_summarization_cli_omitted_does_not_set_fixed():
+    from scripts.generate_config import cli_to_overrides
+
+    out = cli_to_overrides(_ns())
+    assert "fixed" not in out or "summarization_enabled" not in out.get("fixed", {})
+
+
+def test_apply_cell_to_config_summarization_true(tmp_path):
+    """sweep cell handler writes summarization_enabled=true into the yaml in place."""
+    import yaml
+
+    from scripts.stages.retrieve import _apply_cell_to_config
+
+    cfg_path = tmp_path / "configuration.yml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {"episodic_memory": {"short_term_memory": {"summarization_enabled": False}}}
+        )
+    )
+    _apply_cell_to_config(str(cfg_path), {"summarization_enabled": True})
+    after = yaml.safe_load(cfg_path.read_text())
+    assert (
+        after["episodic_memory"]["short_term_memory"]["summarization_enabled"] is True
+    )
+
+
+def test_apply_cell_to_config_summarization_false(tmp_path):
+    import yaml
+
+    from scripts.stages.retrieve import _apply_cell_to_config
+
+    cfg_path = tmp_path / "configuration.yml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {"episodic_memory": {"short_term_memory": {"summarization_enabled": True}}}
+        )
+    )
+    _apply_cell_to_config(str(cfg_path), {"summarization_enabled": False})
+    after = yaml.safe_load(cfg_path.read_text())
+    assert (
+        after["episodic_memory"]["short_term_memory"]["summarization_enabled"] is False
+    )
