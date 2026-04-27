@@ -287,3 +287,393 @@ benchmark:
 | 일회성 평가 | 옵션 A (캐시 통째 복사 + `HF_HUB_OFFLINE=1`) |
 | 팀이 계속 사용, 데이터 경로 명시적 | 옵션 B (wrapper 패치) |
 | HotpotQA(p2) 도 오프라인 | 둘 다 비슷하게 적용. p5(LoCoMo)는 이미 `data_path` 인자 있어 오프라인 친화 |
+
+---
+
+## 4단계: 너의 환경에서 p4 한 번 돌리기
+
+양이 많아 4-A ~ 4-D 로 분할.
+- 4-A: profile YAML 두 개 (model + db) 채우기
+- 4-B: `generate_config.py` 한 번 돌려 산출물 검증 (다음 메모)
+- 4-C: ingest 단계만 먼저 돌려 DB 적재 확인 (다음 메모)
+- 4-D: retrieve / judge / analyze (다음 메모)
+
+---
+
+## 4-A: profile YAML 두 개 채우기
+
+### 0) "configuration.yml" 이 뭐고 왜 중요한지
+
+이 도구는 결국 **MemMachine 본체에 설정을 넘겨야** 동작. MemMachine 본체가 읽는 설정 파일은 딱 하나 — **`configuration.yml`** (생성 위치: `configs/generated/<run_name>_configuration.yml`).
+
+이 파일은 메모리 저장소·embedder·LLM·reranker·DB 를 한 곳에 적어둔 통합 설정. 구조:
+
+```yaml
+# configs/generated/p4_pilot_configuration.yml (자동 생성됨)
+
+# === 위쪽: 컴포넌트의 "사용처" — id 만 적음 ===
+episode_store:
+  database: my_postgres        # ← id 만, 정의는 아래 resources 에
+episodic_memory:
+  long_term_memory:
+    embedder: my_embedder
+    reranker: my_reranker
+    vector_graph_store: my_neo4j
+    message_sentence_chunking: true
+retrieval_agent:
+  llm_model: my_llm
+  reranker: my_reranker
+
+# === 아래쪽: 실제 정의 모음 ===
+resources:
+  databases:
+    my_neo4j:
+      provider: neo4j
+      config: { uri: bolt://localhost:7687, user: neo4j, password: ... }
+    my_postgres:
+      provider: postgres
+      config: { host: localhost, port: 5432, ... }
+  embedders:
+    my_embedder:
+      provider: openai
+      config: { api_key: sk-..., model: text-embedding-3-small, ... }
+  language_models:
+    my_llm:
+      provider: openai-responses
+      config: { api_key: sk-..., model: gpt-4o-mini }
+  rerankers:
+    my_reranker:
+      provider: bm25
+      config: { k1: 1.5, b: 0.75, ... }
+```
+
+**두 부분으로 나뉜 이유 — "이름표 + 정의" 분리**: 같은 LLM 이 답변·judge 둘 다, 같은 reranker 가 retrieval_agent·long_term_memory 양쪽에서 쓰임. 변수 선언(`resources`)과 변수 사용(`retrieval_agent.llm_model`) 의 분리.
+
+### 1) profile YAML → configuration.yml 매핑
+
+profile YAML 의 (provider, config) 쌍이 → configuration.yml 의 `resources.<bucket>.<id>.{provider, config}` 위치로 그대로 복사돼. 그게 "박는다" 의 의미. 시각화:
+
+```
+configs/profiles/models/my_model.yaml          configs/generated/p4_pilot_configuration.yml
+─────────────────────────────────────          ────────────────────────────────────────────
+embedder:                                      resources:
+  id: my_embedder            ───────┬────────►   embedders:
+  provider: openai           ──┐    │              my_embedder:        ◄── id 가 키로
+  config:                    ──┼─┐  │                provider: openai  ◄── 그대로 복사
+    api_key: sk-...          ──┘ │  │                config:           ◄── 그대로 복사
+    model: text-embedding-3      │  │                  api_key: sk-...
+                                 │  │                  model: text-embedding-3
+                                 │  └──────────►  episodic_memory:
+                                 │                  long_term_memory:
+                                 │                    embedder: my_embedder  ◄── id 만 참조
+```
+
+코드 근거 (`scripts/generate_config.py:201-206`):
+```python
+"embedders": {
+    embedder["id"]: {                    # profile.embedder.id 가 key
+        "provider": embedder["provider"], # profile.embedder.provider 그대로
+        "config": embedder["config"],     # profile.embedder.config 통째로
+    },
+},
+```
+
+### 2) `provider` 문자열의 종착지 — 코드 if/elif 분기
+
+MemMachine 본체가 이걸 보고 어떤 클라이언트 클래스를 띄울지 결정. 예: `packages/server/src/memmachine_server/common/resource_manager/embedder_manager.py:104-133`:
+
+```python
+if provider == "openai":
+    embedder = OpenAIEmbedder(config)
+elif provider == "amazon-bedrock":
+    embedder = AmazonBedrockEmbedder(config)
+elif provider == "sentence-transformer":
+    embedder = SentenceTransformerEmbedder(config)
+else:
+    raise ValueError(f"Unknown embedder provider: {provider}")
+```
+
+**그래서 provider 값은 코드가 알아듣는 문자열만 가능.** 사용 가능 후보 (`evaluation/retrieval_agent/README.md:410-432`):
+
+| 어디서 | 가능한 `provider` 값 |
+|---|---|
+| `language_models` | `openai-responses`, `openai-chat-completions`, `amazon-bedrock` |
+| `embedders` | `openai`, `amazon-bedrock`, `sentence-transformer` |
+| `rerankers` | `bm25`, `cohere`, `amazon-bedrock`, `cross-encoder`, `embedder`, `identity`, `rrf-hybrid` |
+| `databases` | `neo4j` (vector_graph_store 자리), `postgres` (profile_storage 자리) |
+
+> "사내에 OpenAI 호환 LLM gateway" 면 `provider: openai-chat-completions` + `config.base_url` 을 그쪽으로.
+
+### 3) 어디 보고 `config` 안의 키들을 채우나 — 두 source
+
+#### A. 실용 예시 (복붙용)
+**`evaluation/retrieval_agent/README.md` 의 `## Configuration Samples` 섹션** — Sample 1~4 가 통째 yaml:
+- **Sample 1** (line 57~) — OpenAI + AWS Bedrock reranker (기본)
+- **Sample 2** (line 141~) — Ollama (로컬) + BM25
+- **Sample 3** (line 224~) — AWS Bedrock end-to-end
+- **Sample 4** (line 309~) — OpenAI 호환 endpoint (사내 gateway)
+
+PR7 의 `_example.yaml` 값들은 **Sample 1 을 model/db 두 파일로 쪼갠 것**.
+
+#### B. 정확한 필드 명세 (필수/선택/default)
+**`packages/server/src/memmachine_server/common/configuration/*_conf.py`** 의 Pydantic 모델. 각 provider 별로 dataclass 가 있고 `Field(...)` 의 첫 인자가 `...` 이면 필수, 값이 적혀있으면 default.
+
+| 컴포넌트 | 파일 | 어떤 클래스가 어떤 provider |
+|---|---|---|
+| embedder | `embedder_conf.py` | `OpenAIEmbedderConf` (=openai), `AmazonBedrockEmbedderConf` (=amazon-bedrock), `SentenceTransformerEmbedderConf` (=sentence-transformer) |
+| reranker | `reranker_conf.py` | `BM25RerankerConf` (=bm25), `CohereRerankerConf` (=cohere), `AmazonBedrockRerankerConf` (=amazon-bedrock), `CrossEncoderRerankerConf` (=cross-encoder), `EmbedderRerankerConf` (=embedder), `IdentityRerankerConf` (=identity), `RRFHybridRerankerConf` (=rrf-hybrid) |
+| LLM | `language_model_conf.py` | `OpenAIResponsesLanguageModelConf` (=openai-responses), `OpenAIChatCompletionsLanguageModelConf` (=openai-chat-completions), `AmazonBedrockLanguageModelConf` (=amazon-bedrock) |
+| DB | `database_conf.py` | (같은 패턴 — neo4j, postgres) |
+
+### 4) provider 별 config 키 — 자주 쓸 것 위주
+
+#### Reranker
+
+`provider: bm25` ← 너가 지금 쓰는 거
+```yaml
+config:
+  k1: 1.5         # default
+  b: 0.75         # default
+  epsilon: 0.25   # default
+  language: english  # default
+  tokenizer: default # default
+```
+**전부 default.** `config: {}` 로 비워둬도 동작. API key 불필요, 가장 단순.
+
+`provider: cohere`
+```yaml
+config:
+  cohere_key: "<COHERE_API_KEY>"   # 필수
+  model: rerank-english-v3.0       # default
+  base_url: ...                    # 선택
+```
+
+`provider: amazon-bedrock`
+```yaml
+config:
+  model_id: "..."                   # 필수
+  region: us-east-1                 # 필수
+  aws_access_key_id: "..."          # 필수
+  aws_secret_access_key: "..."      # 필수
+  aws_session_token: "..."          # 선택
+```
+
+`provider: cross-encoder` (로컬 모델)
+```yaml
+config:
+  model_name: cross-encoder/qnli-electra-base   # default
+  max_input_length: 512                          # 선택
+```
+
+`provider: rrf-hybrid` / `provider: embedder`: 다른 reranker/embedder id 를 가리켜 합성.
+
+#### Embedder
+
+`provider: openai` ← `_example.yaml` 이 쓰는 거
+```yaml
+config:
+  api_key: "<OPENAI_API_KEY>"                  # 필수
+  model: text-embedding-3-small                # default
+  dimensions: 1536                             # default
+  base_url: https://api.openai.com/v1          # 선택. 사내 gateway 면 변경
+  max_input_length: 8191                       # 선택
+  max_retry_interval_seconds: 120              # default
+```
+> `api_key` 는 `$OPENAI_API_KEY` 또는 `${OPENAI_API_KEY}` 문법으로 환경변수 참조 가능.
+
+`provider: amazon-bedrock`
+```yaml
+config:
+  region: us-east-1                            # 필수
+  aws_access_key_id: "..."                     # 필수
+  aws_secret_access_key: "..."                 # 필수
+  model_id: amazon.titan-embed-text-v2:0       # default
+```
+
+`provider: sentence-transformer` (로컬, API key 불필요)
+```yaml
+config:
+  model: BAAI/bge-small-en-v1.5                # 필수, HuggingFace 모델명
+  max_input_length: 512                        # 선택
+```
+
+#### LLM
+
+`provider: openai-responses` ← `_example.yaml` 이 쓰는 거
+```yaml
+config:
+  api_key: "<OPENAI_API_KEY>"        # 필수
+  model: gpt-4o-mini                 # default 는 gpt-5-nano. 명시 권장
+  base_url: https://api.openai.com/v1 # 선택
+```
+
+`provider: openai-chat-completions` ← **사내 gateway / Ollama / vLLM**
+```yaml
+config:
+  api_key: "<API_KEY>"               # 필수 (Ollama 라도 더미값 필요)
+  model: gpt-4o-mini                 # 필수
+  base_url: http://host.docker.internal:11434/v1   # 사내/로컬 endpoint
+```
+Ollama 기본 base_url 이 코드에 예시로 박혀있음 (`language_model_conf.py:19`).
+
+`provider: amazon-bedrock`
+```yaml
+config:
+  region: us-east-1                  # 필수
+  aws_access_key_id: "..."           # 필수
+  aws_secret_access_key: "..."       # 필수
+  model_id: openai.gpt-oss-20b-1:0   # 필수 (default 가 임베딩 모델로 잘못 박혀있어 명시 필수)
+```
+
+### 5) 변형 cookbook — 자주 쓰는 3가지
+
+#### 케이스 A: 가장 단순 "OpenAI + BM25" (`_example.yaml` 그대로)
+`<OPENAI_API_KEY>` 만 본인 키로 바꾸면 끝.
+
+#### 케이스 B: 사내 OpenAI 호환 gateway
+```yaml
+embedder:
+  id: my_embedder
+  provider: openai
+  config:
+    api_key: "<사내 토큰>"
+    base_url: https://gw.your-corp.com/v1   # 변경
+    model: <gateway 가 알아듣는 임베딩 모델>
+    dimensions: <그 모델 차원>
+
+llm_model:
+  id: my_llm
+  provider: openai-chat-completions   # responses 가 아니라 chat-completions
+  config:
+    api_key: "<사내 토큰>"
+    base_url: https://gw.your-corp.com/v1
+    model: <gateway 가 알아듣는 chat 모델>
+
+reranker:
+  id: my_reranker
+  provider: bm25
+  config: {}
+```
+
+#### 케이스 C: 완전 오프라인 (로컬 GPU 가정)
+```yaml
+embedder:
+  id: my_embedder
+  provider: sentence-transformer
+  config:
+    model: BAAI/bge-small-en-v1.5     # 미리 HuggingFace 캐시
+    max_input_length: 512
+
+llm_model:
+  id: my_llm
+  provider: openai-chat-completions   # Ollama 로 띄움
+  config:
+    api_key: "ollama"                 # 더미
+    base_url: http://localhost:11434/v1
+    model: llama3.1                   # 미리 ollama pull
+
+reranker:
+  id: my_reranker
+  provider: bm25
+  config: {}
+```
+
+### 6) `my_db.yaml` — DB 두 개
+
+본 도구는 DB 를 안 띄움. 본인이 Docker 등으로 먼저 띄우고 주소만 적음.
+
+```yaml
+vector_graph_store:    # episode 를 그래프로 + 벡터검색 (의미 검색)
+  id: my_neo4j
+  provider: neo4j
+  config:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: "<Neo4j 비번>"
+
+profile_storage:       # 세션/메타데이터
+  id: my_postgres
+  provider: postgres
+  config:
+    dialect: postgresql
+    driver: asyncpg
+    host: localhost
+    port: 5432
+    user: memmachine
+    password: "<Postgres 비번>"
+    db_name: memmachine               # CREATE DATABASE 로 미리 만들어 둬야 함
+```
+
+repo 의 `docker-compose.yml` 또는 `deployments/helm/` 에 두 DB 동시에 띄우는 예제. 그걸 그대로 쓰면 host/port/user/db_name 거의 다 맞고 password 만 본인이 정하면 됨.
+
+### 7) 채운 후 미리 보는 configuration.yml
+
+`generate_config.py` 가 위 두 파일을 읽어 만드는 결과 (placeholder 채워졌다고 가정):
+
+```yaml
+episode_store:
+  database: my_postgres                     # ◄── my_db.yaml 의 profile_storage.id
+  with_count_cache: true
+episodic_memory:
+  long_term_memory:
+    embedder: my_embedder                   # ◄── my_model.yaml 의 embedder.id
+    reranker: my_reranker
+    vector_graph_store: my_neo4j
+    message_sentence_chunking: true         # ◄── p4.yaml 의 fixed
+  short_term_memory:
+    llm_model: my_llm
+    ...
+retrieval_agent:
+  llm_model: my_llm
+  reranker: my_reranker
+session_manager:
+  database: my_postgres
+resources:
+  databases:
+    my_neo4j: { provider: neo4j, config: { uri: ..., user: ..., password: ... } }
+    my_postgres: { provider: postgres, config: { host: ..., ... } }
+  embedders:
+    my_embedder: { provider: openai, config: { api_key: ..., model: ..., dimensions: 1536 } }
+  language_models:
+    my_llm: { provider: openai-responses, config: { api_key: ..., model: gpt-4o-mini } }
+  rerankers:
+    my_reranker: { provider: bm25, config: { k1: 1.5, b: 0.75, ... } }
+evaluation:
+  longmemeval:
+    prepend_user_prefix: true               # ◄── p4.yaml 의 fixed
+```
+
+너가 적은 값 하나하나가 어디로 갔는지 추적 가능. 위쪽은 id 만, 아래쪽 `resources` 는 provider+config 통째로.
+
+### 8) 채운 후 sanity check
+
+#### DB 떠 있는지
+```sh
+nc -zv localhost 7687    # Neo4j bolt
+nc -zv localhost 5432    # Postgres
+```
+둘 다 succeeded 떠야 다음 단계 의미 있음.
+
+#### config 키 검증 (선택)
+`generate_config.py` 후 `*_conf.py` 의 Pydantic 모델로 parse 시켜 보면 잘못된 키를 미리 잡을 수 있음:
+```sh
+python -c "
+import yaml
+from memmachine_server.common.configuration.embedder_conf import EmbeddersConf
+with open('configs/generated/p4_pilot_configuration.yml') as f:
+    cfg = yaml.safe_load(f)
+EmbeddersConf.parse({'embedders': cfg['resources']['embedders']})
+print('embedders OK')
+"
+```
+
+### 9) API key 평문 주의
+
+profile YAML 두 개 모두 평문 key/password 가 들어감. `.gitignore` 에 본인 파일이 빠지는지 확인. PR7 이 `_example.yaml` 만 commit 되도록 패턴을 추가했지만 본인 파일명에 맞게 추가 검토.
+
+---
+
+다음 메모:
+- **4-B**: 위 두 파일 채운 상태에서 `generate_config.py` 를 진짜 돌렸을 때 어떤 파일이 어디 생기고 그 안의 어느 값이 어디서 왔는지 1:1 추적 (위 미리보기를 실제로 검증)
+- **4-C**: ingest 단독 실행, DB 적재 확인
+- **4-D**: retrieve / judge / analyze
