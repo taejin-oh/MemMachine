@@ -447,7 +447,8 @@ From `evaluation/retrieval_agent/`:
 ./run_test.sh hotpotqa exp1 ingest validation retrieval_agent 200
 ./run_test.sh hotpotqa exp1 search validation retrieval_agent 200
 
-# LoCoMo (length 1 - 10)
+# LoCoMo (default data file has 10 conversations; LENGTH is a positive integer
+# capped by the data file size)
 ./run_test.sh locomo exp1 ingest retrieval_agent 10
 ./run_test.sh locomo exp1 ingest retrieval_agent 10 --ingest-concurrency 2
 ./run_test.sh locomo exp1 search retrieval_agent 10
