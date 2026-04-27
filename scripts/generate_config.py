@@ -227,8 +227,6 @@ def build_configuration_yml(
             },
         },
         "session_manager": {"database": profile_db["id"]},
-        # 평가 토글 (run_pipeline 이 sweep 별로 in-place 갱신할 수 있음)
-        "evaluation": {"longmemeval": {"prepend_user_prefix": False}},
     }
 
 
