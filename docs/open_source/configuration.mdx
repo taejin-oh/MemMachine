@@ -87,7 +87,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
           summary_prompt_system: episode_summary_system
           summary_prompt_user: episode_summary_user
           message_capacity: 64000
-          summarization_enabled: false
+          summarization_enabled: true
         long_term_memory_enabled: true
         short_term_memory_enabled: true
         enabled: true
@@ -110,7 +110,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
           summary_prompt_system: episode_summary_system # System prompt for summary generation
           summary_prompt_user: episode_summary_user # User prompt for summary generation
           message_capacity: 64000 # Maximum length of short-term memory (default: 64000)
-          summarization_enabled: false # If true, enable summary generation; eviction still works either way
+          summarization_enabled: true # If false, eviction still works but skips LLM summary generation
         long_term_memory_enabled: true # Enable long-term memory
         short_term_memory_enabled: true # Enable short-term memory
         enabled: true # Enable episodic memory subsystem
@@ -136,7 +136,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
     | `short_term_memory.summary_prompt_system` | System prompt ID for short-term summarization. | *Required* |
     | `short_term_memory.summary_prompt_user` | User prompt ID for short-term summarization. | *Required* |
     | `short_term_memory.message_capacity` | The maximum character capacity for short-term memory.                     | `64000`      |
-    | `short_term_memory.summarization_enabled` | If `false`, STM still evicts on capacity, but skips LLM summary generation. | `false` |
+    | `short_term_memory.summarization_enabled` | If `false`, STM still evicts on capacity, but skips LLM summary generation. | `true` |
   </Accordion>
 
   <Accordion title="Retrieval Agent">

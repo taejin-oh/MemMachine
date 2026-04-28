@@ -206,6 +206,21 @@ def short_term_memory_param(mock_model, mock_data_manager):
     )
 
 
+def test_summarization_enabled_default_is_true(mock_model, mock_data_manager):
+    """Regression guard: leaving summarization_enabled unset must preserve
+    the original (pre-toggle) behavior of always summarizing on overflow.
+    """
+    params = ShortTermMemoryParams(
+        session_key="session1",
+        llm_model=mock_model,
+        data_manager=mock_data_manager,
+        summary_prompt_system="System prompt",
+        summary_prompt_user="User prompt: {episodes} {summary} {max_length}",
+        message_capacity=16,
+    )
+    assert params.summarization_enabled is True
+
+
 @pytest_asyncio.fixture
 async def memory(short_term_memory_param):
     """Fixture for a SessionMemory instance."""

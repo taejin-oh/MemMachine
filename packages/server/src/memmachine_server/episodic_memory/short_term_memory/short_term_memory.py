@@ -84,8 +84,11 @@ class ShortTermMemoryParams(BaseModel):
         description="The maximum length of short-term memory",
     )
     summarization_enabled: bool = Field(
-        default=False,
-        description="Whether to generate LLM summaries when STM capacity is exceeded",
+        default=True,
+        description=(
+            "Whether to generate LLM summaries when STM capacity is exceeded. "
+            "Default True preserves the original (pre-toggle) behavior."
+        ),
     )
 
     @field_validator("summary_prompt_user")

@@ -83,3 +83,44 @@ def test_message_sentence_chunking_omitted_yaml_is_none_in_partial():
     )
     assert conf.long_term_memory is not None
     assert conf.long_term_memory.message_sentence_chunking is None
+
+
+def _stm_partial(**overrides: Any):
+    from memmachine_server.common.configuration.episodic_config import (
+        ShortTermMemoryConfPartial,
+    )
+
+    base: dict[str, Any] = {
+        "session_key": "s",
+        "llm_model": "m",
+        "summary_prompt_system": "sys",
+        "summary_prompt_user": "user {episodes} {summary} {max_length}",
+    }
+    base.update(overrides)
+    return ShortTermMemoryConfPartial(**base)
+
+
+def test_summarization_enabled_defaults_to_true_after_merge():
+    """Regression guard: default must preserve original always-on behavior."""
+    from memmachine_server.common.configuration.episodic_config import (
+        ShortTermMemoryConfPartial,
+    )
+
+    full = _stm_partial().merge(ShortTermMemoryConfPartial())
+    assert full.summarization_enabled is True
+
+
+def test_summarization_enabled_false_overrides_default():
+    from memmachine_server.common.configuration.episodic_config import (
+        ShortTermMemoryConfPartial,
+    )
+
+    full = _stm_partial(summarization_enabled=False).merge(
+        ShortTermMemoryConfPartial()
+    )
+    assert full.summarization_enabled is False
+
+
+def test_summarization_enabled_partial_omitted_is_none():
+    conf = _stm_partial()
+    assert conf.summarization_enabled is None
