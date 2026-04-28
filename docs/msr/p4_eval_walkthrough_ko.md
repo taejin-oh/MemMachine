@@ -580,16 +580,19 @@ rerankers:
 # rerankers 가 1개면 primary_reranker 는 생략 가능 (첫 항목 자동 선택)
 ```
 
-### 5b) STM summarization 토글 (`summarization_enabled`)
+### 5b) STM summarization 토글 (`summarization_enabled`) — **config-only**
 
-`episodic_memory.short_term_memory.summarization_enabled` 가 generated configuration.yml 에 항상 박힘. **default `false`** (`generate_config.py:build_configuration_yml`). 의미: STM `message_capacity` 초과 시 LLM 요약 호출 여부.
+`episodic_memory.short_term_memory.summarization_enabled` 가 generated configuration.yml 에 항상 박힘. **eval-tool 기본값 `false`** (`generate_config.py:build_configuration_yml` 가 의도적으로 false 를 emit; 서버 본체의 default 는 eval_claude 의 Fix 1 이후 `true`). 의미: STM `message_capacity` 초과 시 LLM 요약 호출 여부.
 
-> **주의** — eval wrapper 의 LongMemEval ingest/retrieve 는 `agent_utils.init_memmachine_params()` 가 STM 자체를 `None` 으로 만들어 (`agent_utils.py:461`) 이 토글이 평가 동작에 영향을 주지 않음. 본체 서버를 generated yml 그대로 띄우는 경우엔 토글이 실제 동작 결정.
+> **주의 — config-only knob** — eval wrapper 의 LongMemEval ingest/retrieve 는 `agent_utils.init_memmachine_params()` 가 STM 자체를 `None` 으로 만들어 (`agent_utils.py:461`) 이 토글이 평가 점수에 영향을 주지 않는다. **본체 서버를 generated yml 그대로 띄우는 경우에만** 동작에 영향. eval_claude 에서는 이 사실을 명시적으로 반영:
+> - sweep 은 `_validate_sweep_keys` 로 차단 (모든 셀 점수가 동일해서 오해 유발)
+> - CLI `--summarization on/off` 사용 시 stderr 경고 출력
+> - fixed 는 그대로 허용 (configuration audit 용)
 
-켜고 끄는 3가지 길:
+허용되는 2가지 길:
 
 ```sh
-# 1. CLI shortcut (가장 간단, 1회용)
+# 1. CLI shortcut (가장 간단, 1회용) — stderr 경고 1줄 출력됨
 python scripts/generate_config.py --problem 4 --run-name p4_pilot \
     --model-profile my_model --db-profile my_db --summarization on
 
@@ -598,15 +601,17 @@ fixed:
   prepend_user_prefix: true
   message_sentence_chunking: true
   summarization_enabled: true              # ◄── 추가
-
-# 3. sweep (cell 단위 비교)
-sweep:
-  summarization_enabled: [false, true]     # 끈 vs 켠 cell 두 개
 ```
 
-세 경로 모두 generated yml 의 `episodic_memory.short_term_memory.summarization_enabled` 한 줄을 갱신. CLI > JSON > problem yaml > base yaml 의 deep_merge 우선순위 그대로.
+차단된 길:
 
-> **sweep caveat** — 현재 eval wrapper 는 STM 을 생성하지 않으므로 (`agent_utils.py:461`) 위 sweep 으로 LongMemEval accuracy 차이를 기대하면 안 됨. configuration audit 또는 향후 STM-enabled 경로 검증용.
+```sh
+# 3. sweep — 거부됨
+sweep:
+  summarization_enabled: [false, true]     # ✗ SystemExit("config-only ...")
+```
+
+두 허용 경로 모두 generated yml 의 `episodic_memory.short_term_memory.summarization_enabled` 한 줄을 갱신. CLI > JSON > problem yaml > base yaml 의 deep_merge 우선순위 그대로.
 
 ### 6) `my_db.yaml` — DB 두 개
 

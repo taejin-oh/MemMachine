@@ -78,11 +78,23 @@ def parse_args() -> argparse.Namespace:
         "--reuse-run", help="For p6/p12: name of an earlier run to analyze"
     )
 
-    # STM summarization toggle (fixed override shortcut)
+    # STM summarization toggle (fixed override shortcut).
+    # NOTE: this knob is config-only for the current eval path. The retrieval-
+    # agent eval entry constructs EpisodicMemory(short_term_memory=None)
+    # (evaluation/utils/agent_utils.py:461), so changing summarization_enabled
+    # does not move LongMemEval scores. The toggle still affects the generated
+    # configuration.yml when reused by the real server, and serves as a
+    # config-audit knob; sweeping it from a problem yaml is rejected by
+    # generate_config to prevent operator confusion (see _validate_sweep_keys).
     parser.add_argument(
         "--summarization",
         choices=["on", "off"],
-        help="STM summarization toggle (sets fixed.summarization_enabled)",
+        help=(
+            "STM summarization toggle (sets fixed.summarization_enabled). "
+            "WARNING: config-only knob -- the eval path uses "
+            "short_term_memory=None so this does not affect LongMemEval "
+            "scores. Use it for the generated configuration.yml only."
+        ),
     )
 
     # Bulk JSON override (highest precedence)
@@ -134,6 +146,17 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
         out["reuse_run"] = args.reuse_run
 
     if args.summarization is not None:
+        # See parse_args() note: this is a config-only knob for the current
+        # eval path. Emit a stderr warning so operators are not surprised
+        # when LongMemEval scores do not move.
+        print(
+            "[generate_config] WARNING: --summarization is a config-only "
+            "knob for the current eval path (agent_utils.py:461 uses "
+            "short_term_memory=None). The generated configuration.yml "
+            f"will reflect summarization_enabled={args.summarization == 'on'}, "
+            "but LongMemEval scores are unaffected.",
+            file=sys.stderr,
+        )
         out.setdefault("fixed", {})["summarization_enabled"] = (
             args.summarization == "on"
         )

@@ -18,13 +18,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.stages import retrieve as stage_retrieve  # noqa: E402
+from scripts.stages.retrieve import (  # noqa: E402
+    _apply_cell_to_config,
+    _expand_sweep,
+    _resolved_params,
+)
 
 
 def test_chunking_in_sweep_raises_systemexit():
     sweep = {"message_sentence_chunking": [True, False]}
     with pytest.raises(SystemExit) as excinfo:
-        stage_retrieve._expand_sweep(sweep)
+        _expand_sweep(sweep)
     msg = str(excinfo.value)
     assert "message_sentence_chunking" in msg
     assert "ingest" in msg.lower()
@@ -37,7 +41,7 @@ def test_chunking_in_sweep_alongside_legit_keys_still_raises():
         "message_sentence_chunking": [True, False],
     }
     with pytest.raises(SystemExit) as excinfo:
-        stage_retrieve._expand_sweep(sweep)
+        _expand_sweep(sweep)
     assert "message_sentence_chunking" in str(excinfo.value)
 
 
@@ -46,26 +50,42 @@ def test_legit_sweep_keys_pass_validation():
         "search_limit": [10, 20, 30],
         "prepend_user_prefix": [False, True],
     }
-    cells = stage_retrieve._expand_sweep(sweep)
+    cells = _expand_sweep(sweep)
     assert len(cells) == 6  # 3 x 2 cartesian
 
 
-def test_summarization_enabled_in_sweep_is_allowed_by_validator():
-    """summarization_enabled is config-only (eval path uses STM=None) but the
-    *validator* itself does not reject it; Fix 5 handles it via warning +
-    optional removal at the CLI/generation layer."""
+def test_summarization_enabled_in_sweep_raises_systemexit():
+    """summarization_enabled is config-only -- the eval path runs
+    short_term_memory=None so toggling it produces no score change. The
+    validator rejects it from sweep so operators do not generate a
+    misleading identical-cell matrix; fixed: is still allowed."""
     sweep = {"summarization_enabled": [True, False]}
-    cells = stage_retrieve._expand_sweep(sweep)
-    assert len(cells) == 2
+    with pytest.raises(SystemExit) as excinfo:
+        _expand_sweep(sweep)
+    msg = str(excinfo.value)
+    assert "summarization_enabled" in msg
+    assert "config-only" in msg.lower()
+
+
+def test_summarization_enabled_in_fixed_remains_supported():
+    """Sanity: validator scope is sweep keys only; fixed.summarization_enabled
+    still flows through _resolved_params + _apply_cell_to_config."""
+    cells = _expand_sweep({})
+    fixed_cfg = {"fixed": {"summarization_enabled": True}}
+    params = _resolved_params(fixed_cfg, cells[0])
+    assert params == {"summarization_enabled": True}
 
 
 def test_empty_sweep_returns_single_empty_cell():
-    assert stage_retrieve._expand_sweep({}) == [{}]
+    assert _expand_sweep({}) == [{}]
 
 
-def test_apply_cell_to_config_no_longer_writes_chunking(tmp_path, monkeypatch):
-    """Chunking from `fixed` is written once at generate time; per-cell apply
-    must not reapply it (would be a no-op but obscures the contract)."""
+def test_apply_cell_to_config_no_longer_writes_fixed_only_keys(
+    tmp_path, monkeypatch
+):
+    """Fixed-only keys (chunking, summarization_enabled) are written once at
+    generate time; per-cell apply must not reapply them (would be a no-op
+    but obscures the contract)."""
     from scripts.stages import _common as cm
 
     written: list[dict] = []
@@ -75,15 +95,19 @@ def test_apply_cell_to_config_no_longer_writes_chunking(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cm, "update_yaml_in_place", fake_update_yaml_in_place)
 
-    # Simulate fixed.message_sentence_chunking flowing into params via
-    # _resolved_params. _apply_cell_to_config must not touch the long_term_memory
-    # block on this account.
-    stage_retrieve._apply_cell_to_config(
+    # Simulate fixed.message_sentence_chunking + fixed.summarization_enabled
+    # flowing into params via _resolved_params. Neither must touch
+    # episodic_memory in the per-cell update.
+    _apply_cell_to_config(
         "/dev/null",
-        {"message_sentence_chunking": True, "prepend_user_prefix": True},
+        {
+            "message_sentence_chunking": True,
+            "summarization_enabled": True,
+            "prepend_user_prefix": True,
+        },
     )
     assert len(written) == 1
-    assert "long_term_memory" not in written[0].get("episodic_memory", {})
+    assert "episodic_memory" not in written[0]
     assert (
         written[0]["evaluation"]["longmemeval"]["prepend_user_prefix"] is True
     )

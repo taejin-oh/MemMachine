@@ -301,8 +301,12 @@ def test_summarization_cli_omitted_does_not_set_fixed():
     assert "fixed" not in out or "summarization_enabled" not in out.get("fixed", {})
 
 
-def test_apply_cell_to_config_summarization_true(tmp_path):
-    """sweep cell handler writes summarization_enabled=true into the yaml in place."""
+def test_apply_cell_to_config_no_longer_writes_summarization(tmp_path):
+    """summarization_enabled is fixed-only (rejected from sweep by
+    _validate_sweep_keys) and is written once at generate time by
+    build_configuration_yml + _apply_fixed_to_configuration. The per-cell
+    apply must not reapply it; the value already in the yaml stays as-is.
+    """
     import yaml
 
     from scripts.stages.retrieve import _apply_cell_to_config
@@ -313,26 +317,21 @@ def test_apply_cell_to_config_summarization_true(tmp_path):
             {"episodic_memory": {"short_term_memory": {"summarization_enabled": False}}}
         )
     )
+    # Even if params still carries the key (because _resolved_params merges
+    # fixed in), per-cell apply must leave the yaml alone.
     _apply_cell_to_config(str(cfg_path), {"summarization_enabled": True})
-    after = yaml.safe_load(cfg_path.read_text())
-    assert (
-        after["episodic_memory"]["short_term_memory"]["summarization_enabled"] is True
-    )
-
-
-def test_apply_cell_to_config_summarization_false(tmp_path):
-    import yaml
-
-    from scripts.stages.retrieve import _apply_cell_to_config
-
-    cfg_path = tmp_path / "configuration.yml"
-    cfg_path.write_text(
-        yaml.safe_dump(
-            {"episodic_memory": {"short_term_memory": {"summarization_enabled": True}}}
-        )
-    )
-    _apply_cell_to_config(str(cfg_path), {"summarization_enabled": False})
     after = yaml.safe_load(cfg_path.read_text())
     assert (
         after["episodic_memory"]["short_term_memory"]["summarization_enabled"] is False
     )
+
+
+def test_summarization_in_sweep_is_rejected():
+    """End-to-end guard: sweep with summarization_enabled must SystemExit
+    with a 'config-only' rationale, before any cell runs."""
+    from scripts.stages.retrieve import _expand_sweep
+
+    with pytest.raises(SystemExit) as excinfo:
+        _expand_sweep({"summarization_enabled": [True, False]})
+    assert "summarization_enabled" in str(excinfo.value)
+    assert "config-only" in str(excinfo.value).lower()

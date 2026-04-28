@@ -29,19 +29,36 @@ from . import _common as cm
 # Keys that affect ingest output (Episode storage shape) and therefore cannot
 # be swept from retrieve alone — toggling them here would A/B retrieval over
 # the *same* ingested corpus, defeating the experiment's intent.
-SWEEP_FORBIDDEN_KEYS: set[str] = {"message_sentence_chunking"}
+SWEEP_INGEST_AFFECTING_KEYS: set[str] = {"message_sentence_chunking"}
+
+# Keys whose value the current eval path silently ignores. Sweeping them
+# would emit a multi-cell matrix where every cell scores identically, which
+# misleads operators into thinking the knob "works". Allow them in `fixed:`
+# (config-only) but reject from `sweep:`.
+SWEEP_CONFIG_ONLY_KEYS: set[str] = {"summarization_enabled"}
 
 
 def _validate_sweep_keys(sweep: dict[str, Any]) -> None:
-    bad = sorted(k for k in sweep if k in SWEEP_FORBIDDEN_KEYS)
-    if bad:
+    ingest_bad = sorted(k for k in sweep if k in SWEEP_INGEST_AFFECTING_KEYS)
+    if ingest_bad:
         raise SystemExit(
             "[retrieve] sweep keys "
-            f"{bad} affect ingest output (Episode storage shape) and cannot "
-            "be swept from the retrieve stage. Move them to `fixed:` and "
-            "use a separate run + ingest per value (see "
+            f"{ingest_bad} affect ingest output (Episode storage shape) and "
+            "cannot be swept from the retrieve stage. Move them to `fixed:` "
+            "and use a separate run + ingest per value (see "
             "evaluation/retrieval_agent/run_benchmark_matrix.sh for an "
             "example), or split the problem yaml into per-value variants."
+        )
+    config_only_bad = sorted(k for k in sweep if k in SWEEP_CONFIG_ONLY_KEYS)
+    if config_only_bad:
+        raise SystemExit(
+            "[retrieve] sweep keys "
+            f"{config_only_bad} are config-only for the current eval path "
+            "(evaluation/utils/agent_utils.py:461 constructs EpisodicMemory "
+            "with short_term_memory=None, so summarization_enabled does not "
+            "move LongMemEval scores). Sweeping them would emit a matrix "
+            "where every cell scores identically; move to `fixed:` instead "
+            "or omit."
         )
 
 
@@ -75,14 +92,13 @@ def _apply_cell_to_config(config_path: str, params: dict[str, Any]) -> None:
         updates.setdefault("evaluation", {}).setdefault("longmemeval", {})[
             "prepend_user_prefix"
         ] = bool(params["prepend_user_prefix"])
-    # message_sentence_chunking is intentionally NOT reapplied per cell:
-    # it affects ingest output and is rejected by _validate_sweep_keys() so
-    # it can only come from `fixed`, which is already written at generate
-    # time by build_configuration_yml + _apply_fixed_to_configuration.
-    if "summarization_enabled" in params:
-        updates.setdefault("episodic_memory", {}).setdefault("short_term_memory", {})[
-            "summarization_enabled"
-        ] = bool(params["summarization_enabled"])
+    # message_sentence_chunking and summarization_enabled are intentionally
+    # NOT reapplied per cell: both are fixed-only after _validate_sweep_keys
+    # (chunking is ingest-affecting, summarization_enabled is config-only on
+    # the current eval path) and their fixed values are already written at
+    # generate time by build_configuration_yml +
+    # _apply_fixed_to_configuration. Reapplying them per cell was redundant
+    # and obscured the single-source-of-truth contract.
     if updates:
         cm.update_yaml_in_place(config_path, updates)
 
