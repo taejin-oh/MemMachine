@@ -135,29 +135,67 @@ STM(Short-Term Memory)을 끄지 않고, **용량 초과 시 LLM 요약 생성�
 선택적으로 끌 수 있도록 설정 키를 추가했습니다.
 
 - 설정 키: `episodic_memory.short_term_memory.summarization_enabled`
-- 기본값: `false`
+- **서버 기본값: `true`** (`packages/server/.../episodic_config.py`,
+  `short_term_memory.py`). 기존(pre-toggle) 동작 — 용량 초과 시 LLM 요약 생성 —
+  을 그대로 보존하기 위함. 운영 서버에서 이 키를 명시하지 않으면 종전과 동일하게
+  동작합니다.
+- **eval-tool generated `configuration.yml` 의 emit 값: `false`**
+  (`scripts/generate_config.py:build_configuration_yml`). 평가 비용/결정성을 위해
+  eval-tool 이 명시적으로 `false` 를 yml 에 적습니다. 즉, eval-tool 로 생성한
+  yml 을 서버가 그대로 읽으면 요약은 꺼진 상태로 시작합니다.
 - 효과:
   - `false`: STM 용량 초과 시 오래된 메시지 evict는 계속 수행(메모리 bounded 유지),
     단 LLM 요약 생성은 수행하지 않음
   - `true`: 기존처럼 evict + 비동기 요약 생성 수행
 
-### 설정 예시
+### 두 default 의 관계 — 한 줄 요약
+
+| 경로 | default | 의도 |
+|---|---|---|
+| 운영 서버 (직접 작성한 `configuration.yml`) | `true` | 기존 동작 보존 |
+| eval-tool 이 생성하는 `configuration.yml` | `false` (명시 emit) | 평가 비용 절감 |
+
+운영자가 직접 yml 을 쓰면 키 미지정 → 서버 default `true` 적용. eval-tool 로
+생성하면 yml 에 `false` 가 명시되어 서버 default 와 무관하게 꺼짐. 두 경로가
+같은 "default" 를 보지 않을 수 있다는 점만 인지하면 충돌 없음.
+
+### 설정 예시 — 평가용 (요약 끔)
 
 ```yaml
 episodic_memory:
   short_term_memory:
     llm_model: openai_model
     message_capacity: 500
-    summarization_enabled: false
+    summarization_enabled: false   # 평가 시 비용 절감
 ```
 
-### 언제 사용하면 좋은가
+### 설정 예시 — 운영 서버 (기존 동작 유지)
 
-- LLM 호출 비용을 줄이고 싶을 때
+```yaml
+episodic_memory:
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+    # summarization_enabled 미지정 → 서버 default true 적용
+```
+
+### 언제 false 가 맞나
+
+- LLM 호출 비용을 줄이고 싶을 때 (평가 default)
 - 요약 생성 지연/외부 의존성 없이 STM 최신 컨텍스트만 유지하고 싶을 때
 - 메모리 제한은 유지하되(summary 없이) 빠른 evict 동작만 원할 때
 
+### eval-tool 사용 시 주의
+
+- eval-tool 의 LongMemEval 평가 경로는 `agent_utils.init_memmachine_params()`
+  가 STM 자체를 `None` 으로 만들기 때문에 (`agent_utils.py:461`), 이 토글이
+  LongMemEval 점수에는 영향이 없습니다. **본체 서버를 generated yml 그대로
+  띄우는 경우에만** 토글이 실제 동작을 결정합니다.
+- 따라서 eval-tool 의 `--summarization`, `fixed.summarization_enabled` 는
+  config-only 로 분류되어 sweep 에서는 거부됩니다 (자세한 내용:
+  `docs/msr/p4_eval_walkthrough_ko.md` §5b).
+
 ### 참고
 
-- `summarization_enabled: false`여도 STM은 capacity 기반으로 계속 정리됩니다.
+- `summarization_enabled: false` 여도 STM 은 capacity 기반으로 계속 정리됩니다.
 - 요약이 비활성화된 상태에서는 summary 컨텍스트가 비어 있게 됩니다.
