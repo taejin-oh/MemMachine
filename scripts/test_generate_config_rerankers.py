@@ -335,3 +335,51 @@ def test_summarization_in_sweep_is_rejected():
         _expand_sweep({"summarization_enabled": [True, False]})
     assert "summarization_enabled" in str(excinfo.value)
     assert "config-only" in str(excinfo.value).lower()
+
+
+def test_load_longmemeval_local_normalizes_and_truncates(tmp_path):
+    """Local JSON loader respects min(length, len(records)) and applies the
+    same normalize as longmemeval_test.load_longmemeval_dataset()."""
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fixture = [
+        {"question": "q1", "answer": "a1", "haystack_sessions": [["s1"]]},
+        # missing haystack_sessions / question_type → must be filled in
+        {"question": "q2", "answer": "a2"},
+        # third row cut by length=2
+        {"question": "q3", "answer": "a3"},
+    ]
+    fp = tmp_path / "lme.json"
+    fp.write_text(json.dumps(fixture))
+
+    out = load_longmemeval_local(fp, length=2, split="myslice")
+    assert len(out) == 2
+    assert out[0]["question"] == "q1"
+    assert out[0]["question_type"] == "unknown"
+    assert out[0]["split"] == "myslice"
+    assert out[1]["haystack_sessions"] == []
+    assert out[1]["question_type"] == "unknown"
+
+
+def test_load_longmemeval_local_rejects_non_list(tmp_path):
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fp = tmp_path / "bad.json"
+    fp.write_text(json.dumps({"not": "a list"}))
+    with pytest.raises(TypeError, match=r"Expected list"):
+        load_longmemeval_local(fp, length=1)
+
+
+def test_load_longmemeval_local_length_exceeds_returns_all(tmp_path):
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fp = tmp_path / "small.json"
+    fp.write_text(json.dumps([{"question": "q", "answer": "a"}]))
+    out = load_longmemeval_local(fp, length=999)
+    assert len(out) == 1

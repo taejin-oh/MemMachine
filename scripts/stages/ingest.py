@@ -41,9 +41,18 @@ def _ingest_longmemeval(
     )
 
     bench = run_cfg["benchmark"]
-    dataset = load_longmemeval_dataset(
-        length=int(bench["length"]), split=bench["split"]
-    )
+    if bench.get("data_path"):
+        # Local JSON wins over HF download. Mirrors p5/locomo's data_path pattern.
+        local = cm.resolve_data_path(
+            bench, default_relative="evaluation/data/longmemeval_s_cleaned.json"
+        )
+        dataset = cm.load_longmemeval_local(
+            local, length=int(bench["length"]), split=bench.get("split", "local")
+        )
+    else:
+        dataset = load_longmemeval_dataset(
+            length=int(bench["length"]), split=bench["split"]
+        )
     asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
     return {"benchmark": "longmemeval", "num_questions": len(dataset)}
 

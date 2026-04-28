@@ -126,9 +126,17 @@ async def _run_longmemeval_cell(
     from evaluation.utils import agent_utils
 
     bench = run_cfg["benchmark"]
-    dataset = load_longmemeval_dataset(
-        length=int(bench["length"]), split=bench["split"]
-    )
+    if bench.get("data_path"):
+        local = cm.resolve_data_path(
+            bench, default_relative="evaluation/data/longmemeval_s_cleaned.json"
+        )
+        dataset = cm.load_longmemeval_local(
+            local, length=int(bench["length"]), split=bench.get("split", "local")
+        )
+    else:
+        dataset = load_longmemeval_dataset(
+            length=int(bench["length"]), split=bench["split"]
+        )
 
     rm = agent_utils.load_eval_config(config_path)
     test_target = params.get("test_target", "retrieval_agent")

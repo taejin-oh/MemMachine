@@ -10,6 +10,9 @@ benchmark:
   # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
   # score divergence, so keep this single canonical name.
   split: longmemeval_s_cleaned
+  # Local JSON wins over HF download (mirrors p5/locomo data_path pattern).
+  # Comment out / remove to fall back to HF online.
+  data_path: evaluation/data/longmemeval_s_cleaned.json
 
 # 독립변수
 sweep:

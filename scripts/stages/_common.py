@@ -130,6 +130,38 @@ def resolve_data_path(bench: dict[str, Any], default_relative: str) -> Path:
     return candidate
 
 
+def load_longmemeval_local(
+    path: Path, length: int, split: str = "local"
+) -> list[dict[str, Any]]:
+    """Read a local LongMemEval JSON and apply the same minimal normalize as
+    `evaluation/retrieval_agent/longmemeval_test.py:load_longmemeval_dataset()`.
+
+    Mirrors that function's `min(length, len(records))` semantics and four-field
+    normalize (question / answer / question_type / haystack_sessions / split)
+    so downstream `_collect_supporting_facts` / `_collect_turn_contents` /
+    `process_question` see the same shape regardless of source.
+    """
+    import json
+
+    with path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, list):
+        raise TypeError(f"Expected list at top of {path}, got {type(raw).__name__}.")
+    take = min(length, len(raw))
+    out: list[dict[str, Any]] = []
+    for record in raw[:take]:
+        if not isinstance(record, dict):
+            continue
+        normalized = dict(record)
+        normalized["question"] = str(normalized.get("question", ""))
+        normalized["answer"] = str(normalized.get("answer", ""))
+        normalized.setdefault("question_type", "unknown")
+        normalized.setdefault("haystack_sessions", [])
+        normalized["split"] = split
+        out.append(normalized)
+    return out
+
+
 def env_with_repo_root() -> dict[str, str]:
     env = os.environ.copy()
     extra = [
