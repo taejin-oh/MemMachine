@@ -1,0 +1,31 @@
+# #2 — Multi-hop retrieval failure (HotpotQA Memory vs Retrieval Agent)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #2
+problem: 2
+description: "HotpotQA hard 500 — Memory(memmachine) vs Retrieval Agent"
+
+benchmark:
+  name: hotpot
+  length: 500
+  split: validation
+  # HuggingFace `hotpot_qa/distractor` 에는 train/validation 만 있고 hard split 은 없음.
+  # paper 의 "hard 500" 은 distractor validation 의 첫 500 문항으로 운영 (v0.2 결정).
+  # length=500 은 hotpotQA_test.py:215 dataset.select(range(length))
+
+# 독립변수
+sweep:
+  test_target: [memmachine, retrieval_agent]
+
+# 고정변수
+fixed:
+  search_limit: 20
+
+# stage hooks
+prompts:
+  generate_prompt_file: null   # EDWIN 미사용 → 기본 ANSWER_PROMPT fallback
+
+# 종속변수 (analyze 단계에서 보고)
+metrics:
+  - accuracy
+  - recall
+  - tokens_per_query
+  - per_tool_breakdown

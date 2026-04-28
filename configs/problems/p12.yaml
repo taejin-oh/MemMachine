@@ -1,0 +1,16 @@
+# #12 — k scaling 비효율 (#4 결과의 token vs accuracy Pareto)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #12
+problem: 12
+description: "#4 산출물의 k 별 input token 대 accuracy Pareto 분석"
+
+# 본 problem 도 별도 run 없음. #4 산출물 재사용.
+reuse_run: null   # generate_config.py 에서 채워짐
+
+# 분석 옵션
+analyze:
+  pareto: true
+
+metrics:
+  - tokens_per_query
+  - overall_llm_score
+  - pareto_frontier

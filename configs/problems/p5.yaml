@@ -1,0 +1,28 @@
+# #5 — Temporal reasoning 약함 (LoCoMo Memory vs Agent, cat5 자동 skip)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #5
+problem: 5
+description: "LoCoMo — cat5 제외, length 만큼의 conversation group 으로 Memory vs Agent / Temporal vs Single-hop 비교"
+
+benchmark:
+  name: locomo
+  # repo-root 기준 상대경로. generate_config.py 와 stage wrapper 의 resolve_data_path() 가
+  # 모두 REPO_ROOT 기준 절대경로로 resolve 하므로 cwd 와 무관하게 동작합니다.
+  # 데이터를 외부에 두면 절대경로로 덮어 쓰세요 (CLI / JSON override / 직접 편집).
+  data_path: evaluation/data/locomo10.json
+  length: 10   # locomo10.json 의 conversation group 수 (전체). CLI `--length N` 으로 override 가능.
+  # cat5 (adversarial) skip 은 evaluation/retrieval_agent/locomo_search.py 에 자동 포함.
+
+# 독립변수
+sweep:
+  test_target: [memmachine, retrieval_agent]
+
+# 고정변수
+fixed:
+  search_limit: 20
+
+# stage hooks
+prompts:
+  generate_prompt_file: null   # EDWIN 미사용 → 기본 ANSWER_PROMPT fallback
+
+metrics:
+  - per_category_llm_score   # 주목: Temporal vs Single-hop
