@@ -34,10 +34,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--stage",
-        default="all",
+        default=None,
         help='Comma-separated stages or "all". Allowed: '
         + ",".join(STAGE_ORDER)
-        + ",all",
+        + ',all. Default: "all", or "analyze" if run YAML has a non-empty '
+        "reuse_run (analyze-only problems p6/p12).",
     )
     parser.add_argument(
         "--decompose-multisession",
@@ -77,7 +78,31 @@ def main() -> int:
             "Repeated-run wrapper is tracked as future work in DECISIONS.md."
         )
 
-    stages = resolve_stages(args.stage)
+    reuse_run = run_cfg.get("reuse_run")
+    if args.stage is None:
+        stage_arg = "analyze" if reuse_run else "all"
+        if reuse_run:
+            print(
+                f"[pipeline] reuse_run={reuse_run!r} detected -> "
+                "restricting --stage to 'analyze' (analyze-only problem; "
+                "pass --stage explicitly to override, but ingest/retrieve/"
+                "generate/judge will be rejected).",
+                file=sys.stderr,
+            )
+    else:
+        stage_arg = args.stage
+
+    stages = resolve_stages(stage_arg)
+
+    if reuse_run:
+        non_analyze = [s for s in stages if s != "analyze"]
+        if non_analyze:
+            raise SystemExit(
+                f"reuse_run={reuse_run!r} is set; analyze-only problems "
+                f"(p6/p12) reject --stage {','.join(non_analyze)}. "
+                "Use --stage analyze or omit --stage."
+            )
+
     print(f"[pipeline] run_name={run_cfg['run_name']}  stages={stages}")
 
     from scripts.stages import analyze as stage_analyze
