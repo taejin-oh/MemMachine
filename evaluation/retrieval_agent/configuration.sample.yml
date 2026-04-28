@@ -1,0 +1,214 @@
+# =============================================================================
+# MemMachine Retrieval-Agent Benchmark — 완전 주석판 샘플 설정
+# =============================================================================
+# 사용법:
+#   1) 이 파일을 같은 디렉터리(evaluation/retrieval_agent/)에 configuration.yml
+#      이라는 이름으로 복사한다.
+#         cp configuration.sample.yml configuration.yml
+#   2) <PLACEHOLDER> 들을 실제 값으로 채운다.
+#   3) Neo4j / Postgres 등 DB 인스턴스를 미리 띄워둔다 (이 파일은 주소·인증만 받음).
+#   4) run_test.sh 로 실행한다. 예:
+#         ./run_test.sh longmemeval exp1 ingest longmemeval_s_cleaned retrieval_agent 500
+#         ./run_test.sh longmemeval exp1 search longmemeval_s_cleaned retrieval_agent 500 \
+#             --search-limit 20 --search-concurrency 4 --judge-concurrency 4
+#
+# run_test.sh 가 받는 평가 옵션 중 *런타임에만 의미 있는 것* (이 파일에 없음):
+#   --search-limit N        ← k (검색 깊이). longmemeval search 에서만 의미 있음.
+#   --ingest-concurrency N  ← locomo ingest 전용
+#   --search-concurrency N  ← search 동시성
+#   --judge-concurrency N   ← LLM judge 동시성
+#
+# 평가 토글 중 *이 파일에 들어가야 하는 것*:
+#   episodic_memory.long_term_memory.message_sentence_chunking  ← chunk on/off
+#   evaluation.longmemeval.prepend_user_prefix                  ← user prefix on/off
+#   retrieval_agent.llm_model                                   ← 답변 LLM = 기본 judge LLM
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# episode_store : 세션 단위 episode 저장 (SQL).
+# -----------------------------------------------------------------------------
+episode_store:
+  database: profile_storage      # resources.databases 의 ID 를 가리킴
+  with_count_cache: true         # 세션별 카운트 캐시. 프로덕션에선 true 권장.
+
+
+# -----------------------------------------------------------------------------
+# episodic_memory : long-term / short-term 메모리 동작 정의.
+# -----------------------------------------------------------------------------
+episodic_memory:
+  enabled: true
+
+  long_term_memory:
+    embedder: openai_embedder              # resources.embedders 의 ID
+    reranker: bm25_reranker                # resources.rerankers 의 ID
+    vector_graph_store: my_neo4j           # resources.databases 의 ID (Neo4j)
+
+    # ─── 평가 토글: chunk on/off ──────────────────────────────────────────────
+    # true  → message episode 를 문장 단위로 쪼개 임베딩 (paper C12 기준).
+    #         디스크/시간 비용 ↑, 일부 케이스에서 정확도 ↑.
+    # false → message episode 를 통째로 임베딩 (기본값, 빠르고 가벼움).
+    # 주의: 이 값을 바꾸면 ingest 결과 자체가 달라지므로
+    #       chunk on/off 비교 시 *서로 다른 RESULT_POSTFIX 로 ingest 부터 새로* 돌려야 한다.
+    message_sentence_chunking: false
+
+  long_term_memory_enabled: true
+
+  short_term_memory:
+    llm_model: answer_llm                  # resources.language_models 의 ID
+    message_capacity: 500
+    summary_prompt_system: "You are an AI agent that summarizes episodes."
+    summary_prompt_user: "Summarize: {summary}\n{episodes}\nYour summary (under {max_length} words):"
+  short_term_memory_enabled: true
+
+
+# -----------------------------------------------------------------------------
+# logging : 콘솔 로그 레벨.
+# -----------------------------------------------------------------------------
+logging:
+  level: INFO        # DEBUG | INFO | WARNING | ERROR
+
+
+# -----------------------------------------------------------------------------
+# retrieval_agent : 답변 생성 + (기본) LLM-as-a-judge 가 사용하는 모델/리랭커.
+# -----------------------------------------------------------------------------
+# llm_model 은 두 곳에서 쓰인다:
+#   (a) 답변 생성 (answer LLM)
+#   (b) evaluate.py 가 호출하는 LLM judge
+# 답변 LLM 과 judge LLM 을 분리하고 싶으면:
+#   - 아래 resources.language_models 에 judge_llm 항목을 추가하고,
+#   - scripts/run_pipeline.py + generate_config.py 의 --judge-model judge_llm
+#     wrapper 를 사용한다 (run_test.sh 단독 사용 시에는 분리 안 됨).
+retrieval_agent:
+  llm_model: answer_llm
+  reranker: bm25_reranker        # episodic_memory.long_term_memory.reranker 보다 우선.
+
+
+# -----------------------------------------------------------------------------
+# semantic_memory : 본 retrieval-agent 벤치마크에서는 비활성화.
+# 단 스키마 검증을 위해 config_database 는 유효한 SQL DB ID 를 가리켜야 한다.
+# -----------------------------------------------------------------------------
+semantic_memory:
+  enabled: false
+  config_database: profile_storage
+
+
+# -----------------------------------------------------------------------------
+# session_manager : 세션 메타데이터 저장.
+# -----------------------------------------------------------------------------
+session_manager:
+  database: profile_storage
+
+
+# =============================================================================
+# evaluation : 벤치마크 실행 시 평가 단계 토글
+# =============================================================================
+evaluation:
+  longmemeval:
+    # ─── 평가 토글: user prefix on/off ────────────────────────────────────────
+    # true  → 검색 시 질문 앞에 "User: " 를 붙임 (paper C6 / C12).
+    # false → 원문 그대로 검색 (paper C5, 기본값).
+    # longmemeval_test.py:82 / 224-231 에서 읽힘. longmemeval 외에는 무시됨.
+    prepend_user_prefix: false
+
+
+# =============================================================================
+# resources : 위에서 ID 로 참조한 모든 외부 리소스의 실제 정의
+# =============================================================================
+resources:
+
+  # ---------------------------------------------------------------------------
+  # databases
+  # ---------------------------------------------------------------------------
+  databases:
+    # Neo4j — episodic long-term memory 의 vector graph store
+    my_neo4j:
+      provider: neo4j
+      config:
+        uri: bolt://localhost:7687
+        user: neo4j
+        password: <NEO4J_PASSWORD>
+
+    # Postgres — episode_store / session_manager / semantic_memory.config_database
+    profile_storage:
+      provider: postgres
+      config:
+        dialect: postgresql
+        driver: asyncpg
+        host: localhost
+        port: 5432
+        user: memmachine
+        password: <POSTGRES_PASSWORD>
+        db_name: memmachine
+    #
+    # SQLite 대안 (로컬에서 Postgres 안 띄우고 싶을 때):
+    # sqlite_db:
+    #   provider: sqlite
+    #   config:
+    #     dialect: sqlite
+    #     driver: aiosqlite
+    #     path: evaluation_session.db
+
+  # ---------------------------------------------------------------------------
+  # embedders
+  # ---------------------------------------------------------------------------
+  embedders:
+    openai_embedder:
+      provider: openai
+      config:
+        api_key: <OPENAI_API_KEY>
+        base_url: https://api.openai.com/v1
+        model: text-embedding-3-small
+        dimensions: 1536
+    #
+    # Ollama 로컬 임베더 대안 (OpenAI-호환 엔드포인트 노출):
+    # ollama_embedder:
+    #   provider: openai
+    #   config:
+    #     api_key: EMPTY
+    #     base_url: http://localhost:11434/v1
+    #     model: nomic-embed-text
+    #     dimensions: 768
+
+  # ---------------------------------------------------------------------------
+  # language_models
+  #   - 답변 LLM (answer_llm) 은 retrieval_agent.llm_model 로 참조됨.
+  #   - judge_llm 은 wrapper(generate_config.py --judge-model judge_llm) 사용 시에만
+  #     활성화됨. run_test.sh 단독 실행 시에는 무시되지만 등록해 둬도 무해함.
+  # ---------------------------------------------------------------------------
+  language_models:
+    answer_llm:
+      provider: openai-responses
+      config:
+        api_key: <OPENAI_API_KEY>
+        base_url: https://api.openai.com/v1
+        model: gpt-4o-mini
+
+    judge_llm:
+      provider: openai-responses
+      config:
+        api_key: <OPENAI_API_KEY>
+        base_url: https://api.openai.com/v1
+        model: gpt-4o          # 보통 judge 는 답변 모델보다 강한 모델 사용.
+
+  # ---------------------------------------------------------------------------
+  # rerankers
+  # ---------------------------------------------------------------------------
+  rerankers:
+    bm25_reranker:
+      provider: bm25
+      config:
+        k1: 1.5
+        b: 0.75
+        epsilon: 0.25
+        language: english
+        tokenizer: default
+    #
+    # AWS Bedrock 리랭커 대안:
+    # aws_reranker:
+    #   provider: amazon-bedrock
+    #   config:
+    #     region: us-west-2
+    #     aws_access_key_id: <AWS_ACCESS_KEY_ID>
+    #     aws_secret_access_key: <AWS_SECRET_ACCESS_KEY>
+    #     model_id: amazon.rerank-v1:0
