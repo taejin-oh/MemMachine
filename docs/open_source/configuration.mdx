@@ -87,7 +87,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
           summary_prompt_system: episode_summary_system
           summary_prompt_user: episode_summary_user
           message_capacity: 64000
-          summarization_enabled: true
+          summarization_enabled: false
         long_term_memory_enabled: true
         short_term_memory_enabled: true
         enabled: true
@@ -110,7 +110,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
           summary_prompt_system: episode_summary_system # System prompt for summary generation
           summary_prompt_user: episode_summary_user # User prompt for summary generation
           message_capacity: 64000 # Maximum length of short-term memory (default: 64000)
-          summarization_enabled: true # If false, eviction still works but skips LLM summary generation
+          summarization_enabled: false # Default: skip LLM summary generation. Eviction still works. Set true to opt in.
         long_term_memory_enabled: true # Enable long-term memory
         short_term_memory_enabled: true # Enable short-term memory
         enabled: true # Enable episodic memory subsystem
@@ -136,7 +136,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
     | `short_term_memory.summary_prompt_system` | System prompt ID for short-term summarization. | *Required* |
     | `short_term_memory.summary_prompt_user` | User prompt ID for short-term summarization. | *Required* |
     | `short_term_memory.message_capacity` | The maximum character capacity for short-term memory.                     | `64000`      |
-    | `short_term_memory.summarization_enabled` | If `false`, STM still evicts on capacity, but skips LLM summary generation. | `true` |
+    | `short_term_memory.summarization_enabled` | If `false`, STM still evicts on capacity, but skips LLM summary generation. | `false` |
   </Accordion>
 
   <Accordion title="Retrieval Agent">
@@ -172,7 +172,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
       <Tab title="Parameters">
       ```yaml
       semantic_memory:
-        enabled: true
+        enabled: false
         llm_model: my-semantic-llm
         embedding_model: my-openai-embedder
         database: my-postgres-db
@@ -185,7 +185,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
       <Tab title="With Comments">
       ```yaml
       semantic_memory:
-        enabled: true # Controls whether semantic memory is active
+        enabled: false # Default: off. Set true to opt into semantic memory ingestion/retrieval.
         llm_model: my-semantic-llm # ID of the Language Model from 'resources.language_models'
         embedding_model: my-openai-embedder # ID of the Embedder from 'resources.embedders'
         database: my-postgres-db # ID of the database from 'resources.databases'
@@ -200,7 +200,7 @@ To see a complete example of a potential `cfg.yml` file, check out [GPU-based Sa
     **Parameters:**
     | Parameter           | Description                                                                 | Default    |
     |---------------------|-----------------------------------------------------------------------------|------------|
-    | `enabled`           | Whether semantic memory is enabled. Auto-disabled when required fields are missing. | `true` |
+    | `enabled`           | Whether semantic memory is enabled. Auto-disabled when required fields are missing. | `false` |
     | `llm_model`         | The ID of a language model defined in `resources.language_models` for semantic processing. | *Required* |
     | `embedding_model`   | The ID of an embedder defined in `resources.embedders` for creating embeddings. | *Required* |
     | `database`          | The ID of a database defined in `resources.databases` for semantic storage. | *Required* |

@@ -582,7 +582,7 @@ rerankers:
 
 ### 5b) STM summarization 토글 (`summarization_enabled`) — **config-only**
 
-`episodic_memory.short_term_memory.summarization_enabled` 가 generated configuration.yml 에 항상 박힘. **eval-tool 기본값 `false`** (`generate_config.py:build_configuration_yml` 가 의도적으로 false 를 emit; 서버 본체의 default 는 eval_claude 의 Fix 1 이후 `true`). 의미: STM `message_capacity` 초과 시 LLM 요약 호출 여부.
+`episodic_memory.short_term_memory.summarization_enabled` 가 generated configuration.yml 에 항상 박힘. **eval-tool 기본값 `false`** (`generate_config.py:build_configuration_yml` 가 의도적으로 false 를 emit). 서버 본체 default 도 `false` 로 통일되어 두 경로 방향이 일치 (eval_claude 후속 정책). 의미: STM `message_capacity` 초과 시 LLM 요약 호출 여부.
 
 > **주의 — config-only knob** — eval wrapper 의 LongMemEval ingest/retrieve 는 `agent_utils.init_memmachine_params()` 가 STM 자체를 `None` 으로 만들어 (`agent_utils.py:461`) 이 토글이 평가 점수에 영향을 주지 않는다. **본체 서버를 generated yml 그대로 띄우는 경우에만** 동작에 영향. eval_claude 에서는 이 사실을 명시적으로 반영:
 > - sweep 은 `_validate_sweep_keys` 로 차단 (모든 셀 점수가 동일해서 오해 유발)

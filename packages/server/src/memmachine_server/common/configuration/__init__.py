@@ -89,7 +89,7 @@ class SemanticMemoryConf(YamlSerializableMixin):
     """Configuration for semantic memory defaults."""
 
     enabled: bool = Field(
-        default=True,
+        default=False,
         description="Whether semantic memory is enabled. "
         "Auto-disabled when required fields (database, llm_model, embedding_model) are empty.",
     )

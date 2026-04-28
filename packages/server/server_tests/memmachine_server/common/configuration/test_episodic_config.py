@@ -100,25 +100,26 @@ def _stm_partial(**overrides: Any):
     return ShortTermMemoryConfPartial(**base)
 
 
-def test_summarization_enabled_defaults_to_true_after_merge():
-    """Regression guard: default must preserve original always-on behavior."""
+def test_summarization_enabled_defaults_to_false_after_merge():
+    """Regression guard: default skips LLM summary generation; users must
+    explicitly opt in by setting summarization_enabled=true."""
     from memmachine_server.common.configuration.episodic_config import (
         ShortTermMemoryConfPartial,
     )
 
     full = _stm_partial().merge(ShortTermMemoryConfPartial())
-    assert full.summarization_enabled is True
+    assert full.summarization_enabled is False
 
 
-def test_summarization_enabled_false_overrides_default():
+def test_summarization_enabled_true_overrides_default():
     from memmachine_server.common.configuration.episodic_config import (
         ShortTermMemoryConfPartial,
     )
 
-    full = _stm_partial(summarization_enabled=False).merge(
+    full = _stm_partial(summarization_enabled=True).merge(
         ShortTermMemoryConfPartial()
     )
-    assert full.summarization_enabled is False
+    assert full.summarization_enabled is True
 
 
 def test_summarization_enabled_partial_omitted_is_none():
