@@ -26,10 +26,30 @@ from . import _common as cm
 # ---------------------------------------------------------------------------
 
 
+# Keys that affect ingest output (Episode storage shape) and therefore cannot
+# be swept from retrieve alone — toggling them here would A/B retrieval over
+# the *same* ingested corpus, defeating the experiment's intent.
+SWEEP_FORBIDDEN_KEYS: set[str] = {"message_sentence_chunking"}
+
+
+def _validate_sweep_keys(sweep: dict[str, Any]) -> None:
+    bad = sorted(k for k in sweep if k in SWEEP_FORBIDDEN_KEYS)
+    if bad:
+        raise SystemExit(
+            "[retrieve] sweep keys "
+            f"{bad} affect ingest output (Episode storage shape) and cannot "
+            "be swept from the retrieve stage. Move them to `fixed:` and "
+            "use a separate run + ingest per value (see "
+            "evaluation/retrieval_agent/run_benchmark_matrix.sh for an "
+            "example), or split the problem yaml into per-value variants."
+        )
+
+
 def _expand_sweep(sweep: dict[str, list[Any]]) -> list[dict[str, Any]]:
     """Return one dict per cartesian-product cell of the sweep."""
     if not sweep:
         return [{}]
+    _validate_sweep_keys(sweep)
     keys = list(sweep.keys())
     value_lists = [sweep[k] if isinstance(sweep[k], list) else [sweep[k]] for k in keys]
     return [
@@ -55,10 +75,10 @@ def _apply_cell_to_config(config_path: str, params: dict[str, Any]) -> None:
         updates.setdefault("evaluation", {}).setdefault("longmemeval", {})[
             "prepend_user_prefix"
         ] = bool(params["prepend_user_prefix"])
-    if "message_sentence_chunking" in params:
-        updates.setdefault("episodic_memory", {}).setdefault("long_term_memory", {})[
-            "message_sentence_chunking"
-        ] = bool(params["message_sentence_chunking"])
+    # message_sentence_chunking is intentionally NOT reapplied per cell:
+    # it affects ingest output and is rejected by _validate_sweep_keys() so
+    # it can only come from `fixed`, which is already written at generate
+    # time by build_configuration_yml + _apply_fixed_to_configuration.
     if "summarization_enabled" in params:
         updates.setdefault("episodic_memory", {}).setdefault("short_term_memory", {})[
             "summarization_enabled"
