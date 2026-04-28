@@ -4,318 +4,40 @@
 
 ---
 
-## 1단계: 기존 코드 vs PR7 추가 코드
-
-PR7 은 **기존 평가 코드를 wrapping** 한 도구. 새로 만든 게 아니라 위에 한 겹 씌운 것.
-
-### PR7 이전부터 있던 코드 (PR7이 안 건드림)
-
-```
-evaluation/retrieval_agent/
-  ├─ longmemeval_test.py       ← LongMemEval 데이터셋 로딩 + ingest + search
-  │     • load_longmemeval_dataset()
-  │     • longmemeval_ingest()
-  │     • longmemeval_search()
-  ├─ hotpotQA_test.py
-  ├─ locomo_ingest.py / locomo_search.py / locomo_delete.py
-  └─ ...
-evaluation/utils/
-  └─ agent_utils.py            ← process_question(), 토큰/recall 집계
-```
-
-확인 방법: `git log --all --oneline -- evaluation/retrieval_agent/longmemeval_test.py` 의 모든 커밋이 PR7 머지(`8824f55`) 이전. PR7 의 `git diff --stat` 결과에도 `evaluation/` 경로가 한 줄도 없음.
-
-**의미**: 데이터셋 로딩, ingest, search 같은 핵심 로직은 PR7 이전 코드 그대로. `length: 500`, `split: longmemeval_s_cleaned` (eval_claude 에서 통일됨; 이전엔 `longmemeval_s`) 의 의미와 동작도 기존 코드의 것이지 PR7 이 새로 정의한 게 아님.
-
-### PR7 이 새로 만든 것 (총 32 파일, 본체)
-
-```
-scripts/                        ← 새 wrapper 도구 본체
-  ├─ generate_config.py         ← 옵션 4-way merge → run YAML 생성
-  ├─ run_pipeline.py            ← stage 순서대로 실행
-  ├─ _merge.py                  ← deep_merge / yaml IO 유틸
-  └─ stages/
-      ├─ ingest.py              ← evaluation/retrieval_agent/*_ingest 함수를 호출
-      ├─ retrieve.py            ← agent_utils.process_question 호출
-      ├─ generate.py            ← (no-op, retrieve 가 같이 emit)
-      ├─ judge.py               ← LLM 채점 호출
-      └─ analyze.py             ← jsonl 합쳐 cell 별 집계
-configs/                        ← 옵션 정의 (base/problems/profiles/runs)
-prompts/EDWIN1.txt, EDWIN3.txt  ← placeholder
-docs/USAGE.md, DECISIONS.md, RESEARCH.md
-```
-
-### 둘이 어떻게 만나나
-
-PR7 wrapper 가 기존 코드를 부르는 방식은 두 가지:
-
-1. **import 호출** — LongMemEval / HotpotQA. Python 함수를 그대로 import.
-   - `scripts/stages/ingest.py:38-47`:
-     ```python
-     from evaluation.retrieval_agent.longmemeval_test import (
-         load_longmemeval_dataset, longmemeval_ingest,
-     )
-     dataset = load_longmemeval_dataset(length=..., split=...)  # 기존 함수
-     asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
-     ```
-   - `scripts/stages/retrieve.py:121-135` 의 `agent_utils.process_question()` 도 기존 함수.
-
-2. **subprocess 호출** — LoCoMo. CLI 형태로만 동작하게 짜인 기존 스크립트라 subprocess 로 띄움.
-   - `scripts/stages/ingest.py:75-83`:
-     ```python
-     cmd = [sys.executable, ".../locomo_ingest.py", "--data-path", ..., "--config-path", ...]
-     subprocess.run(cmd, ...)
-     ```
-
-### 한 줄 정리
-
-| 무엇이 | 어디서 정의 | PR7 책임 범위 |
-|---|---|---|
-| `length`, `split` 의 동작 | 기존 `load_longmemeval_dataset` | 값을 넘겨주기만 |
-| `prepend_user_prefix`, `message_sentence_chunking` | 기존 `longmemeval_test.py` 가 configuration.yml에서 읽음 | configuration.yml에 값을 써주기만 |
-| `search_limit` | 기존 `process_question(search_limit=...)` 인자 | sweep cell 마다 그 인자로 넘기기만 |
-| `test_target` 분기 (Memmachine/ToolSelect/llm) | 기존 agent 클래스들 | 어떤 클래스를 쓸지 분기만 |
-| sweep / fixed / cell 개념 | (기존엔 없음) | **PR7 이 새로 도입** |
-| 4-way merge / run YAML 박제 | (기존엔 없음) | **PR7 이 새로 도입** |
-| stage 분리 / jsonl 산출 / analyze 집계 | (기존엔 일부만) | **PR7 이 새로 도입** |
-
-**즉**: "무엇을 평가할지(데이터셋 로딩 + 실제 검색/답변)는 기존 코드, 어떻게 옵션을 묶고 반복할지(sweep + cell + jsonl)는 PR7" 가 구분선.
 
 ---
 
-## 2단계: `longmemeval_oracle` 써도 동작하나?
+# Part 1 — 빠른 시작 (순서대로 따라가면 동작)
 
-**결론**: 코드는 동작함. 평가 의미가 달라져서 p4 의 목적엔 안 맞음.
+> 처음 도구를 쓰는 사람용. 0~5절을 순서대로 따라가면 첫 결과 (`results/.../analyze.json`) 가 나옵니다. 동작 원리는 Part 2, 응용/대체 옵션은 Part 3.
 
-### 코드 관점 — 동작함
+## 0단계: 사전 준비
 
-`split` 값이 코드에서 흐르는 경로 (`evaluation/retrieval_agent/longmemeval_test.py:294-303`):
+본격 시작 전에 아래가 준비돼 있어야 합니다.
 
-```python
-def load_longmemeval_dataset(length: int, split: str):
-    split_file = split if split.endswith(".json") else f"{split}.json"
-    try:
-        dataset = load_dataset("xiaowu0162/longmemeval-cleaned", split=split)  # 그대로 전달
-        num_rows = min(length, len(dataset))
-        records = dataset.select(range(num_rows)).to_list()
-    except Exception:
-        # fallback: f"{split}.json" 파일명으로 직접 다운로드
-        ...
-```
+### DB 두 개 띄우기 (사용자 책임)
 
-핵심: split 이름은 **유효성 검사 없이** 그대로 HuggingFace 에 넘겨짐. PR7 wrapper 도 이름을 검증 안 함. `xiaowu0162/longmemeval-cleaned` repo 에 그 이름의 split 이 존재하기만 하면 동작. 일반적으로:
+본 도구는 DB 를 안 띄웁니다. 본인이 Docker 등으로 먼저 띄우고 주소만 적습니다. repo 의 `docker-compose.yml` 또는 `deployments/helm/` 참고.
 
-| split 이름 | 파일명 | 약 sample 수 |
-|---|---|---|
-| `longmemeval_s` | longmemeval_s.json | ~500 (small haystack) |
-| `longmemeval_m` | longmemeval_m.json | ~500 (medium haystack, 더 긴 history) |
-| `longmemeval_oracle` | longmemeval_oracle.json | ~500 (정답에 필요한 dialog만) |
-
-`load_longmemeval_dataset()` 이후 normalize 코드 (`longmemeval_test.py:325-336`) 가 `question` / `answer` / `question_type` / `haystack_sessions` 만 사용. oracle 도 이 4 필드 구조가 같아서 ingest/retrieve/judge 다 통과.
-
-### 바꾸는 방법 — `--split` CLI 가 없어 우회
-
-`generate_config.py` 의 CLI 인자(`scripts/generate_config.py:49-83`)에 `--split` 없음. 세 가지 길:
-
-**방법 A — p4.yaml 직접 수정 (영구)**
-```yaml
-benchmark:
-  name: longmemeval
-  length: 500
-  split: longmemeval_oracle
-```
-
-**방법 B — JSON override (일회성, 권장)**
-```json
-{
-  "problem": 4,
-  "run_name": "p4_oracle",
-  "configuration": {"model_profile": "my_model", "db_profile": "my_db"},
-  "benchmark": {"split": "longmemeval_oracle"},
-  "sweep": {"search_limit": [10, 20]}
-}
-```
 ```sh
-python scripts/generate_config.py --from-json configs/runs/oracle_override.json
+nc -zv localhost 7687    # Neo4j bolt
+nc -zv localhost 5432    # Postgres
 ```
+둘 다 succeeded 떠야 다음 단계 의미 있음.
 
-**방법 C — 생성된 run YAML 직접 편집**
+### Python 환경
 
-세 방법 모두 deep_merge 가 받아주고 stage 진행에 영향 없음.
-
-### 평가 의미 관점 — p4 의도와 안 맞음
-
-- **`longmemeval_s`/`longmemeval_m`**: haystack 안에 정답과 무관한 잡담이 잔뜩. retrieve 가 잡음 속에서 정답을 골라내야 함 → retrieve 능력 + answer LLM 능력 둘 다 측정.
-- **`longmemeval_oracle`**: haystack 에 정답에 진짜 필요한 dialog 만. retrieve 가 별로 안 중요 → answer LLM 능력만 측정.
-
-p4 목적은 "k(=search_limit) 늘릴 때 정확도가 단조증가하는가, 비단조인가" 인데 oracle 에선:
-- haystack 자체가 작아 k=10 만으로도 거의 다 retrieve 됨
-- k 늘려도 더 가져올 게 없음
-- cell 5개 accuracy 차이가 거의 없어 신호 안 잡힘
-
-**즉**:
-- ✅ 도구 정상 작동 빠른 smoke 테스트용으로 좋음 (HF 다운만 되면)
-- ✅ "answer LLM 자체 baseline" 측정용으론 좋음
-- ❌ p4 의 "k sweep 비단조성" 검증엔 부적합. 이걸 보려면 `longmemeval_s` 그대로.
-
----
-
-## 3단계: 웹 접속 없는 환경에서 LongMemEval 쓰기
-
-### 현재 코드 한계
-
-기존 함수 `load_longmemeval_dataset` (`evaluation/retrieval_agent/longmemeval_test.py:294-323`) 는 인터넷을 두 번 시도:
-
-```python
-try:
-    dataset = load_dataset("xiaowu0162/longmemeval-cleaned", split=split)
-    # HuggingFace datasets 라이브러리: 캐시 없으면 인터넷
-except Exception:
-    data_path = hf_hub_download(repo_id="xiaowu0162/longmemeval-cleaned",
-                                repo_type="dataset", filename=split_file)
-    # HuggingFace Hub: 캐시 없으면 인터넷
-```
-
-PR7 wrapper 는 이걸 손대지 않고 그대로 부름. "미리 받은 JSON 경로를 직접 지정한다" 는 옵션이 코드에 없음. 두 우회로 중 하나 필요.
-
-### 옵션 A: HF 캐시 옮기기 (코드 수정 0줄, 추천)
-
-위 두 함수는 **같은 캐시 디렉토리** 를 봄. 인터넷 머신에서 캐시 채운 뒤 통째로 오프라인 머신에 복사하고 오프라인 모드 켜면 끝.
-
-#### 1. 인터넷 머신에서 캐시 채우기
 ```sh
-pip install datasets huggingface_hub
-python - <<'EOF'
-from huggingface_hub import hf_hub_download
-for fn in ["longmemeval_s.json", "longmemeval_oracle.json"]:
-    p = hf_hub_download(
-        repo_id="xiaowu0162/longmemeval-cleaned",
-        repo_type="dataset",
-        filename=fn,
-    )
-    print("got:", p)
-EOF
+uv sync   # repo root 에서
 ```
 
-캐시 위치:
-```
-~/.cache/huggingface/hub/
-  datasets--xiaowu0162--longmemeval-cleaned/
-    blobs/<sha>...
-    snapshots/<commit_hash>/
-        longmemeval_s.json -> ../../blobs/<sha>
-        longmemeval_oracle.json -> ../../blobs/<sha>
-    refs/main
-```
+### LongMemEval 데이터 위치 (4-C ingest 가 사용)
 
-> primary path(`load_dataset`)도 함께 캐시하고 싶으면:
-> ```python
-> from datasets import load_dataset
-> load_dataset("xiaowu0162/longmemeval-cleaned", split="longmemeval_s")
-> ```
-> `~/.cache/huggingface/datasets/` 도 채워짐. 하지만 fallback 만 있어도 PR7 도구는 동작.
+p3/p4 default 는 `evaluation/data/longmemeval_s_cleaned.json` 을 가리킴. 그 경로에 파일을 두면 wrapper 가 HF 호출 없이 직접 로드. 다른 위치/버전을 쓰거나 HF online 으로 돌리려면 **Part 3 — 옵션 C** 참고.
 
-#### 2. 오프라인 머신으로 캐시 통째 복사
-```sh
-# 인터넷 머신
-tar czf hf_cache.tgz -C ~ .cache/huggingface
-# 오프라인 머신
-tar xzf hf_cache.tgz -C ~
-```
+### LLM API key
 
-또는 `HF_HOME` 환경변수로 캐시 위치를 repo 내부로 옮기는 것도 가능.
-
-#### 3. 오프라인 머신에서 환경변수 켜고 실행
-```sh
-export HF_HUB_OFFLINE=1
-export HF_DATASETS_OFFLINE=1   # primary path까지 캐시한 경우만
-python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage ingest
-```
-
-**장점**: PR7/기존 코드 0줄 수정. p4.yaml 의 `split` 만 캐시한 split 이름으로.
-**단점**: 캐시 디렉토리 구조가 낯섦. snapshot symlink 끊기지 않게 tar 통째 복사.
-
-### 옵션 B: 짧은 wrapper 패치 (직관적, ~15줄)
-
-p4.yaml 에 `benchmark.local_path` 추가 가능하게 PR7 wrapper 수정.
-
-`scripts/stages/ingest.py` 의 `_ingest_longmemeval` 패치 예시:
-```python
-def _ingest_longmemeval(run_cfg, config_path, session_id):
-    from evaluation.retrieval_agent.longmemeval_test import (
-        load_longmemeval_dataset, longmemeval_ingest,
-    )
-    bench = run_cfg["benchmark"]
-
-    local_path = bench.get("local_path")
-    if local_path:
-        import json
-        with open(local_path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        dataset = raw[: int(bench["length"])]
-        for r in dataset:
-            r.setdefault("question_type", "unknown")
-            r.setdefault("haystack_sessions", [])
-            r["split"] = bench.get("split", "local")
-    else:
-        dataset = load_longmemeval_dataset(
-            length=int(bench["length"]), split=bench["split"]
-        )
-
-    asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
-    return {"benchmark": "longmemeval", "num_questions": len(dataset)}
-```
-
-`retrieve.py:88-90` 의 `_run_longmemeval_cell` 도 같은 분기 추가. 두 곳 다 해야 함 (ingest 와 retrieve 가 같은 dataset 을 따로 로드).
-
-p4.yaml:
-```yaml
-benchmark:
-  name: longmemeval
-  length: 500
-  split: longmemeval_s_cleaned
-  local_path: /home/user/data/longmemeval_s_cleaned.json
-```
-
-**장점**: 캐시 구조 신경 안 쓰고 평범한 JSON 한 개만 두면 됨.
-**단점**: PR7 코드 수정 필요. 후속 PR.
-
-### 옵션 C: `benchmark.data_path` 로 wrapper 가 직접 로드 (eval_claude 신규, 채택됨)
-
-eval_claude 에서 옵션 B 의 아이디어가 본체에 머지됨. p3 / p4 problem yaml 이 default 로:
-
-```yaml
-# configs/problems/p4.yaml
-benchmark:
-  name: longmemeval
-  length: 500
-  split: longmemeval_s_cleaned
-  data_path: evaluation/data/longmemeval_s_cleaned.json
-```
-
-그 경로에 파일을 두면 wrapper 가 HF 호출 없이 바로 읽음 (`scripts/stages/_common.py:load_longmemeval_local`). `_ingest_longmemeval` / `_run_longmemeval_cell` 양쪽이 자동 분기 — `bench.get("data_path")` 가 있으면 local, 없으면 기존 HF path.
-
-다른 위치/파일을 쓰려면:
-```yaml
-benchmark:
-  data_path: /abs/path/longmemeval_oracle_cleaned.json   # 절대경로
-```
-또는 problem yaml 의 그 줄을 주석 처리하면 HF online 으로 fallback.
-
-generate_config 시점에 상대경로는 절대경로로 resolve 됨 (PR #20 흐름). 파일이 없으면 ingest 진입 시 명시적 `FileNotFoundError`(찾은 절대경로 포함).
-
-### 어느 쪽?
-
-| 상황 | 추천 |
-|---|---|
-| 단순 / repo 안에 파일 둠 | **옵션 C** (zero-config, 기본 동작) |
-| 파일을 외부에 두거나 split 여러 개 자주 교체 | 옵션 C 의 `data_path` 를 절대경로로 override |
-| HF 그대로 쓰고 싶음 (인터넷 가능) | problem yaml 의 `data_path:` 한 줄 주석 처리 → 옵션 A 또는 native HF |
-| 캐시 구조까지 그대로 미러 (다른 도구도 같이 쓸 때) | 옵션 A (캐시 통째 복사 + `HF_HUB_OFFLINE=1`) |
-| 팀이 계속 쓰는 wrapper 확장 | 옵션 B (eval_claude 가 이미 구현 — 옵션 C) |
-| HotpotQA(p2) 도 오프라인 | 같은 패턴 가능 (HotpotQA 도 `data_path` 추가 필요. 현재 p2.yaml 엔 없음 — 후속 작업) |
-
----
+다음 절 (4-A) 에서 `my_model.yaml` 의 placeholder 를 본인 키로 바꿉니다.
 
 ## 4단계: 너의 환경에서 p4 한 번 돌리기
 
@@ -969,150 +691,6 @@ results/                                  # ← 아직 비어있음. 4-C 에서 
 
 ---
 
-## 4-B 부록: rrf-hybrid (bm25 + identity) 쓰기
-
-### 시나리오와 한계
-
-`my_model.yaml` 에서 reranker 로 `rrf-hybrid` 를 쓰고 싶다. rrf-hybrid 는 **여러 reranker 를 RRF 로 결합** 하는 메타 reranker 라 `resources.rerankers` 에 결합 대상 + hybrid 자체가 동시에 등록돼 있어야 함 (`reranker_conf.py:112-120` `RRFHybridRerankerConf.reranker_ids: list[str]` 필수).
-
-PR7 초기 wrapper 는 `model_profile["reranker"]` (단일) 만 받아 한 항목만 등록했음. 후속 패치로 **`rerankers` (list) + `primary_reranker` (선택)** 형식을 받게 변경. 이로써 동일 profile 안에서 여러 reranker 등록 + hybrid 결합이 가능해짐.
-
-### identity + bm25 의 의미
-
-- identity = 원래 retrieval (벡터 유사도) 순서를 그대로
-- bm25 = 어휘 매칭 점수
-- rrf-hybrid = 두 순위를 RRF (Reciprocal Rank Fusion) 로 결합
-
-즉 "의미적 검색 + 어휘 매칭 보강" 패턴. 합리적.
-
-### `my_model.yaml` 새 형식 — rrf-hybrid 케이스
-
-```yaml
-embedder:
-  id: my_embedder
-  provider: openai
-  config:
-    api_key: "<OPENAI_API_KEY>"
-    base_url: https://api.openai.com/v1
-    model: text-embedding-3-small
-    dimensions: 1536
-
-rerankers:
-  - id: my_bm25                        # ◄── 첫 축
-    provider: bm25
-    config:
-      k1: 1.5
-      b: 0.75
-      epsilon: 0.25
-      language: english
-      tokenizer: default
-  - id: my_identity                    # ◄── 두 번째 축
-    provider: identity
-    config: {}                         # IdentityRerankerConf 는 키 0개
-  - id: my_hybrid                      # ◄── 둘을 RRF 로 결합
-    provider: rrf-hybrid
-    config:
-      reranker_ids: [my_bm25, my_identity]
-      k: 60                            # default 60. RRF 의 k 파라미터
-
-primary_reranker: my_hybrid            # ◄── 위쪽 (episodic_memory / retrieval_agent) 이 가리킬 id
-
-llm_model:
-  id: my_llm
-  provider: openai-responses
-  config:
-    api_key: "<OPENAI_API_KEY>"
-    base_url: https://api.openai.com/v1
-    model: gpt-4o-mini
-```
-
-### 생성될 configuration.yml 의 reranker 부분
-
-```yaml
-episodic_memory:
-  long_term_memory:
-    reranker: my_hybrid                # ◄── primary_reranker
-retrieval_agent:
-  reranker: my_hybrid                  # ◄── primary_reranker
-resources:
-  rerankers:
-    my_bm25:
-      provider: bm25
-      config: { k1: 1.5, b: 0.75, ... }
-    my_identity:
-      provider: identity
-      config: {}
-    my_hybrid:
-      provider: rrf-hybrid
-      config:
-        reranker_ids: [my_bm25, my_identity]
-        k: 60
-```
-
-### 단일 reranker 도 새 형식
-
-기존 `reranker:` (dict) 는 더 이상 받지 않음. 단일도 list 1개 항목으로 적어야 함. `primary_reranker` 는 생략 가능 (없으면 첫 항목 자동 선택):
-
-```yaml
-rerankers:
-  - id: my_reranker
-    provider: bm25
-    config: { ... }
-# primary_reranker 생략 → my_reranker 가 자동 선택됨
-```
-
-### 다른 hybrid 조합 cookbook
-
-- bm25 + cross-encoder: 어휘 + 의미 cross-encoder 결합
-  ```yaml
-  rerankers:
-    - id: my_bm25
-      provider: bm25
-      config: {}
-    - id: my_ce
-      provider: cross-encoder
-      config: { model_name: cross-encoder/qnli-electra-base }
-    - id: my_hybrid
-      provider: rrf-hybrid
-      config: { reranker_ids: [my_bm25, my_ce], k: 60 }
-  primary_reranker: my_hybrid
-  ```
-- bm25 + cohere (Cohere reranker)
-  ```yaml
-  rerankers:
-    - id: my_bm25
-      provider: bm25
-      config: {}
-    - id: my_cohere
-      provider: cohere
-      config:
-        cohere_key: "<COHERE_API_KEY>"
-        model: rerank-english-v3.0
-    - id: my_hybrid
-      provider: rrf-hybrid
-      config: { reranker_ids: [my_bm25, my_cohere], k: 60 }
-  primary_reranker: my_hybrid
-  ```
-
-### 검증
-
-`generate_config.py` 의 `_validate_and_normalize_rerankers()` 가 generate 시점에 명시적 `ValueError` 로 잡는 항목:
-- legacy `reranker:` (단일 dict) 또는 `reranker:` 와 `rerankers:` 동거
-- `rerankers:` 누락 / dict 로 적힘 / 빈 list
-- entry 의 `id` 또는 `provider` 누락 / 중복 `id`
-- `config:` 가 mapping 이 아님
-- `primary_reranker` 가 list 안에 없음
-- rrf-hybrid 의 `reranker_ids` 가 비어있음 / list[str] 아님 / 미지의 id 참조 / 자기 참조
-
-전체 메시지 표는 4-B (7) 흔한 실패 케이스 참고. 이외 (provider 별 config 필드 검증, api_key 필수 등) 는 ingest 시점에 MemMachine 본체 `RerankersConf.parse()` (`reranker_conf.py:189-237`) 와 `*_conf.py` 의 Pydantic 모델이 잡음.
-
-`scripts/test_generate_config_rerankers.py` 에 위 16 케이스가 unit test 로 박혀 있음:
-```sh
-uv run pytest scripts/test_generate_config_rerankers.py -v
-```
-
----
-
 ## 4-C: ingest 단독 실행 — DB 에 진짜 적재되는 단계
 
 여기서부터 **DB 및 embedding provider 호출이 실제로 발생**. LLM 답변 생성 호출은 ingest 가 아니라 retrieve 단계에서 발생함. 4-B 까지는 로컬 파일만 만들었지만 4-C 는 외부 시스템에 영향이 가는 단계라 idempotency / 재시도 / 정리 정책이 중요.
@@ -1583,3 +1161,474 @@ analyze (4-D 6)                   results/{name}/analyze.json
 - **반복 실행 (N runs)**: `n_runs > 1` 은 현재 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work (`docs/msr/msr_eval_tool_todo_pr7.md`).
 - **chunk on/off 자동화**: 현재는 `--run-name` 두 개로 수동 분리. 자동화 wrapper 는 future work.
 - **EDWIN1/EDWIN3 prompt 적용**: hook 자리만 있고 실제 적용 미구현 (D-003).
+
+---
+
+# Part 2 — 도구 동작 원리
+
+> 응용 / 디버깅 시점에 펼쳐봅니다. 첫 실행만 할 거면 안 봐도 됩니다.
+
+## 1단계: 기존 코드 vs PR7 추가 코드
+
+PR7 은 **기존 평가 코드를 wrapping** 한 도구. 새로 만든 게 아니라 위에 한 겹 씌운 것.
+
+### PR7 이전부터 있던 코드 (PR7이 안 건드림)
+
+```
+evaluation/retrieval_agent/
+  ├─ longmemeval_test.py       ← LongMemEval 데이터셋 로딩 + ingest + search
+  │     • load_longmemeval_dataset()
+  │     • longmemeval_ingest()
+  │     • longmemeval_search()
+  ├─ hotpotQA_test.py
+  ├─ locomo_ingest.py / locomo_search.py / locomo_delete.py
+  └─ ...
+evaluation/utils/
+  └─ agent_utils.py            ← process_question(), 토큰/recall 집계
+```
+
+확인 방법: `git log --all --oneline -- evaluation/retrieval_agent/longmemeval_test.py` 의 모든 커밋이 PR7 머지(`8824f55`) 이전. PR7 의 `git diff --stat` 결과에도 `evaluation/` 경로가 한 줄도 없음.
+
+**의미**: 데이터셋 로딩, ingest, search 같은 핵심 로직은 PR7 이전 코드 그대로. `length: 500`, `split: longmemeval_s_cleaned` (eval_claude 에서 통일됨; 이전엔 `longmemeval_s`) 의 의미와 동작도 기존 코드의 것이지 PR7 이 새로 정의한 게 아님.
+
+### PR7 이 새로 만든 것 (총 32 파일, 본체)
+
+```
+scripts/                        ← 새 wrapper 도구 본체
+  ├─ generate_config.py         ← 옵션 4-way merge → run YAML 생성
+  ├─ run_pipeline.py            ← stage 순서대로 실행
+  ├─ _merge.py                  ← deep_merge / yaml IO 유틸
+  └─ stages/
+      ├─ ingest.py              ← evaluation/retrieval_agent/*_ingest 함수를 호출
+      ├─ retrieve.py            ← agent_utils.process_question 호출
+      ├─ generate.py            ← (no-op, retrieve 가 같이 emit)
+      ├─ judge.py               ← LLM 채점 호출
+      └─ analyze.py             ← jsonl 합쳐 cell 별 집계
+configs/                        ← 옵션 정의 (base/problems/profiles/runs)
+prompts/EDWIN1.txt, EDWIN3.txt  ← placeholder
+docs/USAGE.md, DECISIONS.md, RESEARCH.md
+```
+
+### 둘이 어떻게 만나나
+
+PR7 wrapper 가 기존 코드를 부르는 방식은 두 가지:
+
+1. **import 호출** — LongMemEval / HotpotQA. Python 함수를 그대로 import.
+   - `scripts/stages/ingest.py:38-47`:
+     ```python
+     from evaluation.retrieval_agent.longmemeval_test import (
+         load_longmemeval_dataset, longmemeval_ingest,
+     )
+     dataset = load_longmemeval_dataset(length=..., split=...)  # 기존 함수
+     asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
+     ```
+   - `scripts/stages/retrieve.py:121-135` 의 `agent_utils.process_question()` 도 기존 함수.
+
+2. **subprocess 호출** — LoCoMo. CLI 형태로만 동작하게 짜인 기존 스크립트라 subprocess 로 띄움.
+   - `scripts/stages/ingest.py:75-83`:
+     ```python
+     cmd = [sys.executable, ".../locomo_ingest.py", "--data-path", ..., "--config-path", ...]
+     subprocess.run(cmd, ...)
+     ```
+
+### 한 줄 정리
+
+| 무엇이 | 어디서 정의 | PR7 책임 범위 |
+|---|---|---|
+| `length`, `split` 의 동작 | 기존 `load_longmemeval_dataset` | 값을 넘겨주기만 |
+| `prepend_user_prefix`, `message_sentence_chunking` | 기존 `longmemeval_test.py` 가 configuration.yml에서 읽음 | configuration.yml에 값을 써주기만 |
+| `search_limit` | 기존 `process_question(search_limit=...)` 인자 | sweep cell 마다 그 인자로 넘기기만 |
+| `test_target` 분기 (Memmachine/ToolSelect/llm) | 기존 agent 클래스들 | 어떤 클래스를 쓸지 분기만 |
+| sweep / fixed / cell 개념 | (기존엔 없음) | **PR7 이 새로 도입** |
+| 4-way merge / run YAML 박제 | (기존엔 없음) | **PR7 이 새로 도입** |
+| stage 분리 / jsonl 산출 / analyze 집계 | (기존엔 일부만) | **PR7 이 새로 도입** |
+
+**즉**: "무엇을 평가할지(데이터셋 로딩 + 실제 검색/답변)는 기존 코드, 어떻게 옵션을 묶고 반복할지(sweep + cell + jsonl)는 PR7" 가 구분선.
+
+---
+
+
+---
+
+# Part 3 — Advanced / 부록
+
+> 특수 케이스. 필요할 때만 펼쳐봅니다.
+
+## 2단계: `longmemeval_oracle` 써도 동작하나?
+
+**결론**: 코드는 동작함. 평가 의미가 달라져서 p4 의 목적엔 안 맞음.
+
+### 코드 관점 — 동작함
+
+`split` 값이 코드에서 흐르는 경로 (`evaluation/retrieval_agent/longmemeval_test.py:294-303`):
+
+```python
+def load_longmemeval_dataset(length: int, split: str):
+    split_file = split if split.endswith(".json") else f"{split}.json"
+    try:
+        dataset = load_dataset("xiaowu0162/longmemeval-cleaned", split=split)  # 그대로 전달
+        num_rows = min(length, len(dataset))
+        records = dataset.select(range(num_rows)).to_list()
+    except Exception:
+        # fallback: f"{split}.json" 파일명으로 직접 다운로드
+        ...
+```
+
+핵심: split 이름은 **유효성 검사 없이** 그대로 HuggingFace 에 넘겨짐. PR7 wrapper 도 이름을 검증 안 함. `xiaowu0162/longmemeval-cleaned` repo 에 그 이름의 split 이 존재하기만 하면 동작. 일반적으로:
+
+| split 이름 | 파일명 | 약 sample 수 |
+|---|---|---|
+| `longmemeval_s` | longmemeval_s.json | ~500 (small haystack) |
+| `longmemeval_m` | longmemeval_m.json | ~500 (medium haystack, 더 긴 history) |
+| `longmemeval_oracle` | longmemeval_oracle.json | ~500 (정답에 필요한 dialog만) |
+
+`load_longmemeval_dataset()` 이후 normalize 코드 (`longmemeval_test.py:325-336`) 가 `question` / `answer` / `question_type` / `haystack_sessions` 만 사용. oracle 도 이 4 필드 구조가 같아서 ingest/retrieve/judge 다 통과.
+
+### 바꾸는 방법 — `--split` CLI 가 없어 우회
+
+`generate_config.py` 의 CLI 인자(`scripts/generate_config.py:49-83`)에 `--split` 없음. 세 가지 길:
+
+**방법 A — p4.yaml 직접 수정 (영구)**
+```yaml
+benchmark:
+  name: longmemeval
+  length: 500
+  split: longmemeval_oracle
+```
+
+**방법 B — JSON override (일회성, 권장)**
+```json
+{
+  "problem": 4,
+  "run_name": "p4_oracle",
+  "configuration": {"model_profile": "my_model", "db_profile": "my_db"},
+  "benchmark": {"split": "longmemeval_oracle"},
+  "sweep": {"search_limit": [10, 20]}
+}
+```
+```sh
+python scripts/generate_config.py --from-json configs/runs/oracle_override.json
+```
+
+**방법 C — 생성된 run YAML 직접 편집**
+
+세 방법 모두 deep_merge 가 받아주고 stage 진행에 영향 없음.
+
+### 평가 의미 관점 — p4 의도와 안 맞음
+
+- **`longmemeval_s`/`longmemeval_m`**: haystack 안에 정답과 무관한 잡담이 잔뜩. retrieve 가 잡음 속에서 정답을 골라내야 함 → retrieve 능력 + answer LLM 능력 둘 다 측정.
+- **`longmemeval_oracle`**: haystack 에 정답에 진짜 필요한 dialog 만. retrieve 가 별로 안 중요 → answer LLM 능력만 측정.
+
+p4 목적은 "k(=search_limit) 늘릴 때 정확도가 단조증가하는가, 비단조인가" 인데 oracle 에선:
+- haystack 자체가 작아 k=10 만으로도 거의 다 retrieve 됨
+- k 늘려도 더 가져올 게 없음
+- cell 5개 accuracy 차이가 거의 없어 신호 안 잡힘
+
+**즉**:
+- ✅ 도구 정상 작동 빠른 smoke 테스트용으로 좋음 (HF 다운만 되면)
+- ✅ "answer LLM 자체 baseline" 측정용으론 좋음
+- ❌ p4 의 "k sweep 비단조성" 검증엔 부적합. 이걸 보려면 `longmemeval_s` 그대로.
+
+---
+
+## 3단계: 웹 접속 없는 환경에서 LongMemEval 쓰기
+
+### 현재 코드 한계
+
+기존 함수 `load_longmemeval_dataset` (`evaluation/retrieval_agent/longmemeval_test.py:294-323`) 는 인터넷을 두 번 시도:
+
+```python
+try:
+    dataset = load_dataset("xiaowu0162/longmemeval-cleaned", split=split)
+    # HuggingFace datasets 라이브러리: 캐시 없으면 인터넷
+except Exception:
+    data_path = hf_hub_download(repo_id="xiaowu0162/longmemeval-cleaned",
+                                repo_type="dataset", filename=split_file)
+    # HuggingFace Hub: 캐시 없으면 인터넷
+```
+
+PR7 wrapper 는 이걸 손대지 않고 그대로 부름. "미리 받은 JSON 경로를 직접 지정한다" 는 옵션이 코드에 없음. 두 우회로 중 하나 필요.
+
+### 옵션 A: HF 캐시 옮기기 (코드 수정 0줄, 추천)
+
+위 두 함수는 **같은 캐시 디렉토리** 를 봄. 인터넷 머신에서 캐시 채운 뒤 통째로 오프라인 머신에 복사하고 오프라인 모드 켜면 끝.
+
+#### 1. 인터넷 머신에서 캐시 채우기
+```sh
+pip install datasets huggingface_hub
+python - <<'EOF'
+from huggingface_hub import hf_hub_download
+for fn in ["longmemeval_s.json", "longmemeval_oracle.json"]:
+    p = hf_hub_download(
+        repo_id="xiaowu0162/longmemeval-cleaned",
+        repo_type="dataset",
+        filename=fn,
+    )
+    print("got:", p)
+EOF
+```
+
+캐시 위치:
+```
+~/.cache/huggingface/hub/
+  datasets--xiaowu0162--longmemeval-cleaned/
+    blobs/<sha>...
+    snapshots/<commit_hash>/
+        longmemeval_s.json -> ../../blobs/<sha>
+        longmemeval_oracle.json -> ../../blobs/<sha>
+    refs/main
+```
+
+> primary path(`load_dataset`)도 함께 캐시하고 싶으면:
+> ```python
+> from datasets import load_dataset
+> load_dataset("xiaowu0162/longmemeval-cleaned", split="longmemeval_s")
+> ```
+> `~/.cache/huggingface/datasets/` 도 채워짐. 하지만 fallback 만 있어도 PR7 도구는 동작.
+
+#### 2. 오프라인 머신으로 캐시 통째 복사
+```sh
+# 인터넷 머신
+tar czf hf_cache.tgz -C ~ .cache/huggingface
+# 오프라인 머신
+tar xzf hf_cache.tgz -C ~
+```
+
+또는 `HF_HOME` 환경변수로 캐시 위치를 repo 내부로 옮기는 것도 가능.
+
+#### 3. 오프라인 머신에서 환경변수 켜고 실행
+```sh
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1   # primary path까지 캐시한 경우만
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage ingest
+```
+
+**장점**: PR7/기존 코드 0줄 수정. p4.yaml 의 `split` 만 캐시한 split 이름으로.
+**단점**: 캐시 디렉토리 구조가 낯섦. snapshot symlink 끊기지 않게 tar 통째 복사.
+
+### 옵션 B: 짧은 wrapper 패치 (직관적, ~15줄)
+
+p4.yaml 에 `benchmark.local_path` 추가 가능하게 PR7 wrapper 수정.
+
+`scripts/stages/ingest.py` 의 `_ingest_longmemeval` 패치 예시:
+```python
+def _ingest_longmemeval(run_cfg, config_path, session_id):
+    from evaluation.retrieval_agent.longmemeval_test import (
+        load_longmemeval_dataset, longmemeval_ingest,
+    )
+    bench = run_cfg["benchmark"]
+
+    local_path = bench.get("local_path")
+    if local_path:
+        import json
+        with open(local_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        dataset = raw[: int(bench["length"])]
+        for r in dataset:
+            r.setdefault("question_type", "unknown")
+            r.setdefault("haystack_sessions", [])
+            r["split"] = bench.get("split", "local")
+    else:
+        dataset = load_longmemeval_dataset(
+            length=int(bench["length"]), split=bench["split"]
+        )
+
+    asyncio.run(longmemeval_ingest(dataset, config_path, session_id))
+    return {"benchmark": "longmemeval", "num_questions": len(dataset)}
+```
+
+`retrieve.py:88-90` 의 `_run_longmemeval_cell` 도 같은 분기 추가. 두 곳 다 해야 함 (ingest 와 retrieve 가 같은 dataset 을 따로 로드).
+
+p4.yaml:
+```yaml
+benchmark:
+  name: longmemeval
+  length: 500
+  split: longmemeval_s_cleaned
+  local_path: /home/user/data/longmemeval_s_cleaned.json
+```
+
+**장점**: 캐시 구조 신경 안 쓰고 평범한 JSON 한 개만 두면 됨.
+**단점**: PR7 코드 수정 필요. 후속 PR.
+
+### 옵션 C: `benchmark.data_path` 로 wrapper 가 직접 로드 (eval_claude 신규, 채택됨)
+
+eval_claude 에서 옵션 B 의 아이디어가 본체에 머지됨. p3 / p4 problem yaml 이 default 로:
+
+```yaml
+# configs/problems/p4.yaml
+benchmark:
+  name: longmemeval
+  length: 500
+  split: longmemeval_s_cleaned
+  data_path: evaluation/data/longmemeval_s_cleaned.json
+```
+
+그 경로에 파일을 두면 wrapper 가 HF 호출 없이 바로 읽음 (`scripts/stages/_common.py:load_longmemeval_local`). `_ingest_longmemeval` / `_run_longmemeval_cell` 양쪽이 자동 분기 — `bench.get("data_path")` 가 있으면 local, 없으면 기존 HF path.
+
+다른 위치/파일을 쓰려면:
+```yaml
+benchmark:
+  data_path: /abs/path/longmemeval_oracle_cleaned.json   # 절대경로
+```
+또는 problem yaml 의 그 줄을 주석 처리하면 HF online 으로 fallback.
+
+generate_config 시점에 상대경로는 절대경로로 resolve 됨 (PR #20 흐름). 파일이 없으면 ingest 진입 시 명시적 `FileNotFoundError`(찾은 절대경로 포함).
+
+### 어느 쪽?
+
+| 상황 | 추천 |
+|---|---|
+| 단순 / repo 안에 파일 둠 | **옵션 C** (zero-config, 기본 동작) |
+| 파일을 외부에 두거나 split 여러 개 자주 교체 | 옵션 C 의 `data_path` 를 절대경로로 override |
+| HF 그대로 쓰고 싶음 (인터넷 가능) | problem yaml 의 `data_path:` 한 줄 주석 처리 → 옵션 A 또는 native HF |
+| 캐시 구조까지 그대로 미러 (다른 도구도 같이 쓸 때) | 옵션 A (캐시 통째 복사 + `HF_HUB_OFFLINE=1`) |
+| 팀이 계속 쓰는 wrapper 확장 | 옵션 B (eval_claude 가 이미 구현 — 옵션 C) |
+| HotpotQA(p2) 도 오프라인 | 같은 패턴 가능 (HotpotQA 도 `data_path` 추가 필요. 현재 p2.yaml 엔 없음 — 후속 작업) |
+
+---
+
+## 4-B 부록: rrf-hybrid (bm25 + identity) 쓰기
+
+### 시나리오와 한계
+
+`my_model.yaml` 에서 reranker 로 `rrf-hybrid` 를 쓰고 싶다. rrf-hybrid 는 **여러 reranker 를 RRF 로 결합** 하는 메타 reranker 라 `resources.rerankers` 에 결합 대상 + hybrid 자체가 동시에 등록돼 있어야 함 (`reranker_conf.py:112-120` `RRFHybridRerankerConf.reranker_ids: list[str]` 필수).
+
+PR7 초기 wrapper 는 `model_profile["reranker"]` (단일) 만 받아 한 항목만 등록했음. 후속 패치로 **`rerankers` (list) + `primary_reranker` (선택)** 형식을 받게 변경. 이로써 동일 profile 안에서 여러 reranker 등록 + hybrid 결합이 가능해짐.
+
+### identity + bm25 의 의미
+
+- identity = 원래 retrieval (벡터 유사도) 순서를 그대로
+- bm25 = 어휘 매칭 점수
+- rrf-hybrid = 두 순위를 RRF (Reciprocal Rank Fusion) 로 결합
+
+즉 "의미적 검색 + 어휘 매칭 보강" 패턴. 합리적.
+
+### `my_model.yaml` 새 형식 — rrf-hybrid 케이스
+
+```yaml
+embedder:
+  id: my_embedder
+  provider: openai
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: text-embedding-3-small
+    dimensions: 1536
+
+rerankers:
+  - id: my_bm25                        # ◄── 첫 축
+    provider: bm25
+    config:
+      k1: 1.5
+      b: 0.75
+      epsilon: 0.25
+      language: english
+      tokenizer: default
+  - id: my_identity                    # ◄── 두 번째 축
+    provider: identity
+    config: {}                         # IdentityRerankerConf 는 키 0개
+  - id: my_hybrid                      # ◄── 둘을 RRF 로 결합
+    provider: rrf-hybrid
+    config:
+      reranker_ids: [my_bm25, my_identity]
+      k: 60                            # default 60. RRF 의 k 파라미터
+
+primary_reranker: my_hybrid            # ◄── 위쪽 (episodic_memory / retrieval_agent) 이 가리킬 id
+
+llm_model:
+  id: my_llm
+  provider: openai-responses
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+```
+
+### 생성될 configuration.yml 의 reranker 부분
+
+```yaml
+episodic_memory:
+  long_term_memory:
+    reranker: my_hybrid                # ◄── primary_reranker
+retrieval_agent:
+  reranker: my_hybrid                  # ◄── primary_reranker
+resources:
+  rerankers:
+    my_bm25:
+      provider: bm25
+      config: { k1: 1.5, b: 0.75, ... }
+    my_identity:
+      provider: identity
+      config: {}
+    my_hybrid:
+      provider: rrf-hybrid
+      config:
+        reranker_ids: [my_bm25, my_identity]
+        k: 60
+```
+
+### 단일 reranker 도 새 형식
+
+기존 `reranker:` (dict) 는 더 이상 받지 않음. 단일도 list 1개 항목으로 적어야 함. `primary_reranker` 는 생략 가능 (없으면 첫 항목 자동 선택):
+
+```yaml
+rerankers:
+  - id: my_reranker
+    provider: bm25
+    config: { ... }
+# primary_reranker 생략 → my_reranker 가 자동 선택됨
+```
+
+### 다른 hybrid 조합 cookbook
+
+- bm25 + cross-encoder: 어휘 + 의미 cross-encoder 결합
+  ```yaml
+  rerankers:
+    - id: my_bm25
+      provider: bm25
+      config: {}
+    - id: my_ce
+      provider: cross-encoder
+      config: { model_name: cross-encoder/qnli-electra-base }
+    - id: my_hybrid
+      provider: rrf-hybrid
+      config: { reranker_ids: [my_bm25, my_ce], k: 60 }
+  primary_reranker: my_hybrid
+  ```
+- bm25 + cohere (Cohere reranker)
+  ```yaml
+  rerankers:
+    - id: my_bm25
+      provider: bm25
+      config: {}
+    - id: my_cohere
+      provider: cohere
+      config:
+        cohere_key: "<COHERE_API_KEY>"
+        model: rerank-english-v3.0
+    - id: my_hybrid
+      provider: rrf-hybrid
+      config: { reranker_ids: [my_bm25, my_cohere], k: 60 }
+  primary_reranker: my_hybrid
+  ```
+
+### 검증
+
+`generate_config.py` 의 `_validate_and_normalize_rerankers()` 가 generate 시점에 명시적 `ValueError` 로 잡는 항목:
+- legacy `reranker:` (단일 dict) 또는 `reranker:` 와 `rerankers:` 동거
+- `rerankers:` 누락 / dict 로 적힘 / 빈 list
+- entry 의 `id` 또는 `provider` 누락 / 중복 `id`
+- `config:` 가 mapping 이 아님
+- `primary_reranker` 가 list 안에 없음
+- rrf-hybrid 의 `reranker_ids` 가 비어있음 / list[str] 아님 / 미지의 id 참조 / 자기 참조
+
+전체 메시지 표는 4-B (7) 흔한 실패 케이스 참고. 이외 (provider 별 config 필드 검증, api_key 필수 등) 는 ingest 시점에 MemMachine 본체 `RerankersConf.parse()` (`reranker_conf.py:189-237`) 와 `*_conf.py` 의 Pydantic 모델이 잡음.
+
+`scripts/test_generate_config_rerankers.py` 에 위 16 케이스가 unit test 로 박혀 있음:
+```sh
+uv run pytest scripts/test_generate_config_rerankers.py -v
+```
+
+---
+
