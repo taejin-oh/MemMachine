@@ -23,6 +23,7 @@ for package_root in PACKAGE_ROOTS:
 from evaluation.retrieval_agent.cli_utils import positive_int  # noqa: E402
 
 DEFAULT_CONCURRENCY = 1
+DEFAULT_LENGTH = 10
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=DEFAULT_CONCURRENCY,
         help="Maximum number of concurrent LoCoMo answer requests",
+    )
+    parser.add_argument(
+        "--length",
+        type=positive_int,
+        default=DEFAULT_LENGTH,
+        help="Number of conversations to run",
     )
     return parser
 
@@ -99,6 +106,7 @@ async def run_locomo(  # noqa: C901
     print(f"Evaluation result path: {args.eval_result_path}")
     print(f"Test target: {args.test_target}")
     print(f"Concurrency: {args.concurrency}")
+    print(f"Length: {args.length}")
 
     data_path = args.data_path
     eval_result_path = args.eval_result_path
@@ -114,7 +122,7 @@ async def run_locomo(  # noqa: C901
     results: dict[str, Any] = {}
     attribute_matrix = agent_utils.init_attribute_matrix()
     start_index = 0
-    end_index = 20
+    end_index = args.length
 
     resource_manager = agent_utils.load_eval_config(args.config_path)
 
@@ -122,7 +130,7 @@ async def run_locomo(  # noqa: C901
         if idx < start_index:
             continue
 
-        if idx > end_index:
+        if idx >= end_index:
             break
 
         if "conversation" not in item:

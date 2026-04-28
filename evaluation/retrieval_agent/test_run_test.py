@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat
@@ -46,6 +47,19 @@ def test_wikimultihop_help_mentions_search_and_judge_concurrency():
     assert "--judge-concurrency" in result.stdout
 
 
+def test_longmemeval_help_mentions_search_limit():
+    result = subprocess.run(
+        ["bash", str(RUN_TEST), "longmemeval", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "--search-limit" in result.stdout
+
+
 def test_locomo_rejects_search_concurrency_for_ingest():
     result = subprocess.run(
         [
@@ -55,6 +69,7 @@ def test_locomo_rejects_search_concurrency_for_ingest():
             "exp1",
             "ingest",
             "retrieval_agent",
+            "10",
             "--search-concurrency",
             "1",
         ],
@@ -66,6 +81,26 @@ def test_locomo_rejects_search_concurrency_for_ingest():
 
     assert result.returncode == 1
     assert "--search-concurrency can only be used with search runs" in result.stdout
+
+
+def test_locomo_ingest_requires_length():
+    result = subprocess.run(
+        [
+            "bash",
+            str(RUN_TEST),
+            "locomo",
+            "exp1",
+            "ingest",
+            "retrieval_agent",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Locomo Usage" in result.stdout
 
 
 def test_wikimultihop_rejects_ingest_concurrency():
@@ -169,6 +204,29 @@ def test_wikimultihop_delete_rejects_extra_positional_args():
 
     assert result.returncode == 1
     assert "WikiMultihop Usage" in result.stdout
+
+
+def test_wikimultihop_rejects_search_limit():
+    result = subprocess.run(
+        [
+            "bash",
+            str(RUN_TEST),
+            "wikimultihop",
+            "exp1",
+            "search",
+            "retrieval_agent",
+            "10",
+            "--search-limit",
+            "20",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "--search-limit is only supported for longmemeval search runs" in result.stdout
 
 
 def test_longmemeval_delete_invokes_delete_script(tmp_path):
@@ -325,6 +383,8 @@ def test_longmemeval_search_uses_uv_for_preflight_and_postprocessing(tmp_path):
             "longmemeval_s_cleaned",
             "retrieval_agent",
             "1",
+            "--search-limit",
+            "50",
         ],
         cwd=repo_root,
         capture_output=True,
@@ -338,7 +398,70 @@ def test_longmemeval_search_uses_uv_for_preflight_and_postprocessing(tmp_path):
 
     uv_invocations = uv_log.read_text(encoding="utf-8").splitlines()
     assert any("preflight.py" in line for line in uv_invocations)
-    assert any("longmemeval_test.py" in line for line in uv_invocations)
+    assert any(
+        "longmemeval_test.py" in line and "--search-limit 50" in line
+        for line in uv_invocations
+    )
     assert any("evaluate.py" in line for line in uv_invocations)
     assert any("generate_scores.py" in line for line in uv_invocations)
     assert not python_log.exists()
+
+
+def test_ingest_emits_standard_logs_and_status_marker(tmp_path):
+    repo_root = tmp_path / "repo"
+    script_dir = repo_root / "evaluation" / "retrieval_agent"
+    script_dir.mkdir(parents=True)
+
+    run_test_copy = script_dir / "run_test.sh"
+    shutil.copy(RUN_TEST, run_test_copy)
+    run_test_copy.chmod(run_test_copy.stat().st_mode | stat.S_IXUSR)
+
+    (script_dir / "configuration.yml").write_text(
+        "logging:\n  level: INFO\n", encoding="utf-8"
+    )
+    _write_file(
+        script_dir / "locomo_ingest.py",
+        """
+        # Simulate successful ingest script.
+        """,
+    )
+    _write_file(
+        script_dir / "locomo_search.py",
+        """
+        # Not used by this test.
+        """,
+    )
+    _write_file(
+        script_dir / "locomo_delete.py",
+        """
+        # Not used by this test.
+        """,
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(run_test_copy),
+            "locomo",
+            "exp1",
+            "ingest",
+            "retrieval_agent",
+            "10",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "[INGEST_START]" in result.stdout
+    assert "[INGEST_OK]" in result.stdout
+
+    status_file = (
+        script_dir / "result" / "ingest_status" / "locomo_retrieval_agent_exp1.json"
+    )
+    assert status_file.exists()
+    status = json.loads(status_file.read_text(encoding="utf-8"))
+    assert status["status"] == "ok"
+    assert status["session_id"] == "locomo_exp1"

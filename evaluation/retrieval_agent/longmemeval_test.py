@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import yaml
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +56,30 @@ Question: {question}
 """
 
 DEFAULT_CONCURRENCY = 30
+DEFAULT_SEARCH_LIMIT = 20
+
+
+def _load_longmemeval_question_prefix_enabled(config_path: str) -> bool:
+    """Return whether to prepend ``User: `` to LongMemEval questions."""
+    config_file = Path(config_path)
+    if not config_file.exists():
+        return False
+
+    with config_file.open("r", encoding="utf-8") as file:
+        raw_conf = yaml.safe_load(file) or {}
+
+    if not isinstance(raw_conf, dict):
+        return False
+
+    evaluation_conf = raw_conf.get("evaluation", {})
+    if not isinstance(evaluation_conf, dict):
+        return False
+
+    longmemeval_conf = evaluation_conf.get("longmemeval", {})
+    if not isinstance(longmemeval_conf, dict):
+        return False
+
+    return bool(longmemeval_conf.get("prepend_user_prefix", False))
 
 
 def _split_chunks(text: str, max_chars: int = 3000) -> list[str]:
@@ -179,6 +204,7 @@ async def longmemeval_search(
     agent_name: str = "ToolSelectAgent",
     pure_llm: bool = False,
     concurrency: int = DEFAULT_CONCURRENCY,
+    search_limit: int = DEFAULT_SEARCH_LIMIT,
 ):
     from evaluation.utils import agent_utils
 
@@ -195,11 +221,16 @@ async def longmemeval_search(
     )
     _set_safe_embedder_request_limits(memory)
 
+    prepend_user_prefix = _load_longmemeval_question_prefix_enabled(config_path)
+
     for sample in dataset:
         question = str(sample.get("question", "")).strip()
-        answer = str(sample.get("answer", "")).strip()
         if not question:
             continue
+        if prepend_user_prefix:
+            question = f"User: {question}"
+
+        answer = str(sample.get("answer", "")).strip()
 
         supporting_facts = _collect_supporting_facts(sample)
         all_content = _collect_turn_contents(sample)
@@ -215,7 +246,7 @@ async def longmemeval_search(
                 answer=answer,
                 category=str(sample.get("question_type", "unknown")),
                 supporting_facts=supporting_facts,
-                search_limit=20,
+                search_limit=search_limit,
                 full_content=full_content if pure_llm else None,
                 extra_attributes={
                     "question_id": sample.get("question_id", ""),
@@ -357,6 +388,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CONCURRENCY,
         help="Maximum number of concurrent LongMemEval search requests",
     )
+    parser.add_argument(
+        "--search-limit",
+        type=positive_int,
+        default=DEFAULT_SEARCH_LIMIT,
+        help="Maximum number of episodes to retrieve per question",
+    )
     return parser
 
 
@@ -378,6 +415,7 @@ async def main():
         print(f"Dataset split: {args.split_name}")
         print(f"Test target: {args.test_target}")
         print(f"Concurrency: {args.concurrency}")
+        print(f"Search limit: {args.search_limit}")
 
         agent_name = (
             "MemMachineAgent" if args.test_target == "memmachine" else "ToolSelectAgent"
@@ -390,6 +428,7 @@ async def main():
             agent_name,
             args.test_target == "llm",
             args.concurrency,
+            args.search_limit,
         )
     else:
         raise ValueError(

@@ -42,10 +42,12 @@ Just return the label CORRECT or WRONG in a json format with the key as "label".
 
 
 def create_judge_fn(config_path: str) -> Callable[[str], str]:
-    """Build a synchronous callable that sends a prompt to the configured LLM.
+    """Build a synchronous callable that sends a prompt to the configured judge LLM.
 
-    Supports providers: ``openai-responses``, ``openai-chat-completions``,
-    and ``amazon-bedrock``.
+    Reads ``retrieval_agent.judge_llm_model`` first and falls back to
+    ``retrieval_agent.llm_model`` so configurations without an explicit judge
+    pointer continue to work. Supports providers: ``openai-responses``,
+    ``openai-chat-completions``, and ``amazon-bedrock``.
 
     Args:
         config_path: Path to configuration.yml.
@@ -57,9 +59,15 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
 
     config = Configuration.load_yml_file(config_path)
     lms = config.resources.language_models
-    llm_id = config.retrieval_agent.llm_model
+    # `or` (not `is not None`) so that an empty-string judge_llm_model is
+    # treated as unset and falls back to the answer llm_model — matches the
+    # documented "unset → fallback" intent.
+    llm_id = config.retrieval_agent.judge_llm_model or config.retrieval_agent.llm_model
     if not llm_id:
-        raise ValueError("retrieval_agent.llm_model is not set in configuration.yml")
+        raise ValueError(
+            "judge LLM is not configured: set retrieval_agent.judge_llm_model "
+            "or retrieval_agent.llm_model in configuration.yml"
+        )
 
     if llm_id in lms.openai_responses_language_model_confs:
         from openai import OpenAI
@@ -130,9 +138,25 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
 
         return _call_bedrock
 
+    known_ids = (
+        set(lms.openai_responses_language_model_confs)
+        | set(lms.openai_chat_completions_language_model_confs)
+        | set(lms.amazon_bedrock_language_model_confs)
+    )
+    if llm_id not in known_ids:
+        raise ValueError(
+            f"Judge LLM '{llm_id}' is not defined under resources.language_models. "
+            f"Available IDs: {sorted(known_ids)}."
+        )
+    # Defense-in-depth: today LanguageModelsConf only knows about the three
+    # provider tables we already iterated, so this branch is unreachable from
+    # any Pydantic-validated configuration. Kept so future provider additions
+    # at the schema layer surface as a clear judge-side error rather than a
+    # silent miss.
     raise ValueError(
-        f"Language model '{llm_id}' not found in configuration.yml under "
-        "resources.language_models. Check that the ID matches one of the defined models."
+        f"Judge LLM '{llm_id}' is defined, but its provider is not supported "
+        "by llm_judge.py. Supported judge providers: openai-responses, "
+        "openai-chat-completions, amazon-bedrock."
     )
 
 
