@@ -11,6 +11,58 @@
 
 > 처음 도구를 쓰는 사람용. 0~5절을 순서대로 따라가면 첫 결과 (`results/.../analyze.json`) 가 나옵니다. 동작 원리는 Part 2, 응용/대체 옵션은 Part 3.
 
+## 용어 사전 (이 문서를 읽기 전에)
+
+이 도구를 처음 보면 다음 단어들이 한꺼번에 쏟아져요. 한 줄씩만 알고 있으면 됩니다.
+
+| 용어 | 한 줄 설명 |
+|---|---|
+| **benchmark** | 평가용 공개 데이터셋. 본 도구는 `longmemeval` / `hotpot` / `locomo` 세 종류 지원. |
+| **problem** (p2~p12) | "어떤 변수를 바꿔가며 비교할지" 가 미리 정의된 평가 시나리오 한 개. `configs/problems/p4.yaml` 등. |
+| **run / run_name** | 한 번의 실험 묶음과 그 이름. 결과는 `results/{run_name}/` 아래에 모임. |
+| **stage** | 평가 한 사이클을 5개 단계로 쪼갠 것 — `ingest → retrieve → generate → judge → analyze`. 단독 실행 가능. |
+| **profile** | embedder / reranker / LLM / DB 같은 외부 자원의 정의 묶음. `configs/profiles/models/{이름}.yaml`, `configs/profiles/dbs/{이름}.yaml` 두 파일. |
+| **configuration.yml** | MemMachine 본체가 실제로 읽는 통합 설정 파일. wrapper 가 profile 두 개를 합쳐 `configs/generated/{run}_configuration.yml` 에 자동 생성. |
+| **sweep** | 한 run 안에서 바꿔가며 비교할 변수의 **list**. 예: `sweep: { search_limit: [10, 20, 30] }`. |
+| **fixed** | sweep 와 달리 모든 실험에 같이 적용되는 **고정값**. 예: `fixed: { prepend_user_prefix: true }`. |
+| **cell** | sweep list 의 한 조합. `sweep: { search_limit: [10, 20, 30] }` 이면 cell 3개 (k=10/20/30). retrieve/judge/analyze 가 cell 단위로 반복. |
+| **session_id** | DB 안에서 본 run 의 episode 만 격리하는 키. 형식: `eval_tool_{benchmark}_{run_name}`. |
+| **generate_config** | profile + problem yaml + CLI 인자를 묶어 run yaml + configuration.yml 두 개를 만드는 도구. `python scripts/generate_config.py ...` |
+| **run_pipeline** | 위에서 만든 run yaml 을 받아 stage 들을 순서대로 돌리는 도구. `python scripts/run_pipeline.py --config ... --stage ...` |
+
+## 5분 tl;dr — 첫 결과까지 가장 짧은 길
+
+자세한 절차는 0~5절. 이 절차가 **왜** 이 순서인지는 각 절에서. 일단 한 번 돌려보고 싶으면:
+
+```sh
+# (1회) Postgres + Neo4j 를 docker-compose 등으로 띄움
+nc -zv localhost 7687 && nc -zv localhost 5432   # 둘 다 succeeded 떠야 함
+
+# (1회) profile 두 개 복사 → 본인 값으로 편집
+cp configs/profiles/models/_example.yaml configs/profiles/models/my_model.yaml
+cp configs/profiles/dbs/_example.yaml     configs/profiles/dbs/my_db.yaml
+# my_model.yaml 의 api_key, my_db.yaml 의 password 등 placeholder 를 본인 값으로
+
+# (1회) LongMemEval 데이터를 evaluation/data/longmemeval_s_cleaned.json 에 둠
+#       (없으면 ingest 단계에서 명시적 FileNotFoundError. Part 3 옵션 C 참고)
+
+# 1. run yaml 생성 (smoke: 질문 5개, k 두 개만)
+python scripts/generate_config.py --problem 4 --run-name p4_pilot \
+    --model-profile my_model --db-profile my_db --k-list 10,20 --length 5
+
+# 2. 전체 pipeline 실행 (ingest → retrieve → generate → judge → analyze)
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage all
+
+# 3. 결과 보기
+ls results/p4_pilot/
+#   ingest.jsonl   retrieve.jsonl   generate.jsonl   judge.jsonl   analyze.json
+cat results/p4_pilot/analyze.json | python -m json.tool | head -40
+```
+
+`analyze.json` 의 `cells` 가 cell 마다 한 dict. cell 별 `accuracy` / `mean_recall` / `mean_tokens_per_query` 등이 들어 있음.
+
+**막히면 0단계부터 자세히** ↓
+
 ## 0단계: 사전 준비
 
 본격 시작 전에 아래가 준비돼 있어야 합니다.
