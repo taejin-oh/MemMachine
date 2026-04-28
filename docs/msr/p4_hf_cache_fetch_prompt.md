@@ -38,7 +38,7 @@
        또는 더 단순하게, `~/.cache/huggingface/hub/` 에 `data/longmemeval/hf_cache/`
        내용을 `datasets--xiaowu0162--longmemeval-cleaned` 라는 이름으로 그대로 복사하고
        `HF_HUB_OFFLINE=1` 만 export.
-     - p4.yaml 의 `split: longmemeval_s` 를 그대로 둬도 fallback 경로가 캐시에서 찾음.
+     - p4.yaml 의 `split: longmemeval_s_cleaned` (eval_claude 에서 통일된 이름) 를 그대로 둬도 fallback 경로가 캐시에서 찾음. 이전 이름 `longmemeval_s` 도 같이 받아두면 호환됨.
 8. 라이센스: LongMemEval 은 공개 데이터셋이지만, 이 repo 가 public 이라면 원본 라이센스를
    확인하고 LICENSE 또는 README 에 출처/라이센스 한 줄 추가. private repo 라면 출처만.
 

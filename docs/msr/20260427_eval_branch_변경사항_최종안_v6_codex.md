@@ -127,7 +127,7 @@ ingest → retrieve → generate → judge → analyze 단계로 분리.
 ### C3. 문제별 기본 YAML (`p2,p3,p4,p5,p6,p12`)
 
 - `--problem N` 선택으로 sweep/fixed 자동 구성
-- 확인된 차이: legacy matrix는 `longmemeval_s_cleaned`, wrapper p3/p4는 `longmemeval_s`
+- ~~확인된 차이: legacy matrix는 `longmemeval_s_cleaned`, wrapper p3/p4는 `longmemeval_s`~~ **FIXED in eval_claude**: p3/p4 yaml 도 `longmemeval_s_cleaned` 로 통일됨.
 
 ### C4. 모델/DB profile 분리
 

@@ -6,7 +6,10 @@ description: "LongMemEval 500 — user_q prefix C5(off) vs C6(on) 외삽"
 benchmark:
   name: longmemeval
   length: 500
-  split: longmemeval_s
+  # Unified with the eval-tool default (longmemeval_test.py) and
+  # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
+  # score divergence, so keep this single canonical name.
+  split: longmemeval_s_cleaned
 
 # 독립변수
 sweep:

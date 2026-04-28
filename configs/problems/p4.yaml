@@ -7,7 +7,10 @@ description: "LongMemEval 500 — k sweep {10,20,30,50,100} (chunk=on, prefix=on
 benchmark:
   name: longmemeval
   length: 500
-  split: longmemeval_s
+  # Unified with the eval-tool default (longmemeval_test.py) and
+  # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
+  # score divergence, so keep this single canonical name.
+  split: longmemeval_s_cleaned
 
 # 독립변수
 sweep:

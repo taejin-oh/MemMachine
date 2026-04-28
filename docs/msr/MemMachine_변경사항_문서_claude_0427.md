@@ -154,7 +154,7 @@ fi
 
 **왜**: 손으로 실행하면 반드시 토글을 빼먹거나 sweep 한 칸을 누락. 실험 재현성의 가장 큰 위협 제거.
 
-> [개발자 코멘트] 매트릭스 후보값 — `LONGMEM_K_VALUES=(10 20 30 50 100)`, `*_PREFIX_VALUES=(off on)`, `*_CHUNK_VALUES=(off on)`, `LONGMEM_SPLIT="longmemeval_s_cleaned"`. **주의** — 뒤에 나오는 PR #7 의 `configs/problems/p{3,4}.yaml` 은 `split: longmemeval_s` 를 사용해 두 경로의 기본 split 이 다릅니다. 두 경로 결과를 비교하려면 split 통일 또는 차이 명시 필요. 인-플레이스 YAML 토글은 Python(yaml.safe_load → mutate → yaml.safe_dump). **`mktemp` 백업 + EXIT trap 으로 일반 에러나 Ctrl-C 종료 시 원본을 복원한다. 단, `kill -9` 처럼 trap 이 실행되지 않는 강제 종료에서는 복원되지 않을 수 있다.** 알려진 한계 — LoCoMo / HotpotQA 셀 진입 시 chunk 값이 LongMemEval 루프 마지막값(`on`)으로 잔류 (`docs/msr/20260425_eval_code_review.md` § B-1).
+> [개발자 코멘트] 매트릭스 후보값 — `LONGMEM_K_VALUES=(10 20 30 50 100)`, `*_PREFIX_VALUES=(off on)`, `*_CHUNK_VALUES=(off on)`, `LONGMEM_SPLIT="longmemeval_s_cleaned"`. **FIXED in eval_claude** — PR #7 의 `configs/problems/p{3,4}.yaml` 도 `split: longmemeval_s_cleaned` 로 통일됨. 두 경로 split 일치. 인-플레이스 YAML 토글은 Python(yaml.safe_load → mutate → yaml.safe_dump). **`mktemp` 백업 + EXIT trap 으로 일반 에러나 Ctrl-C 종료 시 원본을 복원한다. 단, `kill -9` 처럼 trap 이 실행되지 않는 강제 종료에서는 복원되지 않을 수 있다.** 알려진 한계 — LoCoMo / HotpotQA 셀 진입 시 chunk 값이 LongMemEval 루프 마지막값(`on`)으로 잔류 (`docs/msr/20260425_eval_code_review.md` § B-1).
 
 ---
 
@@ -344,7 +344,7 @@ problem: 4
 benchmark:
   name: longmemeval
   length: 500
-  split: longmemeval_s # ← 'longmemeval_s', '_cleaned' 아님
+  split: longmemeval_s_cleaned # ← eval_claude 에서 통일된 이름. 이전엔 'longmemeval_s'
 sweep:
   search_limit: [10, 20, 30, 50, 100]
 fixed:
@@ -371,7 +371,7 @@ fixed:
 
 **왜**: 6 개 문제마다 어떤 변수를 sweep 할지가 다름. 문서로만 적어두면 사용자가 손으로 입력하다 실수. YAML 로 박아두면 재현성↑.
 
-> [개발자 코멘트] `generate_config.py` 가 `base.yaml + problems/p{N}.yaml + profiles/{model,db}` 를 머지(`scripts/_merge.py`) 해서 `configs/runs/{run_name}.yaml` 과 working `configuration.yml` 을 함께 생성. **A4 의 `run_benchmark_matrix.sh` 는 `longmemeval_s_cleaned` 를 사용해 둘이 다름** — 두 경로 결과 비교 시 split 차이 명시 필요.
+> [개발자 코멘트] `generate_config.py` 가 `base.yaml + problems/p{N}.yaml + profiles/{model,db}` 를 머지(`scripts/_merge.py`) 해서 `configs/runs/{run_name}.yaml` 과 working `configuration.yml` 을 함께 생성. ~~A4 의 `run_benchmark_matrix.sh` 는 `longmemeval_s_cleaned` 를 사용해 둘이 다름~~ **FIXED in eval_claude**: p3/p4 yaml 도 `longmemeval_s_cleaned` 로 통일했으므로 두 경로 split 일치.
 
 ---
 

@@ -25,7 +25,7 @@ evaluation/utils/
 
 확인 방법: `git log --all --oneline -- evaluation/retrieval_agent/longmemeval_test.py` 의 모든 커밋이 PR7 머지(`8824f55`) 이전. PR7 의 `git diff --stat` 결과에도 `evaluation/` 경로가 한 줄도 없음.
 
-**의미**: 데이터셋 로딩, ingest, search 같은 핵심 로직은 PR7 이전 코드 그대로. `length: 500`, `split: longmemeval_s` 의 의미와 동작도 기존 코드의 것이지 PR7 이 새로 정의한 게 아님.
+**의미**: 데이터셋 로딩, ingest, search 같은 핵심 로직은 PR7 이전 코드 그대로. `length: 500`, `split: longmemeval_s_cleaned` (eval_claude 에서 통일됨; 이전엔 `longmemeval_s`) 의 의미와 동작도 기존 코드의 것이지 PR7 이 새로 정의한 게 아님.
 
 ### PR7 이 새로 만든 것 (총 32 파일, 본체)
 
@@ -273,8 +273,8 @@ p4.yaml:
 benchmark:
   name: longmemeval
   length: 500
-  split: longmemeval_s
-  local_path: /home/user/data/longmemeval_s.json
+  split: longmemeval_s_cleaned
+  local_path: /home/user/data/longmemeval_s_cleaned.json
 ```
 
 **장점**: 캐시 구조 신경 안 쓰고 평범한 JSON 한 개만 두면 됨.
@@ -763,7 +763,7 @@ description: "LongMemEval 500 — k sweep ..."
 benchmark:
   name: longmemeval
   length: 5                       # ← p4.yaml 은 500. CLI --length 5 가 덮음
-  split: longmemeval_s
+  split: longmemeval_s_cleaned
 sweep:
   search_limit: [10, 20]          # ← p4.yaml 은 [10,20,30,50,100]. CLI --k-list 가 덮음
 fixed:
