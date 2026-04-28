@@ -13,13 +13,14 @@ episodic_memory:
   short_term_memory:
     llm_model: openai_model
     message_capacity: 500
-    summarization_enabled: true # set to false to skip async summary generation (eviction still works)
+    summarization_enabled: false # set to true to enable async summary generation (eviction always runs)
 
 retrieval_agent:
   llm_model: openai_model
   reranker: my_reranker_id
 
 semantic_memory:
+  enabled: false # set to true to opt into semantic memory ingestion/retrieval
   llm_model: openai_model
   embedding_model: openai_embedder
   database: profile_storage

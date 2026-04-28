@@ -135,55 +135,53 @@ STM(Short-Term Memory)을 끄지 않고, **용량 초과 시 LLM 요약 생성�
 선택적으로 끌 수 있도록 설정 키를 추가했습니다.
 
 - 설정 키: `episodic_memory.short_term_memory.summarization_enabled`
-- **서버 기본값: `true`** (`packages/server/.../episodic_config.py`,
-  `short_term_memory.py`). 기존(pre-toggle) 동작 — 용량 초과 시 LLM 요약 생성 —
-  을 그대로 보존하기 위함. 운영 서버에서 이 키를 명시하지 않으면 종전과 동일하게
-  동작합니다.
+- **서버 기본값: `false`** (`packages/server/.../episodic_config.py`,
+  `short_term_memory.py`). 운영 서버에서 키를 명시하지 않으면 LLM 요약 호출이
+  비활성화된 상태로 시작합니다 (capacity 기반 evict 는 항상 동작). LLM 비용 없이
+  STM 메모리 제한만 유지하고 싶은 사용 사례를 default 로 채택.
 - **eval-tool generated `configuration.yml` 의 emit 값: `false`**
-  (`scripts/generate_config.py:build_configuration_yml`). 평가 비용/결정성을 위해
-  eval-tool 이 명시적으로 `false` 를 yml 에 적습니다. 즉, eval-tool 로 생성한
-  yml 을 서버가 그대로 읽으면 요약은 꺼진 상태로 시작합니다.
+  (`scripts/generate_config.py:build_configuration_yml`). 서버 default 와 동일
+  방향이며, 평가 비용/결정성을 보장하기 위해 명시적으로 false 를 박아둡니다.
 - 효과:
-  - `false`: STM 용량 초과 시 오래된 메시지 evict는 계속 수행(메모리 bounded 유지),
+  - `false` (default): STM 용량 초과 시 오래된 메시지 evict 는 계속 수행(메모리 bounded 유지),
     단 LLM 요약 생성은 수행하지 않음
-  - `true`: 기존처럼 evict + 비동기 요약 생성 수행
+  - `true`: 기존처럼 evict + 비동기 요약 생성 수행 (opt-in)
 
-### 두 default 의 관계 — 한 줄 요약
+### default 일관성 — 한 줄 요약
 
 | 경로 | default | 의도 |
 |---|---|---|
-| 운영 서버 (직접 작성한 `configuration.yml`) | `true` | 기존 동작 보존 |
+| 운영 서버 (직접 작성한 `configuration.yml`) | `false` | LLM 비용 없는 STM bounded 운영 |
 | eval-tool 이 생성하는 `configuration.yml` | `false` (명시 emit) | 평가 비용 절감 |
 
-운영자가 직접 yml 을 쓰면 키 미지정 → 서버 default `true` 적용. eval-tool 로
-생성하면 yml 에 `false` 가 명시되어 서버 default 와 무관하게 꺼짐. 두 경로가
-같은 "default" 를 보지 않을 수 있다는 점만 인지하면 충돌 없음.
+두 경로 default 가 같은 방향이므로 "운영 vs 평가 사이의 silent 차이" 가 없습니다.
+요약을 켜고 싶다면 두 경로 모두 명시적으로 `summarization_enabled: true` 설정 필요.
 
-### 설정 예시 — 평가용 (요약 끔)
-
-```yaml
-episodic_memory:
-  short_term_memory:
-    llm_model: openai_model
-    message_capacity: 500
-    summarization_enabled: false   # 평가 시 비용 절감
-```
-
-### 설정 예시 — 운영 서버 (기존 동작 유지)
+### 설정 예시 — default (요약 끔)
 
 ```yaml
 episodic_memory:
   short_term_memory:
     llm_model: openai_model
     message_capacity: 500
-    # summarization_enabled 미지정 → 서버 default true 적용
+    # summarization_enabled 미지정 → 서버 default false 적용 (요약 호출 없음)
 ```
 
-### 언제 false 가 맞나
+### 설정 예시 — 요약 켜기 (opt-in)
 
-- LLM 호출 비용을 줄이고 싶을 때 (평가 default)
-- 요약 생성 지연/외부 의존성 없이 STM 최신 컨텍스트만 유지하고 싶을 때
-- 메모리 제한은 유지하되(summary 없이) 빠른 evict 동작만 원할 때
+```yaml
+episodic_memory:
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+    summarization_enabled: true   # capacity 초과 시 LLM 요약 생성
+```
+
+### 언제 true 로 켜나
+
+- 용량 초과 시 잘려나가는 컨텍스트를 LLM 요약으로 보존하고 싶을 때
+- 비용·지연 증가를 감수할 수 있을 때
+- 그 외의 경우(평가 default 포함)는 false 가 적절
 
 ### eval-tool 사용 시 주의
 

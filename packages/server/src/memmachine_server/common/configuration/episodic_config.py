@@ -60,11 +60,12 @@ class ShortTermMemoryConf(BaseModel):
         description="The maximum length of short-term memory",
     )
     summarization_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether to generate LLM summaries when STM capacity is exceeded. "
-            "Default True preserves the original (pre-toggle) behavior; set "
-            "to False to keep capacity-based eviction without LLM cost."
+            "Default False keeps capacity-based eviction without LLM cost; "
+            "set to True to opt back into the original always-summarize "
+            "behavior."
         ),
     )
 
