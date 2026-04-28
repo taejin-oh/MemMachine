@@ -80,9 +80,7 @@ def test_empty_sweep_returns_single_empty_cell():
     assert _expand_sweep({}) == [{}]
 
 
-def test_apply_cell_to_config_no_longer_writes_fixed_only_keys(
-    tmp_path, monkeypatch
-):
+def test_apply_cell_to_config_no_longer_writes_fixed_only_keys(tmp_path, monkeypatch):
     """Fixed-only keys (chunking, summarization_enabled) are written once at
     generate time; per-cell apply must not reapply them (would be a no-op
     but obscures the contract)."""
@@ -108,6 +106,4 @@ def test_apply_cell_to_config_no_longer_writes_fixed_only_keys(
     )
     assert len(written) == 1
     assert "episodic_memory" not in written[0]
-    assert (
-        written[0]["evaluation"]["longmemeval"]["prepend_user_prefix"] is True
-    )
+    assert written[0]["evaluation"]["longmemeval"]["prepend_user_prefix"] is True

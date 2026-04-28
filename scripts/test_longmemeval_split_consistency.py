@@ -37,10 +37,7 @@ def test_longmemeval_problem_uses_canonical_split(problem_yaml):
 
 def test_run_benchmark_matrix_split_matches_canonical():
     matrix_sh = (
-        REPO_ROOT
-        / "evaluation"
-        / "retrieval_agent"
-        / "run_benchmark_matrix.sh"
+        REPO_ROOT / "evaluation" / "retrieval_agent" / "run_benchmark_matrix.sh"
     ).read_text()
     assert f'LONGMEM_SPLIT="{CANONICAL_LONGMEMEVAL_SPLIT}"' in matrix_sh, (
         "run_benchmark_matrix.sh must declare "
@@ -50,10 +47,7 @@ def test_run_benchmark_matrix_split_matches_canonical():
 
 def test_longmemeval_test_default_split_matches_canonical():
     src = (
-        REPO_ROOT
-        / "evaluation"
-        / "retrieval_agent"
-        / "longmemeval_test.py"
+        REPO_ROOT / "evaluation" / "retrieval_agent" / "longmemeval_test.py"
     ).read_text()
     assert f'default="{CANONICAL_LONGMEMEVAL_SPLIT}"' in src, (
         "longmemeval_test.py argparse default for --split must remain "

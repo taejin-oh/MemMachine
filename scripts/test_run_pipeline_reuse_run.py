@@ -33,16 +33,12 @@ def _write_run_cfg(tmp_path: Path, **extra) -> Path:
 
 def _patch_stages():
     """Patch all 5 stage modules' run() functions and return the mocks."""
-    return mock.patch.multiple(
-        "scripts.stages.ingest", run=mock.DEFAULT
-    ), mock.patch.multiple(
-        "scripts.stages.retrieve", run=mock.DEFAULT
-    ), mock.patch.multiple(
-        "scripts.stages.generate", run=mock.DEFAULT
-    ), mock.patch.multiple(
-        "scripts.stages.judge", run=mock.DEFAULT
-    ), mock.patch.multiple(
-        "scripts.stages.analyze", run=mock.DEFAULT
+    return (
+        mock.patch.multiple("scripts.stages.ingest", run=mock.DEFAULT),
+        mock.patch.multiple("scripts.stages.retrieve", run=mock.DEFAULT),
+        mock.patch.multiple("scripts.stages.generate", run=mock.DEFAULT),
+        mock.patch.multiple("scripts.stages.judge", run=mock.DEFAULT),
+        mock.patch.multiple("scripts.stages.analyze", run=mock.DEFAULT),
     )
 
 
@@ -50,15 +46,13 @@ def test_reuse_run_default_stage_runs_only_analyze(tmp_path, capsys, monkeypatch
     cfg_path = _write_run_cfg(tmp_path, reuse_run="p4_demo")
     monkeypatch.setattr(sys, "argv", ["run_pipeline", "--config", str(cfg_path)])
 
-    with mock.patch("scripts.stages.ingest.run") as m_ingest, mock.patch(
-        "scripts.stages.retrieve.run"
-    ) as m_retrieve, mock.patch(
-        "scripts.stages.generate.run"
-    ) as m_generate, mock.patch(
-        "scripts.stages.judge.run"
-    ) as m_judge, mock.patch(
-        "scripts.stages.analyze.run"
-    ) as m_analyze:
+    with (
+        mock.patch("scripts.stages.ingest.run") as m_ingest,
+        mock.patch("scripts.stages.retrieve.run") as m_retrieve,
+        mock.patch("scripts.stages.generate.run") as m_generate,
+        mock.patch("scripts.stages.judge.run") as m_judge,
+        mock.patch("scripts.stages.analyze.run") as m_analyze,
+    ):
         rc = run_pipeline.main()
 
     assert rc == 0
@@ -79,15 +73,13 @@ def test_reuse_run_explicit_analyze_is_allowed(tmp_path, monkeypatch):
         sys, "argv", ["run_pipeline", "--config", str(cfg_path), "--stage", "analyze"]
     )
 
-    with mock.patch("scripts.stages.ingest.run") as m_ingest, mock.patch(
-        "scripts.stages.retrieve.run"
-    ) as m_retrieve, mock.patch(
-        "scripts.stages.generate.run"
-    ) as m_generate, mock.patch(
-        "scripts.stages.judge.run"
-    ) as m_judge, mock.patch(
-        "scripts.stages.analyze.run"
-    ) as m_analyze:
+    with (
+        mock.patch("scripts.stages.ingest.run") as m_ingest,
+        mock.patch("scripts.stages.retrieve.run") as m_retrieve,
+        mock.patch("scripts.stages.generate.run") as m_generate,
+        mock.patch("scripts.stages.judge.run") as m_judge,
+        mock.patch("scripts.stages.analyze.run") as m_analyze,
+    ):
         rc = run_pipeline.main()
 
     assert rc == 0
@@ -98,7 +90,15 @@ def test_reuse_run_explicit_analyze_is_allowed(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize(
     "stage_arg",
-    ["ingest", "retrieve", "generate", "judge", "all", "ingest,retrieve", "judge,analyze"],
+    [
+        "ingest",
+        "retrieve",
+        "generate",
+        "judge",
+        "all",
+        "ingest,retrieve",
+        "judge,analyze",
+    ],
 )
 def test_reuse_run_with_non_analyze_stage_raises(tmp_path, monkeypatch, stage_arg):
     cfg_path = _write_run_cfg(tmp_path, reuse_run="p4_demo")
@@ -120,15 +120,13 @@ def test_no_reuse_run_default_runs_all_stages(tmp_path, monkeypatch):
     cfg_path = _write_run_cfg(tmp_path)  # no reuse_run
     monkeypatch.setattr(sys, "argv", ["run_pipeline", "--config", str(cfg_path)])
 
-    with mock.patch("scripts.stages.ingest.run") as m_ingest, mock.patch(
-        "scripts.stages.retrieve.run"
-    ) as m_retrieve, mock.patch(
-        "scripts.stages.generate.run"
-    ) as m_generate, mock.patch(
-        "scripts.stages.judge.run"
-    ) as m_judge, mock.patch(
-        "scripts.stages.analyze.run"
-    ) as m_analyze:
+    with (
+        mock.patch("scripts.stages.ingest.run") as m_ingest,
+        mock.patch("scripts.stages.retrieve.run") as m_retrieve,
+        mock.patch("scripts.stages.generate.run") as m_generate,
+        mock.patch("scripts.stages.judge.run") as m_judge,
+        mock.patch("scripts.stages.analyze.run") as m_analyze,
+    ):
         rc = run_pipeline.main()
 
     assert rc == 0
@@ -141,11 +139,13 @@ def test_reuse_run_empty_string_treated_as_no_reuse(tmp_path, monkeypatch):
     cfg_path = _write_run_cfg(tmp_path, reuse_run="")
     monkeypatch.setattr(sys, "argv", ["run_pipeline", "--config", str(cfg_path)])
 
-    with mock.patch("scripts.stages.ingest.run") as m_ingest, mock.patch(
-        "scripts.stages.retrieve.run"
-    ), mock.patch("scripts.stages.generate.run"), mock.patch(
-        "scripts.stages.judge.run"
-    ), mock.patch("scripts.stages.analyze.run") as m_analyze:
+    with (
+        mock.patch("scripts.stages.ingest.run") as m_ingest,
+        mock.patch("scripts.stages.retrieve.run"),
+        mock.patch("scripts.stages.generate.run"),
+        mock.patch("scripts.stages.judge.run"),
+        mock.patch("scripts.stages.analyze.run") as m_analyze,
+    ):
         rc = run_pipeline.main()
 
     assert rc == 0
