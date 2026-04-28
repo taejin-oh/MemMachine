@@ -23,4 +23,5 @@ async def short_term_memory_params_from_config(
         summary_prompt_system=config.summary_prompt_system,
         summary_prompt_user=config.summary_prompt_user,
         message_capacity=config.message_capacity,
+        summarization_enabled=config.summarization_enabled,
     )

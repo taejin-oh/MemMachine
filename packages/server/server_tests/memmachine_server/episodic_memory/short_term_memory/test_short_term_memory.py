@@ -202,12 +202,20 @@ def short_term_memory_param(mock_model, mock_data_manager):
         summary_prompt_system="System prompt",
         summary_prompt_user="User prompt: {episodes} {summary} {max_length}",
         message_capacity=16,
+        summarization_enabled=True,
     )
 
 
 @pytest_asyncio.fixture
 async def memory(short_term_memory_param):
     """Fixture for a SessionMemory instance."""
+    return await ShortTermMemory.create(short_term_memory_param)
+
+
+@pytest_asyncio.fixture
+async def memory_without_summarization(short_term_memory_param):
+    """Fixture for SessionMemory with summary generation disabled."""
+    short_term_memory_param.summarization_enabled = False
     return await ShortTermMemory.create(short_term_memory_param)
 
 
@@ -252,6 +260,33 @@ class TestSessionMemoryPublicAPI:
         episodes, summary = await memory.get_short_term_memory_context(query="test")
         assert summary == "summary:HW!"
         assert episodes == [episode4]
+
+    async def test_add_episode_without_summarization(
+        self, memory_without_summarization, mock_model
+    ):
+        """Test adding episodes when summary generation is disabled."""
+        episode1 = create_test_episode(content="Hello")
+        episode2 = create_test_episode(content="World")
+        episode3 = create_test_episode(content="!" * 7)
+        episode4 = create_test_episode(content="??")
+
+        await memory_without_summarization.add_episodes([episode1, episode2, episode3])
+
+        episodes, summary = await memory_without_summarization.get_short_term_memory_context(
+            query="test"
+        )
+        assert episodes == [episode1, episode2, episode3]
+        assert summary == ""
+
+        await memory_without_summarization.add_episodes([episode4])
+        episodes, summary = await memory_without_summarization.get_short_term_memory_context(
+            query="test"
+        )
+        assert summary == ""
+        assert episode1 not in episodes
+        assert episode4 in episodes
+        assert sum(len(episode.content) for episode in memory_without_summarization._memory) <= 16
+        assert mock_model.call_count == 0
 
     async def test_clear_memory(self, memory):
         """Test clearing the memory."""

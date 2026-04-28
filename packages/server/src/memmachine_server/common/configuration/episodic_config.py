@@ -59,6 +59,10 @@ class ShortTermMemoryConf(BaseModel):
         gt=0,
         description="The maximum length of short-term memory",
     )
+    summarization_enabled: bool = Field(
+        default=False,
+        description="Whether to generate LLM summaries when STM capacity is exceeded",
+    )
 
 
 class ShortTermMemoryConfPartial(BaseModel):
@@ -87,6 +91,10 @@ class ShortTermMemoryConfPartial(BaseModel):
         default=None,
         gt=0,
         description="The maximum length of short-term memory",
+    )
+    summarization_enabled: bool | None = Field(
+        default=None,
+        description="Whether to generate LLM summaries when STM capacity is exceeded",
     )
 
     def merge(self, other: Self) -> ShortTermMemoryConf:
@@ -137,6 +145,10 @@ class LongTermMemoryConfPartial(BaseModel):
     reranker: str | None = Field(
         default=None,
         description="ID of the Reranker instance for reranking search results",
+    )
+    message_sentence_chunking: bool | None = Field(
+        default=None,
+        description="Whether to chunk message episodes into sentences for embedding",
     )
 
     def merge(self, other: Self) -> LongTermMemoryConf:

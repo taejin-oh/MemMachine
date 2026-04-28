@@ -16,3 +16,7 @@ class RetrievalAgentConf(YamlSerializableMixin):
         default=None,
         description="Default reranker used by retrieval-agent strategies.",
     )
+    judge_llm_model: str | None = Field(
+        default=None,
+        description="LLM used by the eval judge. Falls back to llm_model when unset.",
+    )

@@ -83,6 +83,10 @@ class ShortTermMemoryParams(BaseModel):
         gt=0,
         description="The maximum length of short-term memory",
     )
+    summarization_enabled: bool = Field(
+        default=False,
+        description="Whether to generate LLM summaries when STM capacity is exceeded",
+    )
 
     @field_validator("summary_prompt_user")
     @classmethod
@@ -122,6 +126,7 @@ class ShortTermMemory:
         self._memory: deque[Episode] = deque()
         self._current_episode_count = 0
         self._max_message_len = param.message_capacity
+        self._summarization_enabled = param.summarization_enabled
         self._current_message_len = 0
         self._session_key = param.session_key
         self._closed = False
@@ -237,7 +242,8 @@ class ShortTermMemory:
         result = list(self._memory)
         # Reset the count so it will only count new episodes
         self._current_episode_count = 0
-        await self._consolidator.summarize(result)
+        if self._summarization_enabled:
+            await self._consolidator.summarize(result)
 
     async def close(self) -> None:
         """
