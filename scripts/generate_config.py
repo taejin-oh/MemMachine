@@ -143,6 +143,150 @@ def load_json_overrides(path: str | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _validate_and_normalize_rerankers(
+    model_profile: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
+    """Validate model profile rerankers and return (normalized_list, primary_id).
+
+    Each normalized entry has 'id', 'provider', 'config' (defaulted to {}).
+    Raises ValueError with actionable messages on schema/consistency issues.
+    """
+    if "reranker" in model_profile:
+        if "rerankers" in model_profile:
+            raise ValueError(
+                "legacy 'reranker:' is no longer supported. Remove it and use "
+                "only 'rerankers:' list."
+            )
+        raise ValueError(
+            "model profile schema changed: use 'rerankers:' (list) instead of "
+            "legacy 'reranker:' (dict). Wrap the existing block as a single-item "
+            "list:\n  rerankers:\n    - <existing reranker fields>\n"
+            "primary_reranker is optional (defaults to the first list item)."
+        )
+    raw_list = model_profile.get("rerankers")
+    if raw_list is None:
+        raise ValueError("model profile must define 'rerankers' as a non-empty list")
+    if not isinstance(raw_list, list):
+        raise ValueError(
+            f"model profile 'rerankers' must be a list, got {type(raw_list).__name__}"
+        )
+    if not raw_list:
+        raise ValueError(
+            "model profile 'rerankers' must be a non-empty list of entries"
+        )
+
+    seen_ids: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    for idx, entry in enumerate(raw_list):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"rerankers[{idx}] must be a mapping, got {type(entry).__name__}"
+            )
+        rid = entry.get("id")
+        provider = entry.get("provider")
+        if not rid:
+            raise ValueError(f"rerankers[{idx}] is missing required 'id'")
+        if not provider:
+            raise ValueError(
+                f"rerankers[{idx}] (id={rid!r}) is missing required 'provider'"
+            )
+        if rid in seen_ids:
+            raise ValueError(f"rerankers contains duplicate id: {rid!r}")
+        config = entry.get("config")
+        if config is None:
+            config = {}
+        elif not isinstance(config, dict):
+            raise ValueError(
+                f"rerankers[{idx}] (id={rid!r}) config must be a mapping, got "
+                f"{type(config).__name__}"
+            )
+        seen_ids.add(rid)
+        normalized.append({"id": rid, "provider": provider, "config": config})
+
+    primary_id = model_profile.get("primary_reranker") or normalized[0]["id"]
+    if primary_id not in seen_ids:
+        raise ValueError(
+            f"primary_reranker={primary_id!r} not found in rerankers ids "
+            f"{sorted(seen_ids)}"
+        )
+
+    for entry in normalized:
+        if entry["provider"] != "rrf-hybrid":
+            continue
+        cfg = entry["config"]
+        ids = cfg.get("reranker_ids")
+        if not ids:
+            raise ValueError(
+                f"rrf-hybrid reranker {entry['id']!r} requires non-empty "
+                "config.reranker_ids"
+            )
+        if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+            raise ValueError(
+                f"rrf-hybrid reranker {entry['id']!r} config.reranker_ids must be "
+                "a non-empty list of strings"
+            )
+        for ref in ids:
+            if ref == entry["id"]:
+                raise ValueError(
+                    f"rrf-hybrid reranker {entry['id']!r} references itself in "
+                    "reranker_ids"
+                )
+            if ref not in seen_ids:
+                raise ValueError(
+                    f"rrf-hybrid reranker {entry['id']!r} references unknown id "
+                    f"{ref!r} (known: {sorted(seen_ids)})"
+                )
+
+    return normalized, primary_id
+
+
+def _validate_judge_llm(
+    model_profile: dict[str, Any],
+    llm_model: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Validate optional model-profile `judge_llm` block.
+
+    Returns a normalized {id, provider, config} dict, or None when the profile
+    omits `judge_llm` (callers fall back to the answer llm_model).
+
+    If `judge_llm.id` matches `llm_model.id`, provider and config must be
+    deep-equal; otherwise we'd silently overwrite the answer LLM resource entry.
+    """
+    raw = model_profile.get("judge_llm")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"model profile 'judge_llm' must be a mapping, got {type(raw).__name__}"
+        )
+    rid = raw.get("id")
+    provider = raw.get("provider")
+    if not rid:
+        raise ValueError("judge_llm is missing required 'id'")
+    if not provider:
+        raise ValueError(f"judge_llm (id={rid!r}) is missing required 'provider'")
+    config = raw.get("config")
+    if config is None:
+        config = {}
+    elif not isinstance(config, dict):
+        raise ValueError(
+            f"judge_llm (id={rid!r}) config must be a mapping, got "
+            f"{type(config).__name__}"
+        )
+
+    if rid == llm_model["id"]:
+        same_provider = provider == llm_model["provider"]
+        same_config = config == (llm_model.get("config") or {})
+        if not (same_provider and same_config):
+            raise ValueError(
+                f"judge_llm id {rid!r} conflicts with llm_model id using "
+                "different provider/config. Use a different judge_llm.id or "
+                "make provider/config identical."
+            )
+
+    return {"id": rid, "provider": provider, "config": config}
+
+
 def build_configuration_yml(
     model_profile: dict[str, Any], db_profile: dict[str, Any]
 ) -> dict[str, Any]:
@@ -151,10 +295,26 @@ def build_configuration_yml(
     Mirrors the structure documented in evaluation/retrieval_agent/README.md (Sample 1).
     """
     embedder = model_profile["embedder"]
-    reranker = model_profile["reranker"]
+    rerankers_list, primary_reranker_id = _validate_and_normalize_rerankers(
+        model_profile
+    )
     llm_model = model_profile["llm_model"]
+    judge_entry = _validate_judge_llm(model_profile, llm_model)
+    judge_id = judge_entry["id"] if judge_entry else llm_model["id"]
     vgs = db_profile["vector_graph_store"]
     profile_db = db_profile["profile_storage"]
+
+    language_models: dict[str, Any] = {
+        llm_model["id"]: {
+            "provider": llm_model["provider"],
+            "config": llm_model["config"],
+        },
+    }
+    if judge_entry and judge_entry["id"] != llm_model["id"]:
+        language_models[judge_entry["id"]] = {
+            "provider": judge_entry["provider"],
+            "config": judge_entry["config"],
+        }
 
     return {
         "episode_store": {
@@ -165,7 +325,7 @@ def build_configuration_yml(
             "enabled": True,
             "long_term_memory": {
                 "embedder": embedder["id"],
-                "reranker": reranker["id"],
+                "reranker": primary_reranker_id,
                 "vector_graph_store": vgs["id"],
                 # message_sentence_chunking 은 run_pipeline 이 sweep 별로 in-place 갱신
                 "message_sentence_chunking": False,
@@ -184,7 +344,8 @@ def build_configuration_yml(
         "logging": {"level": "INFO"},
         "retrieval_agent": {
             "llm_model": llm_model["id"],
-            "reranker": reranker["id"],
+            "reranker": primary_reranker_id,
+            "judge_llm_model": judge_id,
         },
         "semantic_memory": {
             "enabled": False,
@@ -204,22 +365,13 @@ def build_configuration_yml(
                     "config": embedder["config"],
                 },
             },
-            "language_models": {
-                llm_model["id"]: {
-                    "provider": llm_model["provider"],
-                    "config": llm_model["config"],
-                },
-            },
+            "language_models": language_models,
             "rerankers": {
-                reranker["id"]: {
-                    "provider": reranker["provider"],
-                    "config": reranker["config"],
-                },
+                r["id"]: {"provider": r["provider"], "config": r["config"]}
+                for r in rerankers_list
             },
         },
         "session_manager": {"database": profile_db["id"]},
-        # 평가 토글 (run_pipeline 이 sweep 별로 in-place 갱신할 수 있음)
-        "evaluation": {"longmemeval": {"prepend_user_prefix": False}},
     }
 
 
