@@ -78,6 +78,13 @@ def parse_args() -> argparse.Namespace:
         "--reuse-run", help="For p6/p12: name of an earlier run to analyze"
     )
 
+    # STM summarization toggle (fixed override shortcut)
+    parser.add_argument(
+        "--summarization",
+        choices=["on", "off"],
+        help="STM summarization toggle (sets fixed.summarization_enabled)",
+    )
+
     # Bulk JSON override (highest precedence)
     parser.add_argument("--from-json", help="Path to JSON file with overrides")
 
@@ -125,6 +132,11 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.reuse_run:
         out["reuse_run"] = args.reuse_run
+
+    if args.summarization is not None:
+        out.setdefault("fixed", {})["summarization_enabled"] = (
+            args.summarization == "on"
+        )
 
     return out
 
@@ -334,6 +346,8 @@ def build_configuration_yml(
             "short_term_memory": {
                 "llm_model": llm_model["id"],
                 "message_capacity": 500,
+                # default: STM summarization 끔. fixed/sweep/CLI 로 토글 가능.
+                "summarization_enabled": False,
                 "summary_prompt_system": "You are an AI agent that summarizes episodes.",
                 "summary_prompt_user": (
                     "Summarize: {summary}\n{episodes}\nYour summary (under {max_length} words):"
@@ -392,6 +406,10 @@ def _apply_fixed_to_configuration(
         configuration.setdefault("evaluation", {}).setdefault("longmemeval", {})[
             "prepend_user_prefix"
         ] = bool(fixed["prepend_user_prefix"])
+    if "summarization_enabled" in fixed:
+        configuration.setdefault("episodic_memory", {}).setdefault(
+            "short_term_memory", {}
+        )["summarization_enabled"] = bool(fixed["summarization_enabled"])
 
 
 def maybe_generate_configuration_yml(run_cfg: dict[str, Any]) -> str:
