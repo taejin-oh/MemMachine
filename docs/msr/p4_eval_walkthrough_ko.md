@@ -932,6 +932,17 @@ python evaluation/retrieval_agent/locomo_delete.py \
 
 ## 4-D: retrieve → generate → judge → analyze
 
+### 0) 4-D 가 답하는 질문 (네 stage 의 의미)
+
+| stage | 답하는 질문 | 어떤 외부 자원을 부르나 | 결과 |
+|---|---|---|---|
+| retrieve | "이 질문에 답하기 위한 chunk 가 DB 에 있나, 있다면 답변까지 만들 수 있나" | Neo4j 검색 + embedder + 답변 LLM | retrieve.jsonl (chunk 정보) + generate.jsonl (모델 답변) |
+| generate | (현재는) "retrieve 가 만든 답변이 잘 적혔나" — verify only | 없음 | stdout 로그만 |
+| judge | "모델 답변이 정답과 같은 의미인가" — 0/1 채점 | judge LLM | judge.jsonl (각 행에 llm_score) |
+| analyze | "이 run 이 어떤 질문에 답했는지" — cell 단위 집계 | 없음 (jsonl 만 합침) | analyze.json (cell 별 accuracy/recall/token, pareto, by_category, by_tool) |
+
+ingest 가 "DB 에 데이터 적재" 였다면, 4-D 는 **"질문 → 답변 → 채점 → 집계"** 의 흐름. analyze.json 이 이 run 에서 얻은 결과물.
+
 ### 1) 명령
 
 ```sh
@@ -964,6 +975,8 @@ generate stage 자체는 no-op verify (D-005)
 ```
 
 ### 3) retrieve — sweep cell 펼침 + cell 별 process_question
+
+**의미**: "검색만" 이 아니라 **검색 + 답변 LLM 호출까지** 한 번에 함 (`agent_utils.process_question` 한 함수). cell × question 마다 1) DB 에서 chunk 꺼내고 2) reranker 가 재정렬 3) 답변 LLM 이 model_answer 생성. 이 단계의 결과 = "이 cell 에서 질문에 어떻게 답했나" 의 raw 데이터.
 
 `scripts/stages/retrieve.py:run()` 핵심:
 
@@ -1041,6 +1054,8 @@ cell 5 sample × 2 sweep cell = 10 행씩 두 jsonl 에 누적.
 
 ### 4) generate — no-op verify + EDWIN hook
 
+**의미**: 의도상 "답변 생성" stage 지만, 현 wrapper 에서는 retrieve 가 답변까지 같이 만들었기 때문에 (D-005) 여기서는 **검증만** 함. 미래에 EDWIN1/EDWIN3 prompt 로 답변을 재생성하려고 자리만 잡아둠 (D-003). DB/LLM 호출 0.
+
 `scripts/stages/generate.py:run()` 는 retrieve 가 이미 emit 한 `generate.jsonl` 을 검증만:
 - 파일 존재 + 행 수 보고
 - EDWIN prompt hook 상태 보고 (D-003 — 현재는 fallback 또는 "loaded but NOT yet applied")
@@ -1048,6 +1063,8 @@ cell 5 sample × 2 sweep cell = 10 행씩 두 jsonl 에 누적.
 따라서 `--stage generate` 는 사실상 sanity check. retrieve 후 자동 통과.
 
 ### 5) judge — generate.jsonl + llm_score
+
+**의미**: 모델이 만든 답변 (`model_answer`) 이 정답 (`golden_answer`) 과 **같은 의미인지** 다른 LLM 에게 묻는 단계. 결과는 0(WRONG) 또는 1(CORRECT) 한 정수. 이 점수가 analyze 의 `accuracy` 의 원천. **단순 string match 가 아니라 LLM 의 의미 비교** 라 약간의 noise 가 있지만 paper 와 동일 방식.
 
 `scripts/stages/judge.py:run()` 가 `generate.jsonl` 의 각 행에 `evaluate_llm_judge()` 호출해 0/1 점수 매김:
 
@@ -1080,49 +1097,186 @@ python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml \
     --stage judge,analyze
 ```
 
-### 6) analyze — cell 별 집계
+### 6) analyze — "이 run 이 어떤 질문에 답했는지" 보여주는 단계
 
-`scripts/stages/analyze.py:run()` 가 `judge.jsonl` + `retrieve.jsonl` 을 join 해서 cell 마다 dict 한 개:
+#### 6.0 이 도구가 측정하려는 것
+
+평가 도구의 핵심 질문은 **"sweep 변수를 바꾸면 정확도가 어떻게 바뀌나"**. p4 의 경우 — k(=`search_limit`) 를 10 → 100 으로 늘리면 accuracy 가 단조증가하는가 (paper claim) 아니면 어딘가에서 꺾이는가 (비단조 — paper 와 다름). 이 질문에 답하려면:
+1. cell (=k 한 값) 마다 모든 question 의 평가를 합쳐 한 숫자 (accuracy, recall 등) 로 줄임
+2. cell 들끼리 비교
+
+`analyze.py` 가 정확히 이 두 일을 해. **measurement 가 아니라 aggregation** — judge 단계까지 측정은 끝났고, 여기서는 cell 단위로 묶어 비교 가능한 형태로 만들 뿐.
+
+#### 6.1 산출 — `results/{run_name}/analyze.json`
 
 ```json
 {
   "cells": [
     {
-      "cell": "search_limit=10",
-      "sweep": {"search_limit": 10},
-      "n": 5,
-      "accuracy": 0.6,
-      "accuracy_std": 0.49,
-      "mean_recall": 0.55,
-      "overall_recall": 0.5,
+      "cell": "search_limit=10",                   // cell 식별 라벨
+      "sweep": {"search_limit": 10},               // 그 cell 의 sweep 값
+      "n": 5,                                      // 이 cell 의 question 수
+      "accuracy": 0.6,                             // ◄── 핵심 metric
+      "accuracy_std": 0.49,                        // 같은 cell 안 question 별 score 의 분산 (per-question pstdev)
+      "mean_recall": 0.55,                         // ◄── retrieve 가 정답 fact 를 얼마나 잡았나
+      "overall_recall": 0.5,                       // ↑ 와 다름. 아래 표 참고
       "total_fact_hits": 8,
       "total_supporting_facts": 16,
-      "mean_llm_time": 1.23,
-      "mean_num_episodes": 9.4,
-      "mean_tokens_per_query": 4523.0,
+      "mean_llm_time": 1.23,                       // 답변 LLM 지연 (초)
+      "mean_num_episodes": 9.4,                    // 한 질문당 retrieve 한 chunk 수
+      "mean_tokens_per_query": 4523.0,             // ◄── 비용 축
       "mean_input_token": 4321.0,
       "mean_output_token": 202.0,
-      "by_category": {"single-session-user": {...}, ...},
-      "by_tool": {"ToolSelectAgent": {...}, ...}
-    }
-  ]
+      "by_category": { "single-session-user": {"n": 1, "accuracy": 1.0}, ... },
+      "by_tool":     { "ToolSelectAgent": {"n": 5, "accuracy": 0.6, "mean_input_token": ..., "mean_output_token": ..., "mean_llm_time": ...} }
+    },
+    { "cell": "search_limit=20", ... },
+    ...
+  ],
+  "meta": { "run_name": ..., "problem": 4, "benchmark": "longmemeval", ... }
 }
 ```
 
-#### 옵션 플래그 두 개
+#### 6.2 cell dict 의 각 필드 — "이 숫자가 무엇을 의미하나"
 
-- `--decompose-multisession` (#6) → cell 마다 `ms_accuracy`, `others_mean_accuracy`, `ms_vs_others_gap` 추가
-- `--pareto` (#12) → 별도 `pareto` key 에 `(search_limit, accuracy, mean_tokens_per_query)` 점들 search_limit 오름차순 정렬
+| 필드 | 의미 | 어떻게 계산되나 |
+|---|---|---|
+| `n` | 이 cell 안의 question 수 | judge.jsonl 의 행 수 (이 cell 에 속한) |
+| `accuracy` | **이 cell 의 정답률** (가장 핵심) | `mean(llm_score)`. judge LLM 이 1=CORRECT, 0=WRONG 으로 판정 |
+| `accuracy_std` | per-question 점수의 표준편차 | `pstdev(llm_scores)`. 0/1 binary 라 0~0.5 사이 값. 신뢰구간 추정용 (paper 의 σ×2 자동 판정은 future work) |
+| `mean_recall` | 질문당 평균 recall | 각 question 의 `len(fact_hits)/len(supporting_facts)` 평균. **0~1 사이** |
+| `overall_recall` | 전체 recall (microavg) | `total_fact_hits / total_supporting_facts`. mean_recall 와 다른 이유: question 당 supporting_facts 수가 다르면 차이남 |
+| `total_fact_hits` | 이 cell 에서 retrieve 가 잡은 supporting fact 수 | retrieve.jsonl 의 `fact_hits` 합 |
+| `total_supporting_facts` | 이 cell 에서 정답에 필요했던 supporting fact 총 수 | retrieve.jsonl 의 `supporting_facts` 길이 합 |
+| `mean_llm_time` | 답변 LLM 응답 시간 평균 (초) | judge.jsonl 의 `llm_time` 평균 |
+| `mean_num_episodes` | 한 질문당 retrieve 가 꺼낸 chunk 수 | retrieve.jsonl 의 `num_episodes_retrieved` 평균. `search_limit` 와 같지 않음 — 실제로 매칭된 chunk 가 그보다 적을 수 있음 |
+| `mean_tokens_per_query` | 한 질문 처리에 들어간 토큰 총합 평균 | input_token + output_token + tool_select_input_token + tool_select_output_token 4개 합의 question 당 평균. **비용/지연 축** |
+| `mean_input_token`/`mean_output_token` | 답변 LLM 의 입출력 토큰 평균 | retrieve.jsonl 의 그 필드 평균 |
 
-#### reuse-run (#6, #12)
+각 필드 의미 한 번 이해하면 다른 cell 들과 비교만 하면 됨.
 
-`run_cfg.reuse_run` 이 설정돼 있으면 다른 run 의 `judge.jsonl` 을 읽어 새 분석. ingest/retrieve/judge 재실행 불필요 — 같은 데이터에 대한 후처리만.
+#### 6.3 p4 결과 읽는 법 — "k sweep 비단조성"
+
+p4 의 cells 가 5개 (k=10/20/30/50/100). 가장 단순한 비교: cell 들의 accuracy 를 k 순으로 나열.
+
+```python
+# 의사코드
+import json
+with open("results/p4_pilot/analyze.json") as f:
+    a = json.load(f)
+for cell in sorted(a["cells"], key=lambda c: c["sweep"]["search_limit"]):
+    k = cell["sweep"]["search_limit"]
+    acc = cell["accuracy"]
+    rec = cell["mean_recall"]
+    tok = cell["mean_tokens_per_query"]
+    print(f"k={k:3d}  acc={acc:.3f}  recall={rec:.3f}  tokens/q={tok:.0f}")
+```
+
+기대 패턴 vs 실제 패턴 해석:
+
+| 패턴 | 해석 |
+|---|---|
+| accuracy 가 k 따라 단조증가 | paper claim 과 일치. retrieve 가 chunk 더 많이 꺼낼수록 정답 가능성 높아짐 |
+| accuracy 가 k=20~30 에서 정점 → k=100 에서 감소 | **비단조 (p4 가 잡으려는 현상)**. 더 많은 chunk 가 noise 가 되어 답변 LLM 을 헷갈리게 함 |
+| accuracy 가 거의 평평 | k 가 답에 무관 — 보통 dataset 이 너무 쉬움 (`length` 작음) 또는 oracle split |
+| mean_recall 은 단조증가, accuracy 는 비단조 | retrieve 는 잘 잡았는데 답변 LLM 이 noise 에 약함. **retrieve vs answer 단계 분리 진단** |
+| mean_tokens_per_query 가 k 에 비례해 증가, accuracy 는 안 늘면 | 비용만 오르고 효과 없음 — Pareto 측면에서 작은 k 가 우월 |
+
+#### 6.4 `by_category` — "어떤 질문 종류에 약한가"
+
+LongMemEval question 은 6 카테고리:
+- **SSU** Single-Session-User (사용자 메시지 안의 정보)
+- **SSA** Single-Session-Assistant (assistant 메시지 안의 정보)
+- **SSP** Single-Session-Preference (사용자 선호)
+- **TR** Temporal Reasoning (시간 추론)
+- **KU** Knowledge Update (정보 업데이트)
+- **MS** Multi-Session (여러 세션에 걸친 정보)
+
+`by_category` 가 cell 마다 카테고리별 정확도 dict:
+```json
+"by_category": {
+  "single-session-user":   {"n": 80, "accuracy": 0.85},
+  "multi-session":         {"n": 50, "accuracy": 0.32},
+  "temporal-reasoning":    {"n": 70, "accuracy": 0.41},
+  ...
+}
+```
+**해석**: SSU 는 잘 푸는데 MS / TR 가 떨어진다 → "이 시스템은 multi-session reasoning 이 약함" 같은 시스템 한계 진단.
+
+p3 (prefix on/off) 처럼 카테고리별로 sweep 효과가 다른 경우 — `by_category` 비교가 cell 비교보다 더 풍부함.
+
+#### 6.5 `by_tool` — "ToolSelectAgent 가 어떤 도구를 골랐나"
+
+`test_target: retrieval_agent` (= `ToolSelectAgent`) 인 경우, agent 가 매번 어떤 검색 도구를 호출할지 결정. `by_tool` 가 그 선택 결과를 도구별로 묶음:
+```json
+"by_tool": {
+  "ToolSelectAgent": {
+    "n": 250, "accuracy": 0.62,
+    "mean_input_token": 5421, "mean_output_token": 213, "mean_llm_time": 1.4
+  }
+}
+```
+**해석**: 도구 선택 성공률 + 도구별 비용. `test_target: memmachine` (직접 메모리 호출) 과 비교하면 "도구 선택 layer 가 가치 있나" 답이 나옴 (p2/p5 의 핵심 질문).
+
+#### 6.6 `--decompose-multisession` (#6) — "MS 카테고리 vs 나머지 차이"
+
+`scripts/run_pipeline.py --stage analyze --decompose-multisession` 을 주면 cell 마다 추가:
+```json
+"ms_accuracy": 0.32,                  // multi-session 카테고리 정확도
+"others_mean_accuracy": 0.71,         // 나머지 카테고리들의 평균 정확도
+"ms_vs_others_gap": -0.39             // MS - others. 음수면 MS 가 더 어려움
+```
+**해석**: MS 가 시스템에 어려운 카테고리라는 게 paper 의 주장. gap 이 cell 들끼리 어떻게 변하는지 보면 "k 늘리면 MS 만 더 좋아지나, 균등하게 좋아지나" 같은 질문에 답.
+
+#### 6.7 `--pareto` (#12) — "비용 vs 정확도 trade-off"
+
+`--pareto` 를 주면 별도 키:
+```json
+"pareto": [
+  {"search_limit": 10,  "accuracy": 0.62, "mean_recall": 0.51, "mean_tokens_per_query": 2300, ...},
+  {"search_limit": 20,  "accuracy": 0.66, "mean_recall": 0.58, "mean_tokens_per_query": 4100, ...},
+  {"search_limit": 30,  "accuracy": 0.65, "mean_recall": 0.61, "mean_tokens_per_query": 5800, ...},
+  {"search_limit": 50,  "accuracy": 0.63, "mean_recall": 0.62, "mean_tokens_per_query": 8400, ...},
+  {"search_limit": 100, "accuracy": 0.60, "mean_recall": 0.62, "mean_tokens_per_query": 14200, ...}
+]
+```
+search_limit 오름차순으로 정렬. **해석**:
+- accuracy 가 비단조이고 token 은 단조증가 → "k=20 이 가성비 최적"
+- 모든 cell 이 Pareto front 위가 아닐 수 있음 (k=50 이 k=20 에 dominated 면 의미 없는 점)
+- 표를 그대로 plot 해도 "비용/정확도 곡선" 이 됨
+
+#### 6.8 reuse-run (#6, #12) — "같은 데이터로 다른 분석"
+
+`run_cfg.reuse_run` 을 설정하면 다른 run 의 `judge.jsonl` 을 읽어 분석만. ingest/retrieve/judge 재실행 불필요 — **이미 있는 데이터를 다른 각도로 보는 패턴**.
 
 ```sh
+# p4 한 번 돌렸다고 가정 (run_name=p4_pilot)
+# #6 처럼 multi-session 분해만 다시 보고 싶을 때:
 python scripts/generate_config.py --problem 6 --run-name p6_from_p4 \
     --reuse-run p4_pilot --model-profile my_model --db-profile my_db
 python scripts/run_pipeline.py --config configs/runs/p6_from_p4.yaml \
     --stage analyze --decompose-multisession
+
+# #12 의 Pareto 만:
+python scripts/generate_config.py --problem 12 --run-name p12_from_p4 \
+    --reuse-run p4_pilot --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p12_from_p4.yaml \
+    --stage analyze --pareto
+```
+
+각 `analyze.json` 의 `meta.source_judge_path` 가 어느 run 에서 가져온 데이터인지 박힘.
+
+#### 6.9 jq 로 빠른 확인 명령
+
+```sh
+# cell 들의 accuracy 를 k 순으로
+jq '.cells | sort_by(.sweep.search_limit) | map({k: .sweep.search_limit, acc: .accuracy, rec: .mean_recall, tok: .mean_tokens_per_query})' results/p4_pilot/analyze.json
+
+# multi-session gap (decompose 옵션 켰을 때)
+jq '.cells | map({k: .sweep.search_limit, ms: .ms_accuracy, others: .others_mean_accuracy, gap: .ms_vs_others_gap})' results/p4_pilot/analyze.json
+
+# Pareto 점들
+jq '.pareto' results/p4_pilot/analyze.json
 ```
 
 ### 7) 산출 디렉토리
