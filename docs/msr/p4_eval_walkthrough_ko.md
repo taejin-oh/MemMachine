@@ -280,13 +280,40 @@ benchmark:
 **장점**: 캐시 구조 신경 안 쓰고 평범한 JSON 한 개만 두면 됨.
 **단점**: PR7 코드 수정 필요. 후속 PR.
 
+### 옵션 C: `benchmark.data_path` 로 wrapper 가 직접 로드 (eval_claude 신규, 채택됨)
+
+eval_claude 에서 옵션 B 의 아이디어가 본체에 머지됨. p3 / p4 problem yaml 이 default 로:
+
+```yaml
+# configs/problems/p4.yaml
+benchmark:
+  name: longmemeval
+  length: 500
+  split: longmemeval_s_cleaned
+  data_path: evaluation/data/longmemeval_s_cleaned.json
+```
+
+그 경로에 파일을 두면 wrapper 가 HF 호출 없이 바로 읽음 (`scripts/stages/_common.py:load_longmemeval_local`). `_ingest_longmemeval` / `_run_longmemeval_cell` 양쪽이 자동 분기 — `bench.get("data_path")` 가 있으면 local, 없으면 기존 HF path.
+
+다른 위치/파일을 쓰려면:
+```yaml
+benchmark:
+  data_path: /abs/path/longmemeval_oracle_cleaned.json   # 절대경로
+```
+또는 problem yaml 의 그 줄을 주석 처리하면 HF online 으로 fallback.
+
+generate_config 시점에 상대경로는 절대경로로 resolve 됨 (PR #20 흐름). 파일이 없으면 ingest 진입 시 명시적 `FileNotFoundError`(찾은 절대경로 포함).
+
 ### 어느 쪽?
 
 | 상황 | 추천 |
 |---|---|
-| 일회성 평가 | 옵션 A (캐시 통째 복사 + `HF_HUB_OFFLINE=1`) |
-| 팀이 계속 사용, 데이터 경로 명시적 | 옵션 B (wrapper 패치) |
-| HotpotQA(p2) 도 오프라인 | 둘 다 비슷하게 적용. p5(LoCoMo)는 이미 `data_path` 인자 있어 오프라인 친화 |
+| 단순 / repo 안에 파일 둠 | **옵션 C** (zero-config, 기본 동작) |
+| 파일을 외부에 두거나 split 여러 개 자주 교체 | 옵션 C 의 `data_path` 를 절대경로로 override |
+| HF 그대로 쓰고 싶음 (인터넷 가능) | problem yaml 의 `data_path:` 한 줄 주석 처리 → 옵션 A 또는 native HF |
+| 캐시 구조까지 그대로 미러 (다른 도구도 같이 쓸 때) | 옵션 A (캐시 통째 복사 + `HF_HUB_OFFLINE=1`) |
+| 팀이 계속 쓰는 wrapper 확장 | 옵션 B (eval_claude 가 이미 구현 — 옵션 C) |
+| HotpotQA(p2) 도 오프라인 | 같은 패턴 가능 (HotpotQA 도 `data_path` 추가 필요. 현재 p2.yaml 엔 없음 — 후속 작업) |
 
 ---
 
@@ -1273,5 +1300,286 @@ python evaluation/retrieval_agent/locomo_delete.py \
 
 ---
 
-다음 메모:
-- **4-D**: retrieve → generate → judge → analyze. sweep cell 단위 검증, jsonl 산출물 모양, 실패 시 cell 단위 재실행 정책
+## 4-D: retrieve → generate → judge → analyze
+
+### 1) 명령
+
+```sh
+# 단계별 (실패 시 그 stage 만 재실행 가능)
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage retrieve
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage generate
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage judge
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage analyze
+
+# 한 번에 묶어서
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage retrieve,generate,judge,analyze
+```
+
+각 stage 의 산출물이 다음 stage 의 입력이 되고, 같은 `results/{run_name}/` 안에 누적.
+
+### 2) 내부 흐름
+
+`scripts/run_pipeline.py:run()` 이 stage list 를 canonical 순서로 정렬해서 호출. 4-D 의 4개 stage 가 어떻게 연결되는지:
+
+```
+retrieve (D-005: generate.jsonl 도 같이 emit)
+  ├─ retrieve.jsonl   ─┐
+  └─ generate.jsonl   ─┤
+                       ├─→ judge → judge.jsonl
+                       │           │
+                       │     analyze (judge.jsonl + retrieve.jsonl 합쳐 cell 집계)
+                       │           │
+                       └───────────┴─→ analyze.json
+generate stage 자체는 no-op verify (D-005)
+```
+
+### 3) retrieve — sweep cell 펼침 + cell 별 process_question
+
+`scripts/stages/retrieve.py:run()` 핵심:
+
+```python
+sweep_cells = _expand_sweep(run_cfg.get("sweep", {}))
+# ↑ 내부에서 _validate_sweep_keys() 가 위험 키 차단
+
+for cell_idx, cell in enumerate(sweep_cells):
+    params = _resolved_params(run_cfg, cell)   # fixed + cell, sweep wins
+    _apply_cell_to_config(config_path, params) # cell-only toggle in-place
+
+    if bench_name == "longmemeval":
+        responses = await _run_longmemeval_cell(...)   # process_question N 개 비동기
+    elif bench_name == "hotpot":
+        responses = await _run_hotpot_cell(...)
+    elif bench_name == "locomo":
+        responses = _run_locomo_cell(...)              # subprocess
+
+    for category, record in responses:
+        r_row, g_row = _split_response(category, record, params)
+        retrieve_rows.append(r_row); generate_rows.append(g_row)
+```
+
+#### sweep validation (eval_claude 신규)
+
+`_validate_sweep_keys()` (`retrieve.py:41-62`) 가 두 부류를 명시적 `SystemExit` 으로 차단:
+
+```python
+SWEEP_INGEST_AFFECTING_KEYS = {"message_sentence_chunking"}
+SWEEP_CONFIG_ONLY_KEYS      = {"summarization_enabled"}
+```
+
+| sweep 에 넣으면 | 메시지 핵심 |
+|---|---|
+| `message_sentence_chunking: [false, true]` | "affects ingest output (Episode storage shape) and cannot be swept from the retrieve stage. Move them to `fixed:` and use a separate run + ingest per value." |
+| `summarization_enabled: [false, true]` | "are config-only for the current eval path (`agent_utils.py:461` constructs EpisodicMemory with `short_term_memory=None`). Sweeping them would emit a matrix where every cell scores identically." |
+
+즉 chunk on/off 비교는 **두 개의 별도 run** 으로 (USAGE.md 의 안내 그대로). summarization 은 config-only knob 이라 sweep 무의미.
+
+#### cell 별 in-place 토글 (eval_claude 에서 단순화됨)
+
+`_apply_cell_to_config()` 가 cell 마다 호출되지만 **`prepend_user_prefix` 한 가지만** in-place 갱신. `message_sentence_chunking` / `summarization_enabled` 는 fixed-only 라 generate_config 시점에 박혔고 cell 마다 재적용할 필요가 없어졌어 (single source-of-truth).
+
+`search_limit` 은 configuration.yml 에 안 박힘. `params["search_limit"]` 에서 직접 읽어 `process_question(search_limit=...)` 인자로 전달.
+
+#### process_question — LongMemEval 케이스
+
+`_run_longmemeval_cell()`:
+- `agent_utils.load_eval_config(config_path)` → ResourceManager
+- `agent_utils.init_memmachine_params(rm, session_id, agent_name)` → `(memory, answer_model, query_agent)`
+  - `agent_name` 은 `params["test_target"]` 에 따라 `MemMachineAgent` / `ToolSelectAgent`
+- 각 sample (질문) 마다 `agent_utils.process_question()` — 검색 + 답변 한 번에
+- `concurrency = run_cfg.evaluation.search_concurrency` (default 4) 만큼 묶어 `asyncio.gather`
+- **HF vs 로컬**: `bench.get("data_path")` 가 있으면 `_common.load_longmemeval_local()` 으로 로컬 JSON 직접 로드 (HF 호출 0). 없으면 기존 HF path. ingest 와 동일 분기.
+
+#### 산출물 split (`_split_response()`)
+
+한 응답 record 가 두 jsonl 행으로:
+
+```
+retrieve.jsonl 행:
+  question, category, sweep, question_id,
+  chunks_text, num_episodes_retrieved, memory_retrieval_time,
+  memory_search_called, agent, selected_tool, supporting_facts,
+  input_token, output_token,
+  tool_select_input_token, tool_select_output_token,
+  fact_hits, fact_miss
+
+generate.jsonl 행:
+  question, category, sweep, question_id,
+  golden_answer, model_answer, llm_time
+```
+
+cell 5 sample × 2 sweep cell = 10 행씩 두 jsonl 에 누적.
+
+### 4) generate — no-op verify + EDWIN hook
+
+`scripts/stages/generate.py:run()` 는 retrieve 가 이미 emit 한 `generate.jsonl` 을 검증만:
+- 파일 존재 + 행 수 보고
+- EDWIN prompt hook 상태 보고 (D-003 — 현재는 fallback 또는 "loaded but NOT yet applied")
+
+따라서 `--stage generate` 는 사실상 sanity check. retrieve 후 자동 통과.
+
+### 5) judge — generate.jsonl + llm_score
+
+`scripts/stages/judge.py:run()` 가 `generate.jsonl` 의 각 행에 `evaluate_llm_judge()` 호출해 0/1 점수 매김:
+
+```python
+judged.append({**row, "llm_score": int(score)})
+# 50 행마다 진행 로그 + running accuracy 출력
+```
+
+#### judge LLM swap (eval_claude 신규)
+
+`_judge_config_path()` (`judge.py:25-64`) 가 `run_cfg.judge.llm_model_id` 가 설정돼 있으면 임시 configuration.yml 을 만들어 **`retrieval_agent.judge_llm_model`** 만 그 ID 로 swap. **`retrieval_agent.llm_model` (답변 LLM) 은 절대 안 건드림** — 답변과 채점이 분리.
+
+ID 가 `resources.language_models` 에 없으면 명시적 ValueError. 보통 model profile 에 `judge_llm` 블록을 미리 박아두는 패턴 (`configs/profiles/models/_example.yaml` 의 주석 처리 블록 참고):
+
+```yaml
+# my_model.yaml (선택)
+judge_llm:
+  id: my_judge
+  provider: openai-chat-completions
+  config:
+    api_key: "..."
+    model: gpt-4o
+```
+
+CLI:
+```sh
+python scripts/generate_config.py --problem 4 --run-name p4_pilot \
+    --judge-model my_judge ...
+python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml \
+    --stage judge,analyze
+```
+
+### 6) analyze — cell 별 집계
+
+`scripts/stages/analyze.py:run()` 가 `judge.jsonl` + `retrieve.jsonl` 을 join 해서 cell 마다 dict 한 개:
+
+```json
+{
+  "cells": [
+    {
+      "cell": "search_limit=10",
+      "sweep": {"search_limit": 10},
+      "n": 5,
+      "accuracy": 0.6,
+      "accuracy_std": 0.49,
+      "mean_recall": 0.55,
+      "overall_recall": 0.5,
+      "total_fact_hits": 8,
+      "total_supporting_facts": 16,
+      "mean_llm_time": 1.23,
+      "mean_num_episodes": 9.4,
+      "mean_tokens_per_query": 4523.0,
+      "mean_input_token": 4321.0,
+      "mean_output_token": 202.0,
+      "by_category": {"single-session-user": {...}, ...},
+      "by_tool": {"ToolSelectAgent": {...}, ...}
+    }
+  ]
+}
+```
+
+#### 옵션 플래그 두 개
+
+- `--decompose-multisession` (#6) → cell 마다 `ms_accuracy`, `others_mean_accuracy`, `ms_vs_others_gap` 추가
+- `--pareto` (#12) → 별도 `pareto` key 에 `(search_limit, accuracy, mean_tokens_per_query)` 점들 search_limit 오름차순 정렬
+
+#### reuse-run (#6, #12)
+
+`run_cfg.reuse_run` 이 설정돼 있으면 다른 run 의 `judge.jsonl` 을 읽어 새 분석. ingest/retrieve/judge 재실행 불필요 — 같은 데이터에 대한 후처리만.
+
+```sh
+python scripts/generate_config.py --problem 6 --run-name p6_from_p4 \
+    --reuse-run p4_pilot --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p6_from_p4.yaml \
+    --stage analyze --decompose-multisession
+```
+
+### 7) 산출 디렉토리
+
+```
+results/p4_pilot/
+  ingest.jsonl                        # 4-C 산출
+  retrieve.jsonl                      # cell × question, chunks + tokens + recall
+  generate.jsonl                      # cell × question, model_answer
+  judge.jsonl                         # generate.jsonl + llm_score
+  analyze.json                        # cells / pareto / meta
+  _cells/cell_000/locomo_raw.json     # LoCoMo subprocess raw output
+  p4_pilot_judge_*.yml                # judge swap 임시 configuration (자동 생성)
+```
+
+### 8) 흔한 실패 케이스
+
+| 증상 | 원인 |
+|---|---|
+| `[retrieve] sweep keys ['message_sentence_chunking'] affect ingest output ...` | sweep 에 chunking 넣음 → fixed 로 옮기고 chunk 별로 별도 run |
+| `[retrieve] sweep keys ['summarization_enabled'] are config-only ...` | sweep 에 summarization 넣음 → fixed 로 옮기거나 제거 |
+| `judge.llm_model_id=... is not defined under resources.language_models` | profile 에 `judge_llm` 블록 안 넣고 `--judge-model` 로 미정의 ID 지정 |
+| `retrieve.jsonl missing` (generate stage) | retrieve 가 도중에 죽었거나 안 돌림 → retrieve 재실행 |
+| `generate.jsonl missing` (judge stage) | retrieve 가 generate.jsonl 도 emit 한다는 D-005 패턴 기억 — retrieve 재실행 |
+| `judge.jsonl missing` (analyze stage) | judge stage 안 돌림 / 도중 사망 |
+| `accuracy: null` for some cell | 그 cell 의 모든 행 `llm_score` 가 None — judge call 실패 (rate-limit, key 오류 등) |
+| LoCoMo subprocess timeout | `locomo_search.py` 본체 옵션. wrapper 손 못 댐 |
+
+### 9) cell 단위 재실행 정책
+
+retrieve 부터는 **idempotency 마커가 없음** (ingest 와 다름). retrieve 가 도중에 죽으면 재실행 시 모든 cell 처음부터.
+
+**부분 재실행 패턴**:
+
+#### 패턴 A — 작은 sweep 으로 검증 → 큰 sweep 으로 본 실행
+```sh
+# 작게 (k=10 만, length=5)
+python scripts/generate_config.py --problem 4 --run-name p4_smoke \
+    --k-list 10 --length 5 --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p4_smoke.yaml \
+    --stage retrieve,judge,analyze
+
+# 본 실행 (k 5개 × 500 question)
+python scripts/generate_config.py --problem 4 --run-name p4_full \
+    --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p4_full.yaml \
+    --stage retrieve,judge,analyze
+```
+
+#### 패턴 B — judge 만 재실행 (retrieve 비용 절감)
+generate.jsonl 까지 만들어졌으면 judge LLM 만 바꿔:
+```sh
+python scripts/generate_config.py --problem 4 --run-name p4_full \
+    --judge-model my_judge_v2 --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p4_full.yaml \
+    --stage judge,analyze
+```
+
+#### 패턴 C — analyze 만 (#6 / #12 reuse-run)
+이미 있는 다른 run 의 judge.jsonl 을 새 분석으로:
+```sh
+python scripts/generate_config.py --problem 12 --run-name p12_from_p4 \
+    --reuse-run p4_full --model-profile my_model --db-profile my_db
+python scripts/run_pipeline.py --config configs/runs/p12_from_p4.yaml \
+    --stage analyze --pareto
+```
+
+### 10) 전체 흐름 한눈에
+
+```
+generate_config (4-A/4-B)         configs/runs/{name}.yaml
+  ↓                               configs/generated/{name}_configuration.yml
+ingest (4-C)                      results/{name}/ingest.jsonl  (idempotent)
+  ↓
+retrieve (4-D 3)                  results/{name}/retrieve.jsonl
+                                  results/{name}/generate.jsonl   (D-005)
+  ↓
+generate (4-D 4) — verify only
+  ↓
+judge (4-D 5)                     results/{name}/judge.jsonl
+  ↓
+analyze (4-D 6)                   results/{name}/analyze.json
+                                  (cells / pareto / by_category / by_tool)
+```
+
+### 11) 다음 단계 (이 문서 범위 외)
+
+- **반복 실행 (N runs)**: `n_runs > 1` 은 현재 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work (`docs/msr/msr_eval_tool_todo_pr7.md`).
+- **chunk on/off 자동화**: 현재는 `--run-name` 두 개로 수동 분리. 자동화 wrapper 는 future work.
+- **EDWIN1/EDWIN3 prompt 적용**: hook 자리만 있고 실제 적용 미구현 (D-003).
