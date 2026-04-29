@@ -103,6 +103,17 @@ p3/p4 default 는 `evaluation/data/longmemeval_s_cleaned.json` 을 가리킴. �
 
 ## 4-A: profile YAML 두 개 채우기
 
+### 4-A 가 답하는 질문 (한 줄)
+
+"wrapper 가 어떤 외부 자원 (LLM / embedder / reranker / DB) 을 어떤 endpoint · key 로 부를까" 한 번에 정의. profile 은 한 번 채우면 모든 problem · 모든 run 에 재사용 — problem yaml (자주 바뀜) 과 분리한 이유.
+
+| 산출물 | 역할 |
+|---|---|
+| `configs/profiles/models/{이름}.yaml` | embedder + rerankers + llm_model + (선택) judge_llm 정의 |
+| `configs/profiles/dbs/{이름}.yaml` | vector_graph_store (Neo4j) + profile_storage (Postgres) 연결정보 |
+
+이 두 파일이 4-B 의 generate_config 입력. 합쳐져 본체용 `configuration.yml` 이 됨. 외부 호출 0 — 사용자가 yaml 두 개를 손으로 채우는 단계.
+
 ### 0) "configuration.yml" 이 뭐고 왜 중요한지
 
 이 도구는 결국 **MemMachine 본체에 설정을 넘겨야** 동작. MemMachine 본체가 읽는 설정 파일은 딱 하나 — **`configuration.yml`** (생성 위치: `configs/generated/<run_name>_configuration.yml`).
@@ -513,6 +524,17 @@ profile YAML 두 개 모두 평문 key/password 가 들어감. `.gitignore` 에 
 
 ## 4-B: `generate_config.py` 한 번 돌려 산출물 검증
 
+### 4-B 가 답하는 질문 (한 줄)
+
+"내가 적은 모든 옵션 (CLI + problem yaml + base.yaml + (옵션) JSON) 이 실제로 어떻게 합쳐져 어디로 가는가" 시각적으로 검증.
+
+| 산출물 | 역할 |
+|---|---|
+| `configs/runs/{run_name}.yaml` | run 의 모든 결정값 박제. run_pipeline 이 읽음 |
+| `configs/generated/{run_name}_configuration.yml` | MemMachine 본체용 통합 설정. profile 두 개 + fixed 가 합쳐진 결과 |
+
+외부 호출 0, 디스크 IO 만. 한 번 통과하면 4-C 부터 stage 들이 위 두 파일만 보고 동작. 옵션이 의도대로 박혔는지 여기서 검증해야 다음 단계가 의미 있음.
+
 목적: 4-A 에서 채운 두 profile YAML 이 실제로 어떻게 합쳐지는지 눈으로 확인. 아직 DB·LLM 호출 0, 디스크 IO 만.
 
 ### 1) 명령 한 줄 — 가장 작은 dry-run
@@ -744,6 +766,21 @@ results/                                  # ← 아직 비어있음. 4-C 에서 
 ---
 
 ## 4-C: ingest 단독 실행 — DB 에 진짜 적재되는 단계
+
+### 4-C 가 답하는 질문 (한 줄)
+
+"벤치마크 dataset 의 history (haystack_sessions / 문서 / 대화) 를 DB 에 적재해서 retrieve 가 검색할 수 있게 만들기".
+
+| 항목 | 값 |
+|---|---|
+| 외부 호출 | DB 적재 (Neo4j) + embedding 생성 (embedder). 답변 LLM 호출은 4-D retrieve 에서 |
+| 산출물 | `results/{run_name}/ingest.jsonl` (`status: ok` 마커 한 줄) + DB 안의 episode 노드들 |
+| 다음 단계 입력 | 4-D retrieve 가 같은 `session_id` 로 검색해 그 episode 들을 꺼냄 |
+
+**왜 별도 stage 인가**:
+- **가장 비싼 단계** — embedder 가 episode 마다 호출되고 DB 적재가 길어서 다른 stage 와 분리
+- **idempotency 마커** — `ingest.jsonl` 의 `status: ok` 가 있으면 두 번째 실행 시 자동 skip (같은 데이터를 중복 적재 안 함)
+- **한 번 적재로 retrieve 여러 번** — k sweep 처럼 retrieve-only 비교는 ingest 결과를 재사용
 
 여기서부터 **DB 및 embedding provider 호출이 실제로 발생**. LLM 답변 생성 호출은 ingest 가 아니라 retrieve 단계에서 발생함. 4-B 까지는 로컬 파일만 만들었지만 4-C 는 외부 시스템에 영향이 가는 단계라 idempotency / 재시도 / 정리 정책이 중요.
 
