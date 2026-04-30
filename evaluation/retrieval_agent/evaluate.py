@@ -50,6 +50,10 @@ def process_sample(group_key: str, item: dict, json_call_fn, text_call_fn):
         return group_key, None
 
     if category in _LONGMEMEVAL_TASKS:
+        if text_call_fn is None:
+            raise ValueError(
+                "LongMemEval sample encountered without text-mode judge initialized"
+            )
         llm_score = evaluate_llm_judge_longmemeval(
             question,
             locomo_answer,
@@ -116,17 +120,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     args = build_parser().parse_args()
 
-    json_call_fn = create_judge_fn(args.config_path)
-    text_call_fn = create_judge_fn(args.config_path, json_mode=False)
-
     with open(args.data_path, "r") as f:
         data = json.load(f)
+
+    json_call_fn = create_judge_fn(args.config_path)
 
     results = defaultdict(list)
     results_lock = threading.Lock()
     sample_tasks: list[tuple[str, dict]] = [
         (group_key, item) for group_key, items in data.items() for item in items
     ]
+
+    needs_longmemeval_judge = any(
+        str(item.get("category", "")) in _LONGMEMEVAL_TASKS
+        for _, item in sample_tasks
+    )
+    text_call_fn = (
+        create_judge_fn(args.config_path, json_mode=False)
+        if needs_longmemeval_judge
+        else None
+    )
 
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=args.max_workers
