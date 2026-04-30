@@ -198,9 +198,9 @@ PR #7 (foundation, `09ff952`) 머지 후 `claude/memmachine-eval-tool-GIrVz` 계
 | #12 token/accuracy Pareto 자동화 | ✅ | ✅ | `--stage analyze --pareto` 가 cell 별 token / recall / accuracy 산출 |
 | 사용자 `configuration.yml` 보호 | ✅ | ✅ | `mode=existing` 도 working copy 사용 |
 | token / per-tool / fact_hits carry | ✅ | ✅ | `retrieve.jsonl` 보존 + analyze join + by_tool breakdown |
-| **추가**: `generate_config.py` p1..p6 problem CLI + LENGTH | — | ✅ | `3fcce7e`. base.yaml + `configs/problems/p*.yaml` + profiles + `runs/_example.json` 머지. LoCoMo `--length` (default 10) → `benchmark.length`. `scripts/stages/generate.py` 추가 |
-| **추가**: rerankers list 설정 가능 | — | ✅ | `d38f5e1`. 하드코딩 LongMemEval default 제거. problem yaml + sweep 에서 rerankers list 수용. model example yaml 검증 강화 |
-| **추가**: judge LLM 설정 가능 | — | ✅ | `d38f5e1`. `--judge-llm` CLI 또는 `judge_llm_model` (run_cfg) → `retrieval_agent.judge_llm_model` 로 run yaml 에 반영. `evaluation/retrieval_agent/llm_judge.py` / `scripts/stages/judge.py` 가 런타임에서 사용 |
+| **추가**: `generate_config.py` problem CLI (p2/p3/p4/p5/p6/p12) + LENGTH | — | ✅ | `3fcce7e`. `--problem` choices=`[2,3,4,5,6,12]` (`scripts/generate_config.py:50`). base.yaml + `configs/problems/p*.yaml` + profiles + `runs/_example.json` 머지. LoCoMo `--length` (default 10) → `benchmark.length`. `scripts/stages/generate.py` 추가 |
+| **추가**: rerankers list 설정 가능 | — | ✅ | `d38f5e1`. **model profile** 에서 `rerankers:` list + 선택적 `primary_reranker` 설정 (`configs/profiles/models/_example.yaml`). `_validate_and_normalize_rerankers()` 가 schema/legacy 검증 + rrf-hybrid 참조 무결성 체크 후 working configuration.yml 의 `resources.rerankers` 와 `retrieval_agent.reranker`(=primary) 로 emit. retrieve-stage sweep wiring 은 없음 |
+| **추가**: judge LLM 설정 가능 | — | ✅ | `d38f5e1`. `--judge-model` CLI 또는 `judge.llm_model_id` (run_cfg) → working configuration.yml 의 `retrieval_agent.judge_llm_model` 로 swap (`scripts/stages/judge.py:_swap_judge_llm_model`). model profile 의 optional `judge_llm` 블록은 `_validate_judge_llm()` 으로 검증, 미정의 시 answer `llm_model` 로 fallback. `evaluation/retrieval_agent/llm_judge.py` / `scripts/stages/judge.py` 가 런타임에서 사용 |
 | **추가**: STM `summarization_enabled` 토글 | — | ✅ (config-only) | `034a53d` + `ccc289e`. CLI `--summarization on/off` → `fixed.summarization_enabled`. **sweep 키로는 차단** (`SWEEP_CONFIG_ONLY_KEYS`): eval 경로가 `EpisodicMemory(short_term_memory=None)` (`agent_utils.py:461`) 로 호출되어 LongMemEval 점수에 영향 없음. CLI 사용 시 stderr warning |
 | **추가**: 서버측 STM/SemMem default 정렬 | — | ✅ | `b6c838d` → `00b4ad3` (#25). `ShortTermMemoryConf.summarization_enabled` default → False, `SemanticMemoryConf.enabled` default → False. eval-tool 이 emit 하는 `configuration.yml` 과 서버 default 가 일치 |
 | **추가**: p6 / p12 analyze-only 보호 | — | ✅ | `8bda959`. `--stage` 미지정 시 reuse_run 인지 판단 → 부모 run 산출물 덮어쓰기 / `benchmark.data_path` 누락 실패 차단 |
@@ -210,7 +210,7 @@ PR #7 (foundation, `09ff952`) 머지 후 `claude/memmachine-eval-tool-GIrVz` 계
 
 ### 5.1) v0.2 / PR #7 표 대비 변동 요약
 
-- 신규 ✅ : `generate_config.py` p1..p6 CLI / rerankers list / judge LLM 설정 / STM summarization 토글 / 서버 default 정렬 / p6·p12 ingest 보호 / split 통일 / `data_path` offline / 한국어 docs (총 9 항목)
+- 신규 ✅ : problem CLI (p2/p3/p4/p5/p6/p12) + LENGTH / rerankers list (model profile) / judge LLM 설정 (`--judge-model` / `judge.llm_model_id`) / STM summarization 토글 / 서버 default 정렬 / p6·p12 ingest 보호 / split 통일 / `data_path` offline / 한국어 docs (총 9 항목)
 - 안전장치 강화: `SWEEP_INGEST_AFFECTING_KEYS` (chunk) + `SWEEP_CONFIG_ONLY_KEYS` (summarization) 의 sweep 차단으로 silent A/A 매트릭스 방지
 - 잔여 미해결 (변동 없음): EDWIN 실 적용 / DB snapshot 자동화 / 파일럿 5회 + N 자동결정 wrapper / 성공·부분·실패 자동 σ×2 판정
 
