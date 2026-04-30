@@ -47,7 +47,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 - `scripts/test_stages_judge.py` — review-fix 신규. wrapper routing 4건 (LongMemEval ↔ longmemeval judge / non-LongMemEval ↔ legacy judge / `_abs` ↔ abstention prompt / end-to-end llm_score 작성)
 
 ### 1.3 검증 (v2 시점, review-fix 포함)
-- `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **49/49 PASS**.
+- `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **60/60 PASS**.
 - LOCOMO/Wiki/HotpotQA 경로는 양쪽 진입점 모두 시그니처 호환 유지 (`create_judge_fn(...)` 기본값 `json_mode=True`).
 - 출력 스키마 (`llm_score`: 0/1) 동일 → `generate_scores.py` 무수정.
 - `ruff check` — `evaluate_llm_judge` 와 `create_judge_fn` 의 C901 complexity 경고 1건 존재. **본 review-fix 에서 도입된 항목 아님** (`684f1d6` 시점 도입). 별도 PR 후보.

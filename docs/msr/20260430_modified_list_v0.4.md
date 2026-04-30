@@ -36,7 +36,7 @@ LongMemEval 데이터셋 한해 judge prompt / 채점 방식이 원본(`xiaowu01
   - 조치: `_parse_yes_no(raw)` 함수 분리, `\A\s*(yes|no)[\s.!?,]*\Z` regex 로 **whole-string** 매칭. 허용: "yes" / "Yes" / "Yes." / "yes!" / "yes," / "  yes  " / "no" / "No." / "no!". 거부 (모두 0): "yes and no" / "yesterday" / "not yes" / "I think yes" / "YES — the answer matches" / "No, off by two days" / "" / "maybe".
   - parser regression 테스트 23 (parametrized) + LongMemEval 통합 케이스 4 (yesterday / not-yes / yes-and-no / I-think-yes).
 
-테스트 검증: `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **49/49 PASS**.
+테스트 검증: `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **60/60 PASS**.
 
 ---
 
@@ -95,7 +95,7 @@ LongMemEval 데이터셋 한해 judge prompt / 채점 방식이 원본(`xiaowu01
 | **🆕 v0.4**: text-mode judge lazy init | ✅ | `d55caf2` (앞서 `465d8b8` 의 pre-scan 방식을 폐기하고 진정한 on-demand 로 교체). `main()` closure 안에서 `threading.Lock` + double-checked locking. LOCOMO/Wiki/HotpotQA 만 돌릴 때 text-mode judge 생성 비용/실패 차단 |
 | **🆕 v0.4 review-fix**: wrapper `scripts/stages/judge.py` LongMemEval routing | ✅ | review-fix. `_LONGMEMEVAL_TASKS` frozenset + row-level routing + lazy text-mode judge. `scripts/run_pipeline.py --stage judge` 가 legacy `evaluate.py` 와 동일한 routing 적용. `scripts/test_stages_judge.py` 4 case |
 | **🆕 v0.4 review-fix**: yes/no parser whole-string strict 매칭 | ✅ | review-fix. `_parse_yes_no(raw)` 분리, `\A\s*(yes\|no)[\s.!?,]*\Z` regex 로 **whole-string** 매칭. 정확히 "yes" / "Yes." / "yes!" 등 단순 punctuation 만 허용. ambiguous reply ("yes and no" / "not yes" / "I think yes" / "yesterday") 는 모두 0. parametrized regression 23 + LongMemEval 통합 4 |
-| **🆕 v0.4**: 신규 단위 테스트 | ✅ | `684f1d6` + `465d8b8` + review-fix. `test_llm_judge.py` (LongMemEval judge + json/text mode + parser regression), `test_evaluate.py` (legacy lazy init), `scripts/test_stages_judge.py` (wrapper routing) — 합계 49/49 PASS |
+| **🆕 v0.4**: 신규 단위 테스트 | ✅ | `684f1d6` + `465d8b8` + review-fix. `test_llm_judge.py` (LongMemEval judge + json/text mode + parser regression), `test_evaluate.py` (legacy lazy init), `scripts/test_stages_judge.py` (wrapper routing) — 합계 60/60 PASS |
 
 ---
 
