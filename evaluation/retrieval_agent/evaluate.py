@@ -19,10 +19,27 @@ from evaluation.retrieval_agent.cli_utils import positive_int  # noqa: E402
 from evaluation.retrieval_agent.llm_judge import (  # noqa: E402
     create_judge_fn,
     evaluate_llm_judge,
+    evaluate_llm_judge_longmemeval,
+)
+
+# LongMemEval question_type values (xiaowu0162/longmemeval-cleaned). When the
+# input row's category matches one of these, we route to the original
+# task-specific judge instead of the default ACCURACY_PROMPT path. Other
+# datasets (LOCOMO, Wiki, HotpotQA) use unrelated category values and remain
+# on the default path.
+_LONGMEMEVAL_TASKS = frozenset(
+    {
+        "single-session-user",
+        "single-session-assistant",
+        "multi-session",
+        "temporal-reasoning",
+        "knowledge-update",
+        "single-session-preference",
+    }
 )
 
 
-def process_sample(group_key: str, item: dict, call_fn):
+def process_sample(group_key: str, item: dict, json_call_fn, text_call_fn):
     question = str(item["question"])
     locomo_answer = str(item["golden_answer"])
     response = str(item["model_answer"])
@@ -32,7 +49,19 @@ def process_sample(group_key: str, item: dict, call_fn):
     if category == "5":
         return group_key, None
 
-    llm_score = evaluate_llm_judge(question, locomo_answer, response, call_fn)
+    if category in _LONGMEMEVAL_TASKS:
+        llm_score = evaluate_llm_judge_longmemeval(
+            question,
+            locomo_answer,
+            response,
+            category,
+            str(item.get("question_id", "")),
+            text_call_fn,
+        )
+    else:
+        llm_score = evaluate_llm_judge(
+            question, locomo_answer, response, json_call_fn
+        )
 
     res = {
         "question": question,
@@ -87,7 +116,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main():
     args = build_parser().parse_args()
 
-    call_fn = create_judge_fn(args.config_path)
+    json_call_fn = create_judge_fn(args.config_path)
+    text_call_fn = create_judge_fn(args.config_path, json_mode=False)
 
     with open(args.data_path, "r") as f:
         data = json.load(f)
@@ -102,7 +132,9 @@ def main():
         max_workers=args.max_workers
     ) as executor:
         futures = [
-            executor.submit(process_sample, group_key, item, call_fn)
+            executor.submit(
+                process_sample, group_key, item, json_call_fn, text_call_fn
+            )
             for group_key, item in sample_tasks
         ]
 

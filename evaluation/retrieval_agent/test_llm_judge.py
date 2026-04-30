@@ -21,6 +21,7 @@ from evaluation.retrieval_agent.llm_judge import (  # noqa: E402
     _MAX_JUDGE_ATTEMPTS,
     create_judge_fn,
     evaluate_llm_judge,
+    evaluate_llm_judge_longmemeval,
 )
 
 
@@ -240,3 +241,154 @@ def test_create_judge_fn_unknown_id_raises_not_defined(tmp_path):
 
     with pytest.raises(ValueError, match=r"is not defined under resources"):
         create_judge_fn(str(fixture))
+
+
+# ---------------------------------------------------------------------------
+# evaluate_llm_judge_longmemeval — task-specific prompt + yes/no parsing
+# ---------------------------------------------------------------------------
+
+
+def _capturing_call_fn(reply: str = "yes"):
+    """call_fn stub that records the prompt it was invoked with."""
+    captured = {"prompt": None}
+
+    def _fn(prompt: str) -> str:
+        captured["prompt"] = prompt
+        return reply
+
+    return _fn, captured
+
+
+def test_longmemeval_yes_returns_1():
+    fn, _ = _capturing_call_fn("yes\n")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "single-session-user", "qid_1", fn
+        )
+        == 1
+    )
+
+
+def test_longmemeval_no_returns_0():
+    fn, _ = _capturing_call_fn("no")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "multi-session", "qid_1", fn
+        )
+        == 0
+    )
+
+
+def test_longmemeval_abstention_prompt_used():
+    fn, captured = _capturing_call_fn("yes")
+    evaluate_llm_judge_longmemeval(
+        "q", "explanation", "gen", "single-session-user", "qid_abs_1", fn
+    )
+    assert "unanswerable question" in captured["prompt"]
+
+
+def test_longmemeval_temporal_prompt_used():
+    fn, captured = _capturing_call_fn("yes")
+    evaluate_llm_judge_longmemeval(
+        "q", "gold", "gen", "temporal-reasoning", "qid_1", fn
+    )
+    assert "off-by-one errors" in captured["prompt"]
+
+
+def test_longmemeval_preference_prompt_used():
+    fn, captured = _capturing_call_fn("yes")
+    evaluate_llm_judge_longmemeval(
+        "q", "rubric", "gen", "single-session-preference", "qid_1", fn
+    )
+    assert "rubric for desired personalized response" in captured["prompt"]
+
+
+# ---------------------------------------------------------------------------
+# create_judge_fn json_mode=False — verifies plain-text mode wiring
+# ---------------------------------------------------------------------------
+
+
+class _RecordingOpenAI:
+    """OpenAI stub that lets tests inspect the kwargs passed to the API."""
+
+    last_chat_kwargs: dict | None = None
+    last_responses_kwargs: dict | None = None
+
+    def __init__(self, api_key=None, base_url=None, **kwargs):
+        cls = type(self)
+
+        class _ChatCompletions:
+            @staticmethod
+            def create(**call_kwargs):
+                cls.last_chat_kwargs = call_kwargs
+                msg = MagicMock()
+                msg.message.content = "yes"
+                resp = MagicMock()
+                resp.choices = [msg]
+                return resp
+
+        class _Chat:
+            completions = _ChatCompletions()
+
+        class _Responses:
+            @staticmethod
+            def create(**call_kwargs):
+                cls.last_responses_kwargs = call_kwargs
+                resp = MagicMock()
+                resp.output_text = "yes"
+                return resp
+
+        self.chat = _Chat()
+        self.responses = _Responses()
+
+
+def test_create_judge_fn_chat_text_mode_kwargs(tmp_path, monkeypatch):
+    """json_mode=False on chat-completions: no response_format, max_tokens=10."""
+    monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
+    _RecordingOpenAI.last_chat_kwargs = None
+
+    fixture = _write_fixture(
+        tmp_path, llm_model="openai_model", judge_llm_model="ollama_model"
+    )
+    fn = create_judge_fn(str(fixture), json_mode=False)
+    fn("test prompt")
+
+    kwargs = _RecordingOpenAI.last_chat_kwargs
+    assert kwargs is not None
+    assert "response_format" not in kwargs
+    assert kwargs.get("max_tokens") == 10
+
+
+def test_create_judge_fn_chat_json_mode_kwargs(tmp_path, monkeypatch):
+    """Default (json_mode=True) keeps response_format and omits max_tokens."""
+    monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
+    _RecordingOpenAI.last_chat_kwargs = None
+
+    fixture = _write_fixture(
+        tmp_path, llm_model="openai_model", judge_llm_model="ollama_model"
+    )
+    fn = create_judge_fn(str(fixture))
+    fn("test prompt")
+
+    kwargs = _RecordingOpenAI.last_chat_kwargs
+    assert kwargs is not None
+    assert kwargs.get("response_format") == {"type": "json_object"}
+    assert "max_tokens" not in kwargs
+
+
+def test_create_judge_fn_responses_text_mode_kwargs(tmp_path, monkeypatch):
+    """json_mode=False on openai-responses: no `text` arg, max_output_tokens=10."""
+    monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
+    _RecordingOpenAI.last_responses_kwargs = None
+
+    # openai_model is openai-responses in the sample config.
+    fixture = _write_fixture(
+        tmp_path, llm_model="ollama_model", judge_llm_model="openai_model"
+    )
+    fn = create_judge_fn(str(fixture), json_mode=False)
+    fn("test prompt")
+
+    kwargs = _RecordingOpenAI.last_responses_kwargs
+    assert kwargs is not None
+    assert "text" not in kwargs
+    assert kwargs.get("max_output_tokens") == 10

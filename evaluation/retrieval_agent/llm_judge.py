@@ -40,8 +40,87 @@ Do NOT include both CORRECT and WRONG in your response, or it will break the eva
 Just return the label CORRECT or WRONG in a json format with the key as "label".
 """
 
+# LongMemEval task-specific judge templates copied verbatim from
+# https://github.com/xiaowu0162/LongMemEval (src/evaluation/evaluate_qa.py).
+_LME_TEMPLATE_GENERAL = (
+    "I will give you a question, a correct answer, and a response from a model. "
+    "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+    "If the response is equivalent to the correct answer or contains all the intermediate "
+    "steps to get the correct answer, you should also answer yes. If the response only "
+    "contains a subset of the information required by the answer, answer no. "
+    "\n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only."
+)
+_LME_TEMPLATE_TEMPORAL = (
+    "I will give you a question, a correct answer, and a response from a model. "
+    "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+    "If the response is equivalent to the correct answer or contains all the intermediate "
+    "steps to get the correct answer, you should also answer yes. If the response only "
+    "contains a subset of the information required by the answer, answer no. "
+    "In addition, do not penalize off-by-one errors for the number of days. If the question "
+    "asks for the number of days/weeks/months, etc., and the model makes off-by-one errors "
+    "(e.g., predicting 19 days when the answer is 18), the model's response is still correct. "
+    "\n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only."
+)
+_LME_TEMPLATE_KNOWLEDGE_UPDATE = (
+    "I will give you a question, a correct answer, and a response from a model. "
+    "Please answer yes if the response contains the correct answer. Otherwise, answer no. "
+    "If the response contains some previous information along with an updated answer, the "
+    "response should be considered as correct as long as the updated answer is the required "
+    "answer.\n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only."
+)
+_LME_TEMPLATE_PREFERENCE = (
+    "I will give you a question, a rubric for desired personalized response, and a response "
+    "from a model. Please answer yes if the response satisfies the desired response. "
+    "Otherwise, answer no. The model does not need to reflect all the points in the rubric. "
+    "The response is correct as long as it recalls and utilizes the user's personal "
+    "information correctly.\n\nQuestion: {}\n\nRubric: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only."
+)
+_LME_TEMPLATE_ABSTENTION = (
+    "I will give you an unanswerable question, an explanation, and a response from a model. "
+    "Please answer yes if the model correctly identifies the question as unanswerable. "
+    "The model could say that the information is incomplete, or some other information is "
+    "given but the asked information is not."
+    "\n\nQuestion: {}\n\nExplanation: {}\n\nModel Response: {}\n\n"
+    "Does the model correctly identify the question as unanswerable? Answer yes or no only."
+)
 
-def create_judge_fn(config_path: str) -> Callable[[str], str]:
+_LME_GENERAL_TASKS = frozenset(
+    {"single-session-user", "single-session-assistant", "multi-session"}
+)
+
+
+def get_anscheck_prompt(
+    task: str,
+    question: str,
+    answer: str,
+    response: str,
+    abstention: bool = False,
+) -> str:
+    """Build the LongMemEval task-specific judge prompt (original wording).
+
+    Mirrors ``get_anscheck_prompt`` in LongMemEval's ``evaluate_qa.py``. Raises
+    ``ValueError`` for unknown tasks so the caller can decide how to route.
+    """
+    if abstention:
+        return _LME_TEMPLATE_ABSTENTION.format(question, answer, response)
+    if task in _LME_GENERAL_TASKS:
+        return _LME_TEMPLATE_GENERAL.format(question, answer, response)
+    if task == "temporal-reasoning":
+        return _LME_TEMPLATE_TEMPORAL.format(question, answer, response)
+    if task == "knowledge-update":
+        return _LME_TEMPLATE_KNOWLEDGE_UPDATE.format(question, answer, response)
+    if task == "single-session-preference":
+        return _LME_TEMPLATE_PREFERENCE.format(question, answer, response)
+    raise ValueError(f"Unsupported LongMemEval task: {task!r}")
+
+
+def create_judge_fn(
+    config_path: str, json_mode: bool = True
+) -> Callable[[str], str]:
     """Build a synchronous callable that sends a prompt to the configured judge LLM.
 
     Reads ``retrieval_agent.judge_llm_model`` first and falls back to
@@ -79,13 +158,27 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
         )
         model_name = conf.model
 
-        def _call_responses(prompt: str) -> str:
-            resp = client.responses.create(
-                model=model_name,
-                input=prompt,
-                text={"format": {"type": "json_object"}},
-            )
-            return resp.output_text or ""
+        if json_mode:
+
+            def _call_responses(prompt: str) -> str:
+                resp = client.responses.create(
+                    model=model_name,
+                    input=prompt,
+                    text={"format": {"type": "json_object"}},
+                )
+                return resp.output_text or ""
+
+        else:
+            # Plain-text mode for LongMemEval: original judge expects a short
+            # "yes"/"no" reply with no JSON wrapper. max_output_tokens mirrors
+            # the original (evaluate_qa.py:109).
+            def _call_responses(prompt: str) -> str:
+                resp = client.responses.create(
+                    model=model_name,
+                    input=prompt,
+                    max_output_tokens=10,
+                )
+                return resp.output_text or ""
 
         return _call_responses
 
@@ -99,17 +192,30 @@ def create_judge_fn(config_path: str) -> Callable[[str], str]:
         )
         model_name = conf.model
 
-        def _call_chat(prompt: str) -> str:
-            resp = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-            )
-            return resp.choices[0].message.content
+        if json_mode:
+
+            def _call_chat(prompt: str) -> str:
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                )
+                return resp.choices[0].message.content
+
+        else:
+            # Plain-text mode for LongMemEval (see _call_responses above).
+            def _call_chat(prompt: str) -> str:
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=10,
+                )
+                return resp.choices[0].message.content
 
         return _call_chat
 
     if llm_id in lms.amazon_bedrock_language_model_confs:
+        # Bedrock branch never imposed JSON, so json_mode is a no-op here.
         import boto3
 
         conf = lms.amazon_bedrock_language_model_confs[llm_id]
@@ -207,6 +313,28 @@ def evaluate_llm_judge(
         _MAX_JUDGE_ATTEMPTS,
     )
     return 0
+
+
+def evaluate_llm_judge_longmemeval(
+    question: str,
+    gold_answer: str,
+    generated_answer: str,
+    question_type: str,
+    question_id: str,
+    call_fn: Callable[[str], str],
+) -> int:
+    """LongMemEval judge: task-specific prompt + plain-text yes/no scoring.
+
+    Mirrors the original ``evaluate_qa.py`` pipeline. Abstention is detected
+    from the ``_abs`` substring in ``question_id``. ``call_fn`` should be built
+    with ``create_judge_fn(..., json_mode=False)``.
+    """
+    abstention = "_abs" in question_id
+    prompt = get_anscheck_prompt(
+        question_type, question, gold_answer, generated_answer, abstention=abstention
+    )
+    raw = call_fn(prompt) or ""
+    return 1 if "yes" in raw.lower() else 0
 
 
 def main():
