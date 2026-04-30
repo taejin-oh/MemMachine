@@ -27,8 +27,16 @@ LongMemEval 데이터셋 한해 judge prompt / 채점 방식이 원본(`xiaowu01
   - 초안 (`465d8b8`): dataset pre-scan 후 LongMemEval 샘플 존재 시에만 text 모드 judge 생성. 회귀 안전판으로 `process_sample` 에 defensive guard 추가.
   - 최종 (`d55caf2`): pre-scan 제거하고 thread-safe **double-checked locking** 으로 진정한 on-demand init. 첫 LongMemEval 샘플 처리 시점에 한 번만 `create_judge_fn(config, json_mode=False)` 호출.
   - `evaluation/retrieval_agent/test_evaluate.py` 신규: text-mode judge 가 (a) 비-LongMemEval 만 있을 때 미생성, (b) LongMemEval 카테고리에서 생성 — 2 케이스.
+- ✅ **review-fix: wrapper 경로 정렬** (`scripts/stages/judge.py`)
+  - 리뷰 지적 — `evaluation/retrieval_agent/evaluate.py` 만 정렬되고 `scripts/run_pipeline.py --stage judge` (실제 main wrapper) 가 여전히 `evaluate_llm_judge` 만 호출 → wrapper 경로의 LongMemEval 점수가 legacy 와 불일치.
+  - 조치: `scripts/stages/judge.py:run()` 에 `_LONGMEMEVAL_TASKS` frozenset + row-level routing 추가. 동일하게 lazy text-mode judge init.
+  - `scripts/test_stages_judge.py` 신규: wrapper routing 4 케이스 (LongMemEval / non-LongMemEval / abstention `_abs` / e2e llm_score).
+- ✅ **review-fix: yes/no parser 강화**
+  - 리뷰 지적 — `"yes" in raw.lower()` 가 "yesterday" / "not yes" / "{ans: yes}" 등을 모두 1 로 처리.
+  - 조치: `_parse_yes_no(raw)` 함수 분리, `\s*\W*(yes|no)\b` regex 로 leading word 매칭. "yesterday" / "not yes" / "" → 0. "yes" / "Yes." / "yes\n" → 1. "yes and no" 는 leading "yes" 가 winner (원본 LongMemEval 동작과 일치).
+  - parser regression 테스트 16 (parametrized) + LongMemEval 통합 케이스 3 (yesterday/not-yes/yes-and-no).
 
-테스트 검증: `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py -v` → **29/29 PASS**.
+테스트 검증: `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **49/49 PASS**.
 
 ---
 
@@ -85,7 +93,9 @@ LongMemEval 데이터셋 한해 judge prompt / 채점 방식이 원본(`xiaowu01
 | **🆕 v0.4**: judge 출력 plain-text yes/no 모드 | ✅ | `684f1d6`. `create_judge_fn(config, json_mode=False)` → OpenAI 호출에서 `response_format` 제거 + `max_tokens=10` (원본 fidelity). LongMemEval 만 사용. Bedrock 분기는 원래 JSON 강제가 없어 `json_mode` no-op |
 | **🆕 v0.4**: `evaluate.py` LongMemEval 라우팅 | ✅ | `684f1d6`. `_LONGMEMEVAL_TASKS` frozenset 6 task → `process_sample` 에서 LongMemEval 카테고리만 새 judge 로 분기. 출력 스키마 (`llm_score`: 0/1) 동일 → `generate_scores.py` 무영향 |
 | **🆕 v0.4**: text-mode judge lazy init | ✅ | `d55caf2` (앞서 `465d8b8` 의 pre-scan 방식을 폐기하고 진정한 on-demand 로 교체). `main()` closure 안에서 `threading.Lock` + double-checked locking. LOCOMO/Wiki/HotpotQA 만 돌릴 때 text-mode judge 생성 비용/실패 차단 |
-| **🆕 v0.4**: 신규 단위 테스트 | ✅ | `684f1d6` + `465d8b8`. `test_llm_judge.py` +8 (LongMemEval judge 5 + create_judge_fn json/text mode kwargs 3) — 27/27 PASS, `test_evaluate.py` +2 (lazy init 분기 검증) — 2/2 PASS, 합계 29/29 |
+| **🆕 v0.4 review-fix**: wrapper `scripts/stages/judge.py` LongMemEval routing | ✅ | review-fix. `_LONGMEMEVAL_TASKS` frozenset + row-level routing + lazy text-mode judge. `scripts/run_pipeline.py --stage judge` 가 legacy `evaluate.py` 와 동일한 routing 적용. `scripts/test_stages_judge.py` 4 case |
+| **🆕 v0.4 review-fix**: yes/no parser strict word-boundary 매칭 | ✅ | review-fix. `_parse_yes_no(raw)` 분리, `\s*\W*(yes\|no)\b` regex 로 leading word 매칭. "yesterday" / "not yes" / "" 의 false positive 제거. parametrized regression test 16 + LongMemEval 통합 case 3 |
+| **🆕 v0.4**: 신규 단위 테스트 | ✅ | `684f1d6` + `465d8b8` + review-fix. `test_llm_judge.py` (LongMemEval judge + json/text mode + parser regression), `test_evaluate.py` (legacy lazy init), `scripts/test_stages_judge.py` (wrapper routing) — 합계 49/49 PASS |
 
 ---
 

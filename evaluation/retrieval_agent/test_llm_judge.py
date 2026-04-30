@@ -19,6 +19,7 @@ for extra in (
 
 from evaluation.retrieval_agent.llm_judge import (  # noqa: E402
     _MAX_JUDGE_ATTEMPTS,
+    _parse_yes_no,
     create_judge_fn,
     evaluate_llm_judge,
     evaluate_llm_judge_longmemeval,
@@ -301,6 +302,69 @@ def test_longmemeval_preference_prompt_used():
         "q", "rubric", "gen", "single-session-preference", "qid_1", fn
     )
     assert "rubric for desired personalized response" in captured["prompt"]
+
+
+# ---------------------------------------------------------------------------
+# _parse_yes_no — substring/false-positive regression tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("yes", 1),
+        ("no", 0),
+        ("Yes.", 1),
+        ("yes\n", 1),
+        ("YES — the answer matches", 1),
+        ("No, off by two days", 0),
+        # Substring traps the original heuristic would mis-classify:
+        ("yesterday", 0),
+        ("not yes", 0),
+        ("nope", 0),
+        # Empty / non-yes-no replies default to WRONG:
+        ("", 0),
+        ("maybe", 0),
+        ("I think so", 0),
+        # The original behaviour for "yes and no" (yes wins) is preserved:
+        ("yes and no", 1),
+    ],
+)
+def test_parse_yes_no_strict(raw, expected):
+    assert _parse_yes_no(raw) == expected
+
+
+def test_longmemeval_yesterday_false_positive_rejected():
+    """Reply ``yesterday`` must NOT be marked correct (substring trap)."""
+    fn, _ = _capturing_call_fn("yesterday")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "temporal-reasoning", "qid_1", fn
+        )
+        == 0
+    )
+
+
+def test_longmemeval_not_yes_rejected():
+    """``not yes`` is ambiguous; default to WRONG (0)."""
+    fn, _ = _capturing_call_fn("not yes")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "single-session-user", "qid_1", fn
+        )
+        == 0
+    )
+
+
+def test_longmemeval_yes_and_no_first_token_wins():
+    """``yes and no`` matches the original LongMemEval behaviour: leading yes wins."""
+    fn, _ = _capturing_call_fn("yes and no")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "multi-session", "qid_1", fn
+        )
+        == 1
+    )
 
 
 # ---------------------------------------------------------------------------

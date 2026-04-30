@@ -4,6 +4,7 @@
 import argparse
 import json
 import logging
+import re
 from collections import defaultdict
 from collections.abc import Callable
 
@@ -315,6 +316,27 @@ def evaluate_llm_judge(
     return 0
 
 
+# Match a leading "yes" or "no" word, allowing optional whitespace/punctuation
+# before it. Anchored at start so substrings like "yesterday" or trailing
+# matches like "I think yes" don't slip through. Word boundary after rejects
+# "yesterday"; ambiguous prefixes like "not yes" return no match → score 0.
+_YES_NO_RE = re.compile(r"\s*\W*(yes|no)\b", re.IGNORECASE)
+
+
+def _parse_yes_no(raw: str) -> int:
+    """Parse a yes/no judge reply, defaulting to 0 (WRONG) on anything else.
+
+    Looks for ``yes`` or ``no`` as a word at the start of the reply (allowing
+    leading whitespace/punctuation). Substring matches like ``yesterday`` are
+    rejected; ambiguous replies like ``not yes`` or empty strings default to 0.
+    Stricter than the original LongMemEval ``'yes' in lower(raw)`` heuristic.
+    """
+    match = _YES_NO_RE.match(raw or "")
+    if match is None:
+        return 0
+    return 1 if match.group(1).lower() == "yes" else 0
+
+
 def evaluate_llm_judge_longmemeval(
     question: str,
     gold_answer: str,
@@ -327,14 +349,15 @@ def evaluate_llm_judge_longmemeval(
 
     Mirrors the original ``evaluate_qa.py`` pipeline. Abstention is detected
     from the ``_abs`` substring in ``question_id``. ``call_fn`` should be built
-    with ``create_judge_fn(..., json_mode=False)``.
+    with ``create_judge_fn(..., json_mode=False)``. Reply parsing is stricter
+    than the original ``'yes' in lower(raw)`` substring heuristic — see
+    :func:`_parse_yes_no`.
     """
     abstention = "_abs" in question_id
     prompt = get_anscheck_prompt(
         question_type, question, gold_answer, generated_answer, abstention=abstention
     )
-    raw = call_fn(prompt) or ""
-    return 1 if "yes" in raw.lower() else 0
+    return _parse_yes_no(call_fn(prompt) or "")
 
 
 def main():

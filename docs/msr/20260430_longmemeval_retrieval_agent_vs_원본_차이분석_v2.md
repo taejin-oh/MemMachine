@@ -12,13 +12,18 @@ v1 문서: [`20260430_longmemeval_retrieval_agent_vs_원본_차이분석.md`](20
 ## 1. v1 → v2 갱신 요약 (post-fix delta)
 
 ### 1.1 무엇이 바뀌었나
-PR #27 의 후속 commit 3 건으로 **LongMemEval 데이터셋에 한해서** judge prompt / 채점 방식이 원본에 정렬됨. answer prompt 와 metric 보고는 v1 시점과 동일하게 미정렬.
+PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) 으로 **LongMemEval 데이터셋에 한해서** judge prompt / 채점 방식이 **두 진입 경로 모두에서** 원본에 정렬됨. answer prompt 와 metric 보고는 v1 시점과 동일하게 미정렬.
+
+> **두 진입 경로 구분**
+> - **Legacy 경로**: `evaluation/retrieval_agent/evaluate.py` — 단독 실행 진입점.
+> - **Eval-tool 경로**: `scripts/run_pipeline.py --stage judge` → `scripts/stages/judge.py` — 새 wrapper 진입점. 양쪽 모두 같은 `llm_judge.py` 함수 사용.
 
 | 영역 | v1 시점 결론 | v2 시점 사실 |
 |---|---|---|
-| Judge prompt (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** (`get_anscheck_prompt` 이식) |
-| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`) |
-| Judge prompt (LOCOMO/Wiki/HotpotQA) | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
+| Judge prompt — Legacy `evaluate.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** (`get_anscheck_prompt` 이식) — `684f1d6` |
+| Judge prompt — Wrapper `scripts/stages/judge.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** — review-fix 에서 wrapper 도 동일 routing 적용 |
+| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **strict word-boundary 매칭** ("yesterday" / "not yes" false positive 방지) — review-fix |
+| Judge prompt (LOCOMO/Wiki/HotpotQA) — 두 경로 모두 | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
 | Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | (변경 없음) v1 결론 그대로 — **여전히 미정렬** |
 | Metric (LongMemEval) | task-averaged / abstention 미보고 | (변경 없음) v1 결론 그대로 — **여전히 미보고** |
 | `generate_scores.py` 카테고리 매핑 dead code | dead code 존재 | (변경 없음) — 별도 PR 후보 |
@@ -27,24 +32,31 @@ PR #27 의 후속 commit 3 건으로 **LongMemEval 데이터셋에 한해서** j
 - `evaluation/retrieval_agent/llm_judge.py`
   - `_LME_TEMPLATE_GENERAL / _TEMPORAL / _KNOWLEDGE_UPDATE / _PREFERENCE / _ABSTENTION` 5+1 상수
   - `get_anscheck_prompt(task, q, a, r, abstention=False) -> str`
-  - `evaluate_llm_judge_longmemeval(question, gold, generated, question_type, question_id, call_fn) -> int` — `_abs` 접미사 → abstention 분기, 응답에 `"yes" in lower()` 면 1
+  - `_parse_yes_no(raw)` — review-fix. `\s*\W*(yes|no)\b` regex 로 leading word 매칭. "yesterday" / "not yes" / "" 는 모두 0 (WRONG) 반환.
+  - `evaluate_llm_judge_longmemeval(question, gold, generated, question_type, question_id, call_fn) -> int` — `_abs` 접미사 → abstention 분기, `_parse_yes_no` 로 응답 파싱
   - `create_judge_fn(config_path, json_mode: bool = True)` — `json_mode=False` 시 OpenAI 호출에서 `response_format` / `text.format` 제거 + `max_tokens=10` 추가. Bedrock 분기 no-op.
-- `evaluation/retrieval_agent/evaluate.py`
+- **Legacy 경로** — `evaluation/retrieval_agent/evaluate.py`
   - `_LONGMEMEVAL_TASKS` frozenset 6개 task name → 라우팅 키
   - `process_sample(..., json_call_fn, get_text_call_fn)` — text 모드 judge 는 **lazy + thread-safe double-checked locking** 으로 첫 LongMemEval 샘플 처리 시점에만 초기화 (`d55caf2` 후속 리팩터링)
-- `evaluation/retrieval_agent/test_llm_judge.py` — LongMemEval judge 5 + create_judge_fn json_mode kwargs 3 = 신규 테스트 8개
-- `evaluation/retrieval_agent/test_evaluate.py` — 신규 파일. text-mode judge 가 LongMemEval 카테고리에서만 초기화되는지 검증 2건
+- **Eval-tool 경로** — `scripts/stages/judge.py` (review-fix)
+  - `_LONGMEMEVAL_TASKS` frozenset 6개 (legacy 경로와 동일 키, 의도적으로 module-local 복사 — wrapper stage 가 legacy evaluate.py 내부에 의존 안 하도록)
+  - `run()` 의 row loop 에서 `category in _LONGMEMEVAL_TASKS` 일 때 `evaluate_llm_judge_longmemeval` 호출, 아닌 경우 기존 `evaluate_llm_judge` 호출
+  - text-mode judge 는 동일하게 **lazy** — 첫 LongMemEval row 만나는 시점에 `create_judge_fn(json_mode=False)` 1회 호출
+- `evaluation/retrieval_agent/test_llm_judge.py` — LongMemEval judge 5 + create_judge_fn json_mode kwargs 3 + parser regression 16 (parametrized) + yesterday/not-yes/yes-and-no 3 = 신규 테스트 27 건 (v0.4 doc 의 라인 수와 다른 이유: parser 강화 시점에 추가)
+- `evaluation/retrieval_agent/test_evaluate.py` — text-mode judge 가 LongMemEval 카테고리에서만 초기화되는지 검증 2건
+- `scripts/test_stages_judge.py` — review-fix 신규. wrapper routing 4건 (LongMemEval ↔ longmemeval judge / non-LongMemEval ↔ legacy judge / `_abs` ↔ abstention prompt / end-to-end llm_score 작성)
 
-### 1.3 검증 (v2 시점)
-- `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py -v` → **29/29 PASS**.
-- LOCOMO/Wiki/HotpotQA 경로는 시그니처 호환 유지 (`create_judge_fn(...)` 기본값 `json_mode=True`).
+### 1.3 검증 (v2 시점, review-fix 포함)
+- `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **49/49 PASS**.
+- LOCOMO/Wiki/HotpotQA 경로는 양쪽 진입점 모두 시그니처 호환 유지 (`create_judge_fn(...)` 기본값 `json_mode=True`).
 - 출력 스키마 (`llm_score`: 0/1) 동일 → `generate_scores.py` 무수정.
+- `ruff check` — `evaluate_llm_judge` 와 `create_judge_fn` 의 C901 complexity 경고 1건 존재. **본 review-fix 에서 도입된 항목 아님** (`684f1d6` 시점 도입). 별도 PR 후보.
 
 ### 1.4 v1 §5 핵심 시사점 재조정
 
 | v1 시사점 | v2 갱신 |
 |---|---|
-| **Judge 충실도 손실** | ✅ **해결** — LongMemEval 한해 task별 분기 + abstention 평가 복원 |
+| **Judge 충실도 손실** | ✅ **해결 (양쪽 경로)** — `evaluation/retrieval_agent/evaluate.py` (legacy) 와 `scripts/run_pipeline.py --stage judge` 두 진입점 모두 LongMemEval 한해 task별 분기 + abstention 평가 복원. yes/no 파싱은 원본보다 strict — review-fix 에서 substring trap (`yesterday`, `not yes`) 제거 |
 | **Answer prompt 평가 누수 위험** | 🟥 미해결 — open-domain fallback / Current Date 부재 그대로 |
 | **표준 지표 부재** | 🟥 미해결 — task-averaged / abstention accuracy / NDCG / recall@k 미보고 |
 | **레포 내부에 충실 버전 존재** | 참고 사항으로 유효 — `episodic_memory/longmemeval_evaluate.py:155` 의 `get_anscheck_prompt` 와 `retrieval_agent/llm_judge.py` 의 신규 함수가 **본문이 동일한 두 정적 카피** 로 공존 (의도된 결정 — import 의존성 추가 회피) |

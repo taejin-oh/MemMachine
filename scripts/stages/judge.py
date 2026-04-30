@@ -14,6 +14,7 @@ before running generate_config.py).
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -64,8 +65,29 @@ def _judge_config_path(run_cfg: dict[str, Any], base_config_path: str) -> str:
     return tmp.name
 
 
+# LongMemEval question_type values (xiaowu0162/longmemeval-cleaned). Same
+# routing key as evaluation/retrieval_agent/evaluate.py: when the row's
+# category matches, route to the original task-specific judge instead of the
+# default ACCURACY_PROMPT path. Kept as a local constant rather than imported
+# to avoid coupling the wrapper stage to legacy evaluate.py internals.
+_LONGMEMEVAL_TASKS = frozenset(
+    {
+        "single-session-user",
+        "single-session-assistant",
+        "multi-session",
+        "temporal-reasoning",
+        "knowledge-update",
+        "single-session-preference",
+    }
+)
+
+
 def run(run_cfg: dict[str, Any]) -> Path:
-    from evaluation.retrieval_agent.llm_judge import create_judge_fn, evaluate_llm_judge
+    from evaluation.retrieval_agent.llm_judge import (
+        create_judge_fn,
+        evaluate_llm_judge,
+        evaluate_llm_judge_longmemeval,
+    )
 
     out_dir = cm.results_dir_for(run_cfg)
     generate_path = out_dir / "generate.jsonl"
@@ -81,17 +103,34 @@ def run(run_cfg: dict[str, Any]) -> Path:
     rows = cm.read_jsonl(generate_path)
     print(f"[judge] {len(rows)} rows  config={judge_config}")
 
-    call_fn = create_judge_fn(judge_config)
+    json_call_fn = create_judge_fn(judge_config)
+    text_call_fn: Callable[[str], str] | None = None
 
     judged: list[dict[str, Any]] = []
     correct = 0
     for i, row in enumerate(rows):
-        score = evaluate_llm_judge(
-            question=row.get("question", ""),
-            gold_answer=row.get("golden_answer", ""),
-            generated_answer=row.get("model_answer", ""),
-            call_fn=call_fn,
-        )
+        category = str(row.get("category", ""))
+        if category in _LONGMEMEVAL_TASKS:
+            if text_call_fn is None:
+                # Lazy: only build the plain-text judge when the run actually
+                # contains LongMemEval rows. Mirrors the lazy init in
+                # evaluation/retrieval_agent/evaluate.py:get_text_call_fn.
+                text_call_fn = create_judge_fn(judge_config, json_mode=False)
+            score = evaluate_llm_judge_longmemeval(
+                question=row.get("question", ""),
+                gold_answer=row.get("golden_answer", ""),
+                generated_answer=row.get("model_answer", ""),
+                question_type=category,
+                question_id=str(row.get("question_id", "")),
+                call_fn=text_call_fn,
+            )
+        else:
+            score = evaluate_llm_judge(
+                question=row.get("question", ""),
+                gold_answer=row.get("golden_answer", ""),
+                generated_answer=row.get("model_answer", ""),
+                call_fn=json_call_fn,
+            )
         correct += score
         judged.append({**row, "llm_score": int(score)})
         if (i + 1) % 50 == 0:
