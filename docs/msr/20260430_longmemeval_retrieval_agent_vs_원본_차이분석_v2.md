@@ -22,7 +22,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 |---|---|---|
 | Judge prompt — Legacy `evaluate.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** (`get_anscheck_prompt` 이식) — `684f1d6` |
 | Judge prompt — Wrapper `scripts/stages/judge.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** — review-fix 에서 wrapper 도 동일 routing 적용 |
-| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **strict word-boundary 매칭** ("yesterday" / "not yes" false positive 방지) — review-fix |
+| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **whole-string strict 매칭** — "yes" / "Yes." / "yes!" 만 허용. "yesterday" / "not yes" / "yes and no" / "I think yes" 등 모든 ambiguous reply 는 0 처리 — review-fix |
 | Judge prompt (LOCOMO/Wiki/HotpotQA) — 두 경로 모두 | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
 | Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | (변경 없음) v1 결론 그대로 — **여전히 미정렬** |
 | Metric (LongMemEval) | task-averaged / abstention 미보고 | (변경 없음) v1 결론 그대로 — **여전히 미보고** |
@@ -32,7 +32,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 - `evaluation/retrieval_agent/llm_judge.py`
   - `_LME_TEMPLATE_GENERAL / _TEMPORAL / _KNOWLEDGE_UPDATE / _PREFERENCE / _ABSTENTION` 5+1 상수
   - `get_anscheck_prompt(task, q, a, r, abstention=False) -> str`
-  - `_parse_yes_no(raw)` — review-fix. `\s*\W*(yes|no)\b` regex 로 leading word 매칭. "yesterday" / "not yes" / "" 는 모두 0 (WRONG) 반환.
+  - `_parse_yes_no(raw)` — review-fix. `\A\s*(yes|no)[\s.!?,]*\Z` regex 로 **whole-string** 매칭. "yes" / "Yes." / "yes!" / "no" / "No." 만 허용. "yesterday" / "not yes" / "yes and no" / "I think yes" / "" 는 모두 0 (WRONG).
   - `evaluate_llm_judge_longmemeval(question, gold, generated, question_type, question_id, call_fn) -> int` — `_abs` 접미사 → abstention 분기, `_parse_yes_no` 로 응답 파싱
   - `create_judge_fn(config_path, json_mode: bool = True)` — `json_mode=False` 시 OpenAI 호출에서 `response_format` / `text.format` 제거 + `max_tokens=10` 추가. Bedrock 분기 no-op.
 - **Legacy 경로** — `evaluation/retrieval_agent/evaluate.py`

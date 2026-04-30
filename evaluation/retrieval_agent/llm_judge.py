@@ -316,20 +316,22 @@ def evaluate_llm_judge(
     return 0
 
 
-# Match a leading "yes" or "no" word, allowing optional whitespace/punctuation
-# before it. Anchored at start so substrings like "yesterday" or trailing
-# matches like "I think yes" don't slip through. Word boundary after rejects
-# "yesterday"; ambiguous prefixes like "not yes" return no match → score 0.
-_YES_NO_RE = re.compile(r"\s*\W*(yes|no)\b", re.IGNORECASE)
+# Whole-string match: the entire reply must be exactly "yes" or "no",
+# optionally surrounded by whitespace and followed by simple punctuation
+# (``.``, ``!``, ``?``, ``,``). Anything else — including ambiguous replies
+# like ``yes and no`` / ``not yes``, substring traps like ``yesterday``, or
+# verbose replies like ``YES — the answer matches`` — returns 0 (WRONG).
+# Stricter than the original LongMemEval ``'yes' in lower(raw)`` heuristic.
+_YES_NO_RE = re.compile(r"\A\s*(yes|no)[\s.!?,]*\Z", re.IGNORECASE)
 
 
 def _parse_yes_no(raw: str) -> int:
     """Parse a yes/no judge reply, defaulting to 0 (WRONG) on anything else.
 
-    Looks for ``yes`` or ``no`` as a word at the start of the reply (allowing
-    leading whitespace/punctuation). Substring matches like ``yesterday`` are
-    rejected; ambiguous replies like ``not yes`` or empty strings default to 0.
-    Stricter than the original LongMemEval ``'yes' in lower(raw)`` heuristic.
+    Accepts only an exact ``yes`` / ``no`` token, optionally with leading or
+    trailing whitespace and trailing simple punctuation (``.``, ``!``, ``?``,
+    ``,``). Any extra text — including ``yes and no``, ``not yes``,
+    ``yesterday``, ``I think yes`` — returns 0. See :data:`_YES_NO_RE`.
     """
     match = _YES_NO_RE.match(raw or "")
     if match is None:

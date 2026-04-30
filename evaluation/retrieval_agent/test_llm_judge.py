@@ -312,22 +312,33 @@ def test_longmemeval_preference_prompt_used():
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
+        # Exact yes/no — the only accepted forms:
         ("yes", 1),
-        ("no", 0),
+        ("Yes", 1),
+        ("YES", 1),
         ("Yes.", 1),
+        ("yes!", 1),
+        ("yes?", 1),
+        ("yes,", 1),
         ("yes\n", 1),
-        ("YES — the answer matches", 1),
+        ("  yes  ", 1),
+        ("no", 0),
+        ("No", 0),
+        ("No.", 0),
+        ("no!", 0),
+        # Verbose / ambiguous replies — all rejected (default to WRONG):
+        ("yes and no", 0),
+        ("YES — the answer matches", 0),
         ("No, off by two days", 0),
-        # Substring traps the original heuristic would mis-classify:
-        ("yesterday", 0),
         ("not yes", 0),
+        ("I think yes", 0),
+        # Substring traps:
+        ("yesterday", 0),
         ("nope", 0),
-        # Empty / non-yes-no replies default to WRONG:
+        # Empty / non-yes-no replies:
         ("", 0),
         ("maybe", 0),
         ("I think so", 0),
-        # The original behaviour for "yes and no" (yes wins) is preserved:
-        ("yes and no", 1),
     ],
 )
 def test_parse_yes_no_strict(raw, expected):
@@ -356,14 +367,25 @@ def test_longmemeval_not_yes_rejected():
     )
 
 
-def test_longmemeval_yes_and_no_first_token_wins():
-    """``yes and no`` matches the original LongMemEval behaviour: leading yes wins."""
+def test_longmemeval_yes_and_no_rejected():
+    """``yes and no`` is ambiguous and must NOT be marked correct."""
     fn, _ = _capturing_call_fn("yes and no")
     assert (
         evaluate_llm_judge_longmemeval(
             "q", "gold", "gen", "multi-session", "qid_1", fn
         )
-        == 1
+        == 0
+    )
+
+
+def test_longmemeval_i_think_yes_rejected():
+    """``I think yes`` has extra text; reject."""
+    fn, _ = _capturing_call_fn("I think yes")
+    assert (
+        evaluate_llm_judge_longmemeval(
+            "q", "gold", "gen", "single-session-user", "qid_1", fn
+        )
+        == 0
     )
 
 
