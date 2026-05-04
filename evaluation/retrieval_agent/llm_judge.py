@@ -206,11 +206,19 @@ def create_judge_fn(
 
         else:
             # Plain-text mode for LongMemEval (see _call_responses above).
+            # ``temperature=0`` mirrors the original judge call (evaluate_qa.py)
+            # — yes/no scoring needs deterministic output. Only added on
+            # chat-completions because temperature is universally supported
+            # there. Responses API / Bedrock branches keep provider-default
+            # sampling: Responses rejects ``temperature`` for some reasoning
+            # models, and Bedrock requires ``inferenceConfig`` shape rather
+            # than a top-level ``temperature`` kwarg.
             def _call_chat(prompt: str) -> str:
                 resp = client.chat.completions.create(
                     model=model_name,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=10,
+                    temperature=0,
                 )
                 return resp.choices[0].message.content
 
@@ -317,24 +325,35 @@ def evaluate_llm_judge(
     return 0
 
 
-# Whole-string match: the entire reply must be exactly "yes" or "no",
-# optionally surrounded by whitespace and followed by simple punctuation
-# (``.``, ``!``, ``?``, ``,``). Anything else — including ambiguous replies
-# like ``yes and no`` / ``not yes``, substring traps like ``yesterday``, or
-# verbose replies like ``YES — the answer matches`` — returns 0 (WRONG).
-# Stricter than the original LongMemEval ``'yes' in lower(raw)`` heuristic.
+# Regex used by the ``strict`` policy only. Matches the entire reply exactly
+# as "yes" or "no", optionally surrounded by whitespace and followed by simple
+# punctuation (``.``, ``!``, ``?``, ``,``). Ambiguous replies (``yes and no`` /
+# ``not yes``), substring traps (``yesterday``), and verbose replies
+# (``YES — the answer matches``) all return 0 (WRONG). The default ``lenient``
+# policy does NOT use this regex — it preserves the original LongMemEval
+# ``'yes' in lower(raw)`` substring heuristic for paper-fidelity reproduction.
 _YES_NO_RE = re.compile(r"\A\s*(yes|no)[\s.!?,]*\Z", re.IGNORECASE)
 
 LongMemEvalYesNoPolicy = Literal["lenient", "strict"]
 
 
 def _parse_yes_no(raw: str, policy: LongMemEvalYesNoPolicy = "lenient") -> int:
-    """Parse a yes/no judge reply, defaulting to 0 (WRONG) on anything else.
+    """Parse a yes/no judge reply under the selected policy.
 
-    Accepts only an exact ``yes`` / ``no`` token, optionally with leading or
-    trailing whitespace and trailing simple punctuation (``.``, ``!``, ``?``,
-    ``,``). Any extra text — including ``yes and no``, ``not yes``,
-    ``yesterday``, ``I think yes`` — returns 0. See :data:`_YES_NO_RE`.
+    Two policies are supported:
+
+    - ``lenient`` (default): ``1 if "yes" in raw.lower() else 0``. Identical to
+      the original LongMemEval ``evaluate_qa.py`` behavior — required for
+      paper-number reproduction. Note the known substring trap: ``"yesterday"``
+      also returns 1 because it contains ``"yes"``.
+    - ``strict``: whole-string match against :data:`_YES_NO_RE`. Only an exact
+      ``yes`` / ``no`` token (optionally wrapped by whitespace and trailing
+      ``.``, ``!``, ``?``, or ``,``) returns 1/0; anything else — including
+      ``yes and no``, ``not yes``, ``yesterday``, ``I think yes`` — returns 0.
+      Use this to avoid substring traps and verbose-reply false positives;
+      expect lower scores than ``lenient`` on small / verbose judge models.
+
+    Any other value raises :class:`ValueError`.
     """
     text = raw or ""
     if policy == "lenient":
@@ -363,9 +382,10 @@ def evaluate_llm_judge_longmemeval(
 
     Mirrors the original ``evaluate_qa.py`` pipeline. Abstention is detected
     from the ``_abs`` substring in ``question_id``. ``call_fn`` should be built
-    with ``create_judge_fn(..., json_mode=False)``. Reply parsing is stricter
-    than the original ``'yes' in lower(raw)`` substring heuristic — see
-    :func:`_parse_yes_no`.
+    with ``create_judge_fn(..., json_mode=False)``. Reply parsing follows
+    ``yesno_policy``: ``lenient`` (default) matches the original
+    ``'yes' in lower(raw)`` substring heuristic exactly, and ``strict`` is an
+    opt-in whole-string parser — see :func:`_parse_yes_no`.
     """
     abstention = "_abs" in question_id
     prompt = get_anscheck_prompt(

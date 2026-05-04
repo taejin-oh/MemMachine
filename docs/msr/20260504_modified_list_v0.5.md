@@ -64,3 +64,31 @@ v0.4 시점의 strict whole-string 파서가 **default = lenient (원본 LongMem
 - Answer prompt 정렬 (v2 §2 잔여 항목) 그대로 미해결.
 - `generate_scores.py` macro / abstention metric 추가 미진행.
 - `create_judge_fn` C901 complexity 경고 미해결.
+
+---
+
+## 0'') v0.5 후속 (문서·주석 정합성 보강)
+
+본 항목은 v0.5 의 코드/스키마 변경 이후, 같은 시점에서 발견된 **문서/주석/테스트 정합성 차이**를 동일 브랜치에서 정리한 것이다. 기능 변경 없음 (한 개 예외: chat-completions text-mode judge 의 `temperature=0` 추가).
+
+- 📝 `evaluation/retrieval_agent/llm_judge.py`
+  - `_YES_NO_RE` 위 주석을 “strict policy 전용” 으로 명시. 기본 `lenient` 는 원본 substring heuristic 그대로임을 적시.
+  - `_parse_yes_no()` docstring 을 lenient/strict 두 정책 각각으로 다시 적음. lenient 의 `yesterday` substring trap 도 명시.
+  - `evaluate_llm_judge_longmemeval()` docstring 의 “Reply parsing is stricter than the original …” 표현 제거. lenient 가 default = 원본 100% 일치 임을 정확히 표기하고, strict 는 옵트인 임을 명시.
+- 🔧 `evaluation/retrieval_agent/llm_judge.py` — chat-completions text-mode judge 에 `temperature=0` 추가
+  - 원본 LongMemEval 채점 호출이 deterministic 한 점을 반영. yes/no 판정은 비결정적 sampling 영향이 직접 점수에 들어오므로 결과 재현성을 위해 추가.
+  - **Responses API / Bedrock 분기는 의도적으로 미적용**.
+    - Responses API: 일부 reasoning model 이 `temperature` 를 거부.
+    - Bedrock: temperature 가 top-level kwarg 가 아니라 `inferenceConfig` 안에 들어가야 함 — shape 다름.
+- 🧪 `evaluation/retrieval_agent/test_llm_judge.py`
+  - `test_create_judge_fn_chat_text_mode_kwargs`: `temperature == 0` assertion 추가.
+  - `test_create_judge_fn_chat_json_mode_kwargs`: `"temperature" not in kwargs` assertion 추가 (json mode 는 그대로 sampling 기본값).
+  - `test_create_judge_fn_responses_text_mode_kwargs`: `"temperature" not in kwargs` assertion + docstring 으로 “responses 는 temperature 미적용 — reasoning model 거부 사례 있어 의도적 보류” 명시.
+- 📝 `docs/msr/20260430_longmemeval_judge_사용가이드.md`
+  - 30초 요약 의 “원본보다 엄격” 문구 제거. default lenient (원본 일치) + opt-in strict 로 다시 적음.
+  - §5 실패 패턴을 `strict` 선택 시 / `lenient` 선택 시 substring trap 으로 분리.
+- 📝 `docs/msr/20260430_longmemeval_retrieval_agent_vs_원본_차이분석_v2.md`
+  - 상단 기준 시점 (`d55caf2`) 은 보존, “최종 갱신: v0.5 (`a919a67`) 반영” 한 줄 추가.
+  - §1.3 검증 항목을 v0.4 시점 60/60 PASS 와 v0.5 시점 190/190 PASS 두 줄로 분리 (충돌 제거).
+- 📝 `docs/msr/20260430_modified_list_v0.4.md`
+  - 파일 최상단에 “historical — 최신 상태는 `20260504_modified_list_v0.5.md` 참고. v0.5 에서 parser default 가 `strict → lenient` 로 전환됨” 안내 추가.

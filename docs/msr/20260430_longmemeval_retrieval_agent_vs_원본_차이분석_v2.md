@@ -1,11 +1,13 @@
 # LongMemEval 원본 vs MemMachine `evaluation/retrieval_agent` 차이 분석 (v2)
 
-작성일: 2026-04-30
-대상 브랜치: `eval_claude` (HEAD `d55caf2` 시점)
+작성일: 2026-04-30 (작성 기준 HEAD `d55caf2`)
+최종 갱신: 2026-05-04 — v0.5 (commit `a919a67`) 의 `lenient` default 전환을 §1 표·각주에 반영. 기준 시점 자체는 작성일 그대로 두고, 후속 변경은 “v0.5 시점” 으로 명기.
+대상 브랜치: `eval_claude`
 v1 문서: [`20260430_longmemeval_retrieval_agent_vs_원본_차이분석.md`](20260430_longmemeval_retrieval_agent_vs_원본_차이분석.md)
+연계 문서: [`20260504_modified_list_v0.5.md`](20260504_modified_list_v0.5.md) — v0.5 delta 의 단일 출처
 
 > ⚠️ **본 v2 의 위치**
-> v1 본문은 §3 **이하** 에 그대로 보존했다 (작성 시점의 사실 기록). v1 의 결론 일부는 후속 정렬 작업(PR #27 commit `684f1d6` / `465d8b8` / `d55caf2`)으로 사실과 어긋나게 됐고, v2 §1 ~ §2 가 그 갱신을 담는다. v1 의 §1 ~ §6 텍스트는 변경하지 않았다.
+> v1 본문은 §3 **이하** 에 그대로 보존했다 (작성 시점의 사실 기록). v1 의 결론 일부는 후속 정렬 작업(PR #27 commit `684f1d6` / `465d8b8` / `d55caf2`, 그리고 v0.5 의 `5beb8f0` / `a919a67`)으로 사실과 어긋나게 됐고, v2 §1 ~ §2 가 그 갱신을 담는다. v1 의 §1 ~ §6 텍스트는 변경하지 않았다.
 
 ---
 
@@ -47,8 +49,10 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 - `evaluation/retrieval_agent/test_evaluate.py` — text-mode judge 가 LongMemEval 카테고리에서만 초기화되는지 검증 2건
 - `scripts/test_stages_judge.py` — review-fix 신규. wrapper routing 4건 (LongMemEval ↔ longmemeval judge / non-LongMemEval ↔ legacy judge / `_abs` ↔ abstention prompt / end-to-end llm_score 작성)
 
-### 1.3 검증 (v2 시점, review-fix 포함)
-- `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **60/60 PASS**.
+### 1.3 검증
+
+- **v0.4 시점 (review-fix 포함, HEAD `d55caf2`)**: `python3.12 -m pytest evaluation/retrieval_agent/test_llm_judge.py evaluation/retrieval_agent/test_evaluate.py scripts/test_stages_judge.py -v` → **60/60 PASS**.
+- **v0.5 시점 (HEAD `a919a67`)**: `lenient`/`strict` 정책화 + Pydantic schema + run_cfg/config 폴백 + generate_config CLI 매핑 등으로 테스트 13건 추가. `python3.12 -m pytest evaluation/retrieval_agent/ scripts/ -v` → **190/190 PASS** (자세한 내역은 [`20260504_modified_list_v0.5.md`](20260504_modified_list_v0.5.md)).
 - LOCOMO/Wiki/HotpotQA 경로는 양쪽 진입점 모두 시그니처 호환 유지 (`create_judge_fn(...)` 기본값 `json_mode=True`).
 - 출력 스키마 (`llm_score`: 0/1) 동일 → `generate_scores.py` 무수정.
 - `ruff check` — `evaluate_llm_judge` 와 `create_judge_fn` 의 C901 complexity 경고 1건 존재. **본 review-fix 에서 도입된 항목 아님** (`684f1d6` 시점 도입). 별도 PR 후보.

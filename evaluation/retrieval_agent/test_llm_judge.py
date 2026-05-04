@@ -429,7 +429,7 @@ class _RecordingOpenAI:
 
 
 def test_create_judge_fn_chat_text_mode_kwargs(tmp_path, monkeypatch):
-    """json_mode=False on chat-completions: no response_format, max_tokens=10."""
+    """json_mode=False on chat-completions: no response_format, max_tokens=10, temperature=0."""
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_chat_kwargs = None
 
@@ -443,10 +443,11 @@ def test_create_judge_fn_chat_text_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert "response_format" not in kwargs
     assert kwargs.get("max_tokens") == 10
+    assert kwargs.get("temperature") == 0
 
 
 def test_create_judge_fn_chat_json_mode_kwargs(tmp_path, monkeypatch):
-    """Default (json_mode=True) keeps response_format and omits max_tokens."""
+    """Default (json_mode=True) keeps response_format and omits max_tokens / temperature."""
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_chat_kwargs = None
 
@@ -460,10 +461,16 @@ def test_create_judge_fn_chat_json_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert kwargs.get("response_format") == {"type": "json_object"}
     assert "max_tokens" not in kwargs
+    assert "temperature" not in kwargs
 
 
 def test_create_judge_fn_responses_text_mode_kwargs(tmp_path, monkeypatch):
-    """json_mode=False on openai-responses: no `text` arg, max_output_tokens=10."""
+    """json_mode=False on openai-responses: no `text` arg, max_output_tokens=10.
+
+    Responses API is intentionally NOT given ``temperature=0`` because some
+    reasoning models reject it; the chat-completions branch is the only one
+    that hard-codes determinism.
+    """
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_responses_kwargs = None
 
@@ -478,3 +485,4 @@ def test_create_judge_fn_responses_text_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert "text" not in kwargs
     assert kwargs.get("max_output_tokens") == 10
+    assert "temperature" not in kwargs
