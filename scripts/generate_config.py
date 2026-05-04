@@ -77,6 +77,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--longmemeval-answer-prompt",
+        choices=["memmachine_original", "agent_lightning"],
+        help=(
+            "LongMemEval answer prompt body. 'memmachine_original' (default) "
+            "aligns with xiaowu0162/LongMemEval upstream (memory-only basis, "
+            "Current Date field, no length cap); 'agent_lightning' preserves "
+            "the v0.5 prompt for baseline reruns. Maps to "
+            "evaluation.longmemeval.answer_prompt in run_cfg."
+        ),
+    )
+    parser.add_argument(
         "--length", type=int, help="benchmark.length override (dataset slice)"
     )
     parser.add_argument(
@@ -150,6 +161,11 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
         out.setdefault("judge", {})["longmemeval_yesno_policy"] = (
             args.longmemeval_yesno_policy
         )
+
+    if args.longmemeval_answer_prompt is not None:
+        out.setdefault("evaluation", {}).setdefault("longmemeval", {})[
+            "answer_prompt"
+        ] = args.longmemeval_answer_prompt
 
     if args.length is not None:
         out.setdefault("benchmark", {})["length"] = args.length

@@ -31,3 +31,15 @@ class RetrievalAgentConf(YamlSerializableMixin):
             "match. CLI / run_cfg overrides take precedence over this field."
         ),
     )
+    longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning"] = (
+        Field(
+            default="memmachine_original",
+            description=(
+                "LongMemEval answer prompt body. 'memmachine_original' (default) "
+                "aligns with xiaowu0162/LongMemEval upstream — memory-only basis, "
+                "Current Date field present, no length cap. 'agent_lightning' "
+                "preserves the v0.5 prompt (Agent Lightning paper, arXiv:2508.03680) "
+                "for baseline reruns. CLI / run_cfg overrides take precedence."
+            ),
+        )
+    )

@@ -67,6 +67,7 @@ async def process_question(
     search_limit: int = 20,
     full_content: str | None = None,
     extra_attributes: dict[str, Any] | None = None,
+    prompt_extra: dict[str, str] | None = None,
 ):
     perf_metrics: dict[str, Any] = {}
     memory_start = 0
@@ -93,7 +94,13 @@ async def process_question(
     else:
         formatted_context = full_content
 
-    prompt = answer_prompt.format(memories=formatted_context, question=question)
+    fmt_kwargs: dict[str, Any] = {
+        "memories": formatted_context,
+        "question": question,
+    }
+    if prompt_extra:
+        fmt_kwargs.update(prompt_extra)
+    prompt = answer_prompt.format(**fmt_kwargs)
 
     rsp_start = time.time()
     rsp_text, _ = await answer_model.generate_response(user_prompt=prompt)

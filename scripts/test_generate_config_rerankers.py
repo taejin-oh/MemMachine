@@ -271,6 +271,7 @@ def _ns(**overrides):
         "k_list": None,
         "judge_model": None,
         "longmemeval_yesno_policy": None,
+        "longmemeval_answer_prompt": None,
         "length": None,
         "n_runs": None,
         "reuse_run": None,
