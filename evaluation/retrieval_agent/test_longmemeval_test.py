@@ -25,6 +25,7 @@ for extra in (
 from evaluation.retrieval_agent.longmemeval_test import (  # noqa: E402
     _ANSWER_PROMPT_AGENT_LIGHTNING,
     _ANSWER_PROMPT_BY_POLICY,
+    _ANSWER_PROMPT_LME_ORIGIN,
     _ANSWER_PROMPT_MEMMACHINE_ORIGINAL,
     ANSWER_PROMPT,
     _format_question_date,
@@ -84,14 +85,55 @@ def test_agent_lightning_prompt_renders_without_question_date():
     assert "{question_date}" not in prompt  # no placeholder to format
 
 
+def test_lme_origin_prompt_is_verbatim_upstream():
+    """LME_origin_prompt must match xiaowu0162/LongMemEval upstream verbatim
+    (src/generation/run_generation.py answer_prompt_template, no-merge no-CoT).
+
+    Only positional ``{}`` placeholders are converted to named ones — no other
+    text is altered.
+    """
+    expected = (
+        "I will give you several history chats between you and a user. "
+        "Please answer the question based on the relevant chat history."
+        "\n\n\n"
+        "History Chats:\n\n{memories}\n\n"
+        "Current Date: {question_date}\n"
+        "Question: {question}\n"
+        "Answer:"
+    )
+    assert expected == _ANSWER_PROMPT_LME_ORIGIN
+
+
+def test_lme_origin_prompt_renders_with_question_date():
+    """Upstream-verbatim prompt must format with memories+question+question_date."""
+    prompt = _ANSWER_PROMPT_LME_ORIGIN.format(
+        memories="MEM",
+        question="Q",
+        question_date="Monday, April 10, 2023 at 11:07 PM",
+    )
+    assert "MEM" in prompt
+    assert "Q" in prompt
+    assert "Current Date: Monday, April 10, 2023 at 11:07 PM" in prompt
+    # Upstream is intentionally minimal — no MemMachine reasoning guides.
+    assert "KNOWLEDGE UPDATES" not in prompt
+    assert "PLANNED ACTIONS" not in prompt
+    # No length cap, no open-domain fallback.
+    assert "max 2 sentences" not in prompt
+    assert "Open-domain fallback" not in prompt
+
+
 def test_public_alias_points_to_default_policy():
     """ANSWER_PROMPT export must equal the default-policy body for backward import compat."""
     assert ANSWER_PROMPT is _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
 
 
 def test_policy_registry_keys():
-    """Policy registry must list both bodies."""
-    assert set(_ANSWER_PROMPT_BY_POLICY) == {"memmachine_original", "agent_lightning"}
+    """Policy registry must list all three bodies."""
+    assert set(_ANSWER_PROMPT_BY_POLICY) == {
+        "memmachine_original",
+        "agent_lightning",
+        "LME_origin_prompt",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +149,10 @@ def test_select_answer_prompt_memmachine_original():
 
 def test_select_answer_prompt_agent_lightning():
     assert _select_answer_prompt("agent_lightning") is _ANSWER_PROMPT_AGENT_LIGHTNING
+
+
+def test_select_answer_prompt_lme_origin():
+    assert _select_answer_prompt("LME_origin_prompt") is _ANSWER_PROMPT_LME_ORIGIN
 
 
 def test_select_answer_prompt_invalid_raises():

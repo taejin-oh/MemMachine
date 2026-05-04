@@ -79,14 +79,31 @@ _ANSWER_PROMPT_AGENT_LIGHTNING = """You are asked to answer `{question}` using `
 Question: {question}
 """
 
+# Verbatim copy of xiaowu0162/LongMemEval upstream
+# (src/generation/run_generation.py: answer_prompt_template, no-merge no-CoT
+# branch). Positional ``{}`` placeholders are replaced with named ones so the
+# template plays nicely with ``str.format(**fmt_kwargs)``; no other text is
+# altered. Use this policy when reproducing the upstream paper baseline
+# without MemMachine's KNOWLEDGE UPDATES / PLANNED ACTIONS reasoning hints.
+_ANSWER_PROMPT_LME_ORIGIN = (
+    "I will give you several history chats between you and a user. "
+    "Please answer the question based on the relevant chat history."
+    "\n\n\n"
+    "History Chats:\n\n{memories}\n\n"
+    "Current Date: {question_date}\n"
+    "Question: {question}\n"
+    "Answer:"
+)
+
 # Public alias — points to the default policy body. Importers
 # (`scripts/stages/retrieve.py`) keep working without changes; runtime
-# selection between the two prompts happens via `_select_answer_prompt()`.
+# selection between the prompts happens via `_select_answer_prompt()`.
 ANSWER_PROMPT = _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
 
 _ANSWER_PROMPT_BY_POLICY: dict[str, str] = {
     "memmachine_original": _ANSWER_PROMPT_MEMMACHINE_ORIGINAL,
     "agent_lightning": _ANSWER_PROMPT_AGENT_LIGHTNING,
+    "LME_origin_prompt": _ANSWER_PROMPT_LME_ORIGIN,
 }
 
 DEFAULT_CONCURRENCY = 30

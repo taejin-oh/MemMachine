@@ -26,7 +26,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 | Judge prompt — Wrapper `scripts/stages/judge.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** — review-fix 에서 wrapper 도 동일 routing 적용 |
 | Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **default lenient (`'yes' in lower(raw)`, 원본 동일)** + 옵션 strict (whole-string). `retrieval_agent.longmemeval_yesno_policy` / `--longmemeval-yesno-policy` / `judge.longmemeval_yesno_policy` 로 전환 가능 — v0.5 |
 | Judge prompt (LOCOMO/Wiki/HotpotQA) — 두 경로 모두 | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
-| Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | **v0.6 (`20260504_modified_list_v0.6.md`) 에서 정렬** — `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning"] = "memmachine_original"` 정책 도입. default 본문은 `evaluation/episodic_memory/longmemeval_search.py:36-52` 차용 (KNOWLEDGE UPDATES + PLANNED ACTIONS + `Current date: {question_date}`), open-domain fallback 제거, length cap 제거. `agent_lightning` 은 baseline rerun 옵트인 |
+| Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | **v0.6 (`20260504_modified_list_v0.6.md`) 에서 3-정책화** — `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "memmachine_original"`. default `memmachine_original` 은 **하이브리드** (episodic_memory 변형 본문 + 원본 구조 정렬). 순수 upstream verbatim 본문은 별도 정책 `LME_origin_prompt` 로 옵트인. `agent_lightning` 은 v0.5 baseline rerun 용으로 보존 |
 | Metric (LongMemEval) | task-averaged / abstention 미보고 | (변경 없음) v1 결론 그대로 — **여전히 미보고** |
 | `generate_scores.py` 카테고리 매핑 dead code | dead code 존재 | (변경 없음) — 별도 PR 후보 |
 
@@ -71,7 +71,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 | 항목 | 상태 |
 |---|---|
 | `llm_judge.py` 의 task별 분기 도입 (`get_anscheck_prompt` + `_abs` 검출) | ✅ 완료 (PR #27 / commit `684f1d6`) |
-| `ANSWER_PROMPT` 에 `{question_date}` 추가, 외부 지식 금지, 출력 길이 제약 완화 | ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`) — `longmemeval_answer_prompt` 정책 도입, default `memmachine_original` |
+| `ANSWER_PROMPT` 에 `{question_date}` 추가, 외부 지식 금지, 출력 길이 제약 완화 | ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`) — `longmemeval_answer_prompt` 3-정책 도입. default `memmachine_original` (하이브리드, 원본 구조 정렬) + `LME_origin_prompt` (verbatim upstream 옵트인) + `agent_lightning` (v0.5 baseline) |
 | `generate_scores.py` 에 macro task-averaged / abstention-only accuracy 추가 | ❌ 미진행 — **v2 잔여 항목** |
 | dead code `categories` 매핑 제거 / LongMemEval task name 갱신 | ❌ 미진행 — **v2 잔여 항목** |
 | chunk-level gold relevance 있을 때 NDCG/recall@k 추가 보고 | ❌ 미진행 (선택) |
@@ -83,8 +83,10 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 우선순위 순:
 
 1. ~~**Answer prompt 정렬**~~ — ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`):
-   - `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning"] = "memmachine_original"` 정책 도입.
-   - default `memmachine_original` 본문은 `evaluation/episodic_memory/longmemeval_search.py:36-52` 의 본문 (KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드) + `Current date: {question_date}` placeholder.
+   - `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "memmachine_original"` 3-정책 도입.
+   - default `memmachine_original` 은 **하이브리드** — `evaluation/episodic_memory/longmemeval_search.py:36-52` 의 본문 (KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드) + `Current date: {question_date}` placeholder. 원본의 구조적 속성 3가지(memory-only / Current Date / no length cap) 동일 만족하나 본문 텍스트 자체는 upstream verbatim 이 아님.
+   - `LME_origin_prompt` 정책으로 **xiaowu0162/LongMemEval upstream 본문 verbatim** 옵트인 가능 (no-merge no-CoT 분기, 위치 `{}` placeholder 만 named 로 변환).
+   - `agent_lightning` 정책은 v0.5 까지 사용한 prompt 그대로 보존, baseline rerun 용.
    - `agent_utils.process_question(prompt_extra=...)` 시그니처 확장 — sibling benchmark (HotpotQA/LoCoMo/Wiki-MH) backward compat 유지.
    - `_format_question_date()` 가 LongMemEval upstream `"YYYY/MM/DD (Day) HH:MM"` → `"%A, %B %d, %Y at %I:%M %p"` 변환.
    - 두 entrypoint (legacy `longmemeval_test.py`, wrapper `scripts/stages/retrieve.py`) 모두 동일 정책 적용 + 실행 시점 로그 출력.

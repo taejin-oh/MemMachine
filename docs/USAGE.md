@@ -203,12 +203,20 @@ CLI 인자와 JSON 이 충돌하면 CLI 가 우선.
 **Q6. 반복 실행 (N runs) / 자동 판정?**
 → 현재 `n_runs=1` 만 지원. `n_runs > 1` 면 `NotImplementedError`. σ×2 자동 판정 / 파일럿 wrapper 는 future work.
 
-**Q7-1. LongMemEval answer prompt 를 baseline (Agent Lightning) 으로 되돌리려면?**
-→ default 는 v0.6 부터 `memmachine_original` (원본 정렬). v0.5 baseline 비교가 필요하면 다음 중 하나로 옵트인:
+**Q7-1. LongMemEval answer prompt 정책을 어떻게 고르나?**
+→ v0.6 부터 3가지 정책 중 선택 가능:
 
-1. **CLI**: `python scripts/generate_config.py ... --longmemeval-answer-prompt agent_lightning`. `evaluation.longmemeval.answer_prompt` 가 run yaml 에 박힘.
-2. **run yaml 직접 편집**: `evaluation: { longmemeval: { answer_prompt: agent_lightning } }`.
-3. **configuration.yml 영구 변경**: `retrieval_agent.longmemeval_answer_prompt: agent_lightning`.
+| 정책 | 본문 | 사용 시점 |
+|---|---|---|
+| `memmachine_original` (default) | 하이브리드 — episodic_memory 변형 (KNOWLEDGE UPDATES + PLANNED ACTIONS 추론 가이드) + 원본 구조 정렬(memory-only / Current Date / no length cap) | 일반 LongMemEval 평가 (MemMachine 의 검증된 변형 활용) |
+| `agent_lightning` | v0.5 까지 사용한 Agent Lightning paper(arXiv:2508.03680) prompt 그대로 | v0.5 baseline 과 1:1 비교 |
+| `LME_origin_prompt` | xiaowu0162/LongMemEval upstream verbatim 본문 (no-merge no-CoT 분기, placeholder 만 named 로 변환) | upstream 논문 baseline 과 직접 비교 |
+
+옵트인 방법 (예: `LME_origin_prompt` 적용):
+
+1. **CLI**: `python scripts/generate_config.py ... --longmemeval-answer-prompt LME_origin_prompt`. `evaluation.longmemeval.answer_prompt` 가 run yaml 에 박힘.
+2. **run yaml 직접 편집**: `evaluation: { longmemeval: { answer_prompt: LME_origin_prompt } }`.
+3. **configuration.yml 영구 변경**: `retrieval_agent.longmemeval_answer_prompt: LME_origin_prompt`.
 
 우선순위는 (run_cfg) > (configuration.yml) > (Pydantic default `memmachine_original`). legacy 진입점 (`evaluation/retrieval_agent/longmemeval_test.py`) 도 `--longmemeval-answer-prompt` 플래그를 받으며 미지정 시 같은 폴백 체인을 따름. 두 진입점 모두 실행 시점에 `[longmemeval]/[retrieve] longmemeval_answer_prompt=...` 로그를 남깁니다.
 

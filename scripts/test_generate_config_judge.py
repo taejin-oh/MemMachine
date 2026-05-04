@@ -415,6 +415,21 @@ def test_schema_roundtrip_longmemeval_answer_prompt_agent_lightning_preserved(tm
     assert conf.retrieval_agent.longmemeval_answer_prompt == "agent_lightning"
 
 
+def test_schema_roundtrip_longmemeval_answer_prompt_lme_origin_preserved(tmp_path):
+    """Upstream-verbatim policy must roundtrip through the schema."""
+    from memmachine_server.common.configuration import Configuration
+
+    base = yaml.safe_load(_sample_config_path().read_text())
+    base.setdefault("retrieval_agent", {})["longmemeval_answer_prompt"] = (
+        "LME_origin_prompt"
+    )
+    fixture = tmp_path / "configuration.yml"
+    fixture.write_text(yaml.safe_dump(base))
+
+    conf = Configuration.load_yml_file(str(fixture))
+    assert conf.retrieval_agent.longmemeval_answer_prompt == "LME_origin_prompt"
+
+
 def test_schema_roundtrip_longmemeval_answer_prompt_invalid_raises(tmp_path):
     """Pydantic Literal rejects values outside the registered set."""
     from pydantic import ValidationError
@@ -462,6 +477,23 @@ def test_cli_longmemeval_answer_prompt_agent_lightning_maps_to_run_cfg():
     )
     out = cli_to_overrides(args)
     assert out["evaluation"]["longmemeval"]["answer_prompt"] == "agent_lightning"
+
+
+def test_cli_longmemeval_answer_prompt_lme_origin_maps_to_run_cfg():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        [
+            "--problem",
+            "4",
+            "--run-name",
+            "x",
+            "--longmemeval-answer-prompt",
+            "LME_origin_prompt",
+        ]
+    )
+    out = cli_to_overrides(args)
+    assert out["evaluation"]["longmemeval"]["answer_prompt"] == "LME_origin_prompt"
 
 
 def test_cli_longmemeval_answer_prompt_unset_omits_key():
