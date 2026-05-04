@@ -95,10 +95,10 @@ _ANSWER_PROMPT_LME_ORIGIN = (
     "Answer:"
 )
 
-# Public alias — points to the default policy body. Importers
-# (`scripts/stages/retrieve.py`) keep working without changes; runtime
+# Public alias — points to the default policy body (LME_origin_prompt =
+# upstream verbatim). Importers keep working without changes; runtime
 # selection between the prompts happens via `_select_answer_prompt()`.
-ANSWER_PROMPT = _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
+ANSWER_PROMPT = _ANSWER_PROMPT_LME_ORIGIN
 
 _ANSWER_PROMPT_BY_POLICY: dict[str, str] = {
     "memmachine_original": _ANSWER_PROMPT_MEMMACHINE_ORIGINAL,
@@ -151,7 +151,7 @@ def _resolve_answer_prompt_policy(
     ``cli_value`` is ``None`` when the operator did not pass
     ``--longmemeval-answer-prompt``. Falls back to
     ``retrieval_agent.longmemeval_answer_prompt`` from ``config_path``
-    (Pydantic default = ``"memmachine_original"``).
+    (Pydantic default = ``"LME_origin_prompt"`` — verbatim upstream).
     """
     if cli_value is not None:
         return cli_value
@@ -161,9 +161,9 @@ def _resolve_answer_prompt_policy(
         try:
             config = Configuration.load_yml_file(config_path)
         except FileNotFoundError:
-            return "memmachine_original"
+            return "LME_origin_prompt"
         return config.retrieval_agent.longmemeval_answer_prompt
-    return "memmachine_original"
+    return "LME_origin_prompt"
 
 
 def _load_longmemeval_question_prefix_enabled(config_path: str) -> bool:
@@ -312,7 +312,7 @@ async def longmemeval_search(
     pure_llm: bool = False,
     concurrency: int = DEFAULT_CONCURRENCY,
     search_limit: int = DEFAULT_SEARCH_LIMIT,
-    answer_prompt_policy: str = "memmachine_original",
+    answer_prompt_policy: str = "LME_origin_prompt",
 ):
     from evaluation.utils import agent_utils
 
@@ -449,9 +449,10 @@ def load_longmemeval_dataset(length: int, split: str) -> list[dict[str, Any]]:
         normalized_record["answer"] = str(normalized_record.get("answer", ""))
         normalized_record.setdefault("question_type", "unknown")
         normalized_record.setdefault("haystack_sessions", [])
-        # ``question_date`` feeds the memmachine_original answer prompt's
-        # ``Current Date:`` line via ``_format_question_date()``. Defensive
-        # default keeps the prompt renderable on synthetic fixtures.
+        # ``question_date`` feeds the answer prompt's ``Current Date:`` line
+        # via ``_format_question_date()`` (used by both LME_origin_prompt
+        # default and the memmachine_original opt-in body). Defensive default
+        # keeps the prompt renderable on synthetic fixtures.
         normalized_record["question_date"] = str(
             normalized_record.get("question_date", "") or ""
         )
@@ -522,11 +523,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(_ANSWER_PROMPT_BY_POLICY),
         default=None,
         help=(
-            "LongMemEval answer prompt body. 'memmachine_original' (default) "
-            "aligns with xiaowu0162/LongMemEval upstream; 'agent_lightning' "
-            "preserves the v0.5 prompt for baseline reruns. When omitted, "
-            "falls back to retrieval_agent.longmemeval_answer_prompt from "
-            "configuration.yml."
+            "LongMemEval answer prompt body. 'LME_origin_prompt' (default) "
+            "is a verbatim copy of xiaowu0162/LongMemEval upstream; "
+            "'memmachine_original' is a hybrid with MemMachine reasoning "
+            "guides; 'agent_lightning' preserves the v0.5 prompt for "
+            "baseline reruns. When omitted, falls back to "
+            "retrieval_agent.longmemeval_answer_prompt from configuration.yml."
         ),
     )
     return parser

@@ -124,7 +124,7 @@ def test_lme_origin_prompt_renders_with_question_date():
 
 def test_public_alias_points_to_default_policy():
     """ANSWER_PROMPT export must equal the default-policy body for backward import compat."""
-    assert ANSWER_PROMPT is _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
+    assert ANSWER_PROMPT is _ANSWER_PROMPT_LME_ORIGIN
 
 
 def test_policy_registry_keys():
@@ -197,14 +197,14 @@ def test_resolve_answer_prompt_policy_falls_back_to_config(tmp_path):
 def test_resolve_answer_prompt_policy_default_when_unset(tmp_path):
     cfg_path = tmp_path / "cfg.yml"
     _write_minimal_cfg(cfg_path)
-    # Pydantic default = 'memmachine_original'.
-    assert _resolve_answer_prompt_policy(None, str(cfg_path)) == "memmachine_original"
+    # Pydantic default = 'LME_origin_prompt' (upstream verbatim).
+    assert _resolve_answer_prompt_policy(None, str(cfg_path)) == "LME_origin_prompt"
 
 
 def test_resolve_answer_prompt_policy_missing_config_returns_default(tmp_path):
     """Defensive: missing configuration.yml falls through to in-process default."""
     missing = tmp_path / "does_not_exist.yml"
-    assert _resolve_answer_prompt_policy(None, str(missing)) == "memmachine_original"
+    assert _resolve_answer_prompt_policy(None, str(missing)) == "LME_origin_prompt"
 
 
 # ---------------------------------------------------------------------------

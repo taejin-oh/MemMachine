@@ -3,7 +3,7 @@
 - 작성일: 2026-05-04
 - 기준 브랜치: `claude/longmemeval-judge-prompt-alignment-Q6PUG`
 - 직전 베이스라인: v0.5 (`docs/msr/20260504_modified_list_v0.5.md`)
-- 목적: v0.5 이후 추가된 **LongMemEval answer prompt 원본 정렬 (memmachine_original / agent_lightning 정책화)** 를 단일 delta 로 기록
+- 목적: v0.5 이후 추가된 **LongMemEval answer prompt 원본 정렬 (3-정책화: LME_origin_prompt default / memmachine_original / agent_lightning)** 을 단일 delta 로 기록
 
 ---
 
@@ -13,9 +13,9 @@ LongMemEval **answer prompt** 가 원본(`xiaowu0162/LongMemEval/src/generation/
 
 | 정책 | 본문 출처 | 사용 시나리오 |
 |---|---|---|
-| `memmachine_original` (default) | **하이브리드** — 본문은 `evaluation/episodic_memory/longmemeval_search.py:36-52` 차용 (KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드 포함). 원본의 구조적 속성 3가지(memory-only / Current Date / no length cap) 동일하게 만족 | MemMachine 의 episodic_memory 변형이 검증된 상태. 추론 가이드 덕분에 temporal-reasoning / knowledge-update task 에 유리할 가능성 |
+| `LME_origin_prompt` (default) | **xiaowu0162/LongMemEval upstream verbatim** (`src/generation/run_generation.py` `answer_prompt_template`, no-merge no-CoT 분기). 위치 `{}` placeholder 만 named placeholder 로 변환, 그 외 텍스트 비변경 | **default**. upstream 논문 baseline 과 직접 비교 가능. MemMachine 의 추론 가이드 없이 순수 upstream 동작을 측정 |
+| `memmachine_original` | **하이브리드** — 본문은 `evaluation/episodic_memory/longmemeval_search.py:36-52` 차용 (KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드 포함). 원본의 구조적 속성 3가지(memory-only / Current Date / no length cap) 동일하게 만족 | MemMachine 의 episodic_memory 변형을 사용. 추론 가이드 덕분에 temporal-reasoning / knowledge-update task 점수가 오를 수 있음 |
 | `agent_lightning` | v0.5 까지 사용한 Agent Lightning paper(arXiv:2508.03680) prompt 그대로 | v0.5 baseline 과 1:1 비교가 필요할 때 |
-| `LME_origin_prompt` | **xiaowu0162/LongMemEval upstream verbatim** (`src/generation/run_generation.py` `answer_prompt_template`, no-merge no-CoT 분기). 위치 `{}` placeholder 만 named placeholder 로 변환, 그 외 텍스트 비변경 | upstream 논문 baseline 과 직접 비교가 필요할 때. MemMachine 의 추론 가이드를 빼고 순수 upstream 동작을 측정 |
 
 ### 배경
 
@@ -25,7 +25,7 @@ v0.5 시점 잔여 항목 — `docs/msr/20260430_longmemeval_retrieval_agent_vs_
 2. Open-domain fallback 허용 — 메모리 시스템 평가 본연의 목적(메모리 retrieval)을 흐림.
 3. "max 2 sentences" 출력 제약 — 원본은 길이 cap 없음.
 
-v0.6 default `memmachine_original` 은 **메모리 우선 + Current Date + 길이 cap 없음** 의 3가지 구조적 속성에서 원본과 일치. 단 본문 텍스트 자체는 upstream 의 verbatim 복사가 아니라 MemMachine 의 episodic_memory 변형이며, 이는 KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드를 추가로 포함함. **upstream 본문을 글자 그대로 적용하고 싶으면 `LME_origin_prompt` 정책을 명시적으로 옵트인** 해야 함.
+v0.6 default 는 **`LME_origin_prompt`** — upstream `answer_prompt_template` 의 no-merge no-CoT 분기를 글자 그대로 복사한 본문. "원본을 그대로 가져와 적용했다" 라고 정확히 말할 수 있도록 의도적으로 verbatim 으로 유지됨. MemMachine 의 KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드가 필요한 경우 `memmachine_original` 정책으로 옵트인. v0.5 baseline 과 1:1 비교가 필요한 경우 `agent_lightning` 정책으로 옵트인.
 
 ### 평가 대상 범위
 
@@ -38,12 +38,13 @@ v0.6 default `memmachine_original` 은 **메모리 우선 + Current Date + 길�
 ### 변경 내역
 
 - ✅ **Pydantic schema** — `packages/server/src/memmachine_server/common/configuration/retrieval_config.py`
-  - `RetrievalAgentConf.longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "memmachine_original"` 추가.
+  - `RetrievalAgentConf.longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "LME_origin_prompt"` 추가 (default = upstream verbatim).
 - ✅ **Prompt 본문 분리** — `evaluation/retrieval_agent/longmemeval_test.py`
-  - `_ANSWER_PROMPT_MEMMACHINE_ORIGINAL` (default 정책 본문, KNOWLEDGE UPDATES / PLANNED ACTIONS 가이드 + `Current date: {question_date}` + `{question}`).
+  - `_ANSWER_PROMPT_LME_ORIGIN` (**default** 정책 본문, xiaowu0162/LongMemEval upstream verbatim, no-merge no-CoT 분기. 위치 `{}` placeholder 만 named placeholder 로 변환).
+  - `_ANSWER_PROMPT_MEMMACHINE_ORIGINAL` (하이브리드 옵션, KNOWLEDGE UPDATES / PLANNED ACTIONS 가이드 + `Current date: {question_date}` + `{question}`).
   - `_ANSWER_PROMPT_AGENT_LIGHTNING` (v0.5 본문 그대로 보존, baseline rerun 용).
-  - `_ANSWER_PROMPT_LME_ORIGIN` (xiaowu0162/LongMemEval upstream verbatim, no-merge no-CoT 분기. 위치 `{}` placeholder 만 named placeholder 로 변환).
   - `_ANSWER_PROMPT_BY_POLICY` 매핑 dict.
+  - `ANSWER_PROMPT` 공개 alias → `_ANSWER_PROMPT_LME_ORIGIN` (default 와 일치, backward import 호환성 유지).
   - `ANSWER_PROMPT` 공개 alias → `_ANSWER_PROMPT_MEMMACHINE_ORIGINAL` (default 와 일치, `scripts/stages/retrieve.py:121` import 호환성 유지).
   - `_format_question_date(raw)` helper — `"YYYY/MM/DD (Day) HH:MM"` → `"%A, %B %d, %Y at %I:%M %p"` (e.g. "Monday, April 10, 2023 at 11:07 PM"). Empty/missing → `""` (graceful), 알 수 없는 포맷 → raw 반환.
   - `_select_answer_prompt(policy)` — 잘못된 정책은 `ValueError`.
@@ -51,7 +52,7 @@ v0.6 default `memmachine_original` 은 **메모리 우선 + Current Date + 길�
 - ✅ **Dataset normalization** — `evaluation/retrieval_agent/longmemeval_test.py:325-340`
   - `normalized_record["question_date"] = str(... or "")` 명시적 보존 (defensive empty-string default).
 - ✅ **`longmemeval_search()` 시그니처 확장** — `evaluation/retrieval_agent/longmemeval_test.py:198-`
-  - `answer_prompt_policy: str = "memmachine_original"` 추가.
+  - `answer_prompt_policy: str = "LME_origin_prompt"` 추가 (Pydantic default 와 일치).
   - sample 처리 루프에서 prompt body 내 `{question_date}` placeholder 존재 시에만 `prompt_extra={"question_date": _format_question_date(...)}` 전달.
 - ✅ **CLI 플래그** — `evaluation/retrieval_agent/longmemeval_test.py:build_parser()`
   - `--longmemeval-answer-prompt {LME_origin_prompt,agent_lightning,memmachine_original}` (default `None` → config 폴백; choices 는 `sorted(_ANSWER_PROMPT_BY_POLICY)` 자동 갱신).
@@ -76,10 +77,11 @@ v0.6 default `memmachine_original` 은 **메모리 우선 + Current Date + 길�
 
 | 결정 항목 | 채택 | 사유 |
 |---|---|---|
-| Default prompt 본문 | 원본 + episodic_memory 가이드 하이브리드 (`evaluation/episodic_memory/longmemeval_search.py:36-52` 본문 차용 + placeholder 통일) | 메모리 우선 + temporal 추론 강화 + open-domain fallback 제거 + length cap 제거 동시 달성, 이미 MemMachine 내부에서 검증된 변형 |
-| Verbatim upstream 정책 | `LME_origin_prompt` 신설 (xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기) | 이름이 "원본"인 정책이 사실은 하이브리드라는 모호함 해소 — 순수 upstream 비교 baseline 이 필요할 때 명시적 옵트인 가능 |
+| **Default prompt 본문** | **`LME_origin_prompt`** — xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기 verbatim | "원본을 그대로 가져와 적용했다" 라고 정확히 말할 수 있는 본문이 default. 비교 baseline 이 명확함 |
+| Hybrid 옵션 | `memmachine_original` 정책 보존 (`evaluation/episodic_memory/longmemeval_search.py:36-52` 본문 차용) | KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드가 필요한 경우 옵트인 가능. 이미 MemMachine 내부에서 검증된 변형 |
+| v0.5 baseline 옵션 | `agent_lightning` 정책 보존 (Agent Lightning paper prompt 그대로) | v0.5 점수와 1:1 비교가 필요할 때 옵트인 |
 | Date 포맷 | `"%A, %B %d, %Y at %I:%M %p"` (e.g. "Monday, April 10, 2023 at 11:07 PM") | `episodic_memory/longmemeval_search.py:175-177` 와 동일 → 두 entrypoint 간 일치 |
-| 정책 게이팅 | opt-in 정책 필드, default = `memmachine_original` | v0.5 의 `longmemeval_yesno_policy` 패턴 미러. 기존 baseline 재현 시 `agent_lightning`, upstream 비교 시 `LME_origin_prompt` 옵트인 |
+| 정책 게이팅 | opt-in 정책 필드, default = `LME_origin_prompt` | v0.5 의 `longmemeval_yesno_policy` 패턴 미러. default 가 가장 upstream-faithful 한 본문 |
 
 ### 검증
 
@@ -90,15 +92,15 @@ v0.6 default `memmachine_original` 은 **메모리 우선 + Current Date + 길�
 
 # Schema roundtrip
 /home/user/MemMachine/.venv/bin/python -c "from memmachine_server.common.configuration.retrieval_config import RetrievalAgentConf; print(RetrievalAgentConf().longmemeval_answer_prompt)"
-# → memmachine_original
+# → LME_origin_prompt
 
-# Prompt smoke (memmachine_original)
+# Prompt smoke (LME_origin_prompt — default, upstream verbatim)
 /home/user/MemMachine/.venv/bin/python -c "
-from evaluation.retrieval_agent.longmemeval_test import _ANSWER_PROMPT_MEMMACHINE_ORIGINAL, _format_question_date
-print(_ANSWER_PROMPT_MEMMACHINE_ORIGINAL.format(
+from evaluation.retrieval_agent.longmemeval_test import _ANSWER_PROMPT_LME_ORIGIN, _format_question_date
+print(_ANSWER_PROMPT_LME_ORIGIN.format(
     memories='M', question_date=_format_question_date('2023/04/10 (Mon) 23:07'), question='Q?'))
 "
-# → "...\nCurrent date: Monday, April 10, 2023 at 11:07 PM\nQuestion: Q?\n"
+# → "I will give you several history chats ...\nHistory Chats:\n\nM\n\nCurrent Date: Monday, April 10, 2023 at 11:07 PM\nQuestion: Q?\nAnswer:"
 ```
 
 ### 위험 / 사이드이펙트

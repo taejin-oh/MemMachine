@@ -45,7 +45,7 @@ def _write_minimal_cfg(path: Path, *, policy: str | None = None) -> None:
 def test_resolve_answer_prompt_policy_run_cfg_wins(tmp_path):
     """run_cfg.evaluation.longmemeval.answer_prompt overrides configuration.yml."""
     cfg_path = tmp_path / "cfg.yml"
-    _write_minimal_cfg(cfg_path, policy="memmachine_original")  # config default
+    _write_minimal_cfg(cfg_path, policy="memmachine_original")  # explicit non-default
     policy = retrieve_stage._resolve_answer_prompt_policy(
         {"evaluation": {"longmemeval": {"answer_prompt": "agent_lightning"}}},
         str(cfg_path),
@@ -62,11 +62,11 @@ def test_resolve_answer_prompt_policy_falls_back_to_config(tmp_path):
 
 
 def test_resolve_answer_prompt_policy_default_when_unset(tmp_path):
-    """Both unset → Pydantic default 'memmachine_original' (upstream-aligned)."""
+    """Both unset → Pydantic default 'LME_origin_prompt' (upstream verbatim)."""
     cfg_path = tmp_path / "cfg.yml"
     _write_minimal_cfg(cfg_path)
     policy = retrieve_stage._resolve_answer_prompt_policy({}, str(cfg_path))
-    assert policy == "memmachine_original"
+    assert policy == "LME_origin_prompt"
 
 
 def test_resolve_answer_prompt_policy_invalid_run_cfg_raises(tmp_path):

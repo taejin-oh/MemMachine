@@ -80,12 +80,13 @@ def parse_args() -> argparse.Namespace:
         "--longmemeval-answer-prompt",
         choices=["memmachine_original", "agent_lightning", "LME_origin_prompt"],
         help=(
-            "LongMemEval answer prompt body. 'memmachine_original' (default) "
-            "is a hybrid with upstream-aligned properties (memory-only basis, "
-            "Current Date, no length cap) plus MemMachine reasoning guides. "
-            "'agent_lightning' preserves the v0.5 prompt for baseline reruns. "
-            "'LME_origin_prompt' is a verbatim xiaowu0162/LongMemEval upstream "
-            "copy (no-merge no-CoT branch). Maps to "
+            "LongMemEval answer prompt body. 'LME_origin_prompt' (default) is "
+            "a verbatim copy of xiaowu0162/LongMemEval upstream "
+            "(answer_prompt_template, no-merge no-CoT branch); use this for "
+            "direct upstream-paper baseline comparison. 'memmachine_original' "
+            "is a hybrid with upstream-aligned properties + MemMachine "
+            "reasoning guides. 'agent_lightning' preserves the v0.5 prompt "
+            "for v0.5 baseline reruns. Maps to "
             "evaluation.longmemeval.answer_prompt in run_cfg."
         ),
     )

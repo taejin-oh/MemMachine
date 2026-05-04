@@ -391,14 +391,14 @@ def test_cli_invalid_yesno_policy_rejected():
 
 
 def test_schema_roundtrip_longmemeval_answer_prompt_default(tmp_path):
-    """Sample config without the field defaults to 'memmachine_original' (upstream)."""
+    """Sample config without the field defaults to 'LME_origin_prompt' (upstream verbatim)."""
     from memmachine_server.common.configuration import Configuration
 
     fixture = tmp_path / "configuration.yml"
     fixture.write_text(_sample_config_path().read_text())
 
     conf = Configuration.load_yml_file(str(fixture))
-    assert conf.retrieval_agent.longmemeval_answer_prompt == "memmachine_original"
+    assert conf.retrieval_agent.longmemeval_answer_prompt == "LME_origin_prompt"
 
 
 def test_schema_roundtrip_longmemeval_answer_prompt_agent_lightning_preserved(tmp_path):

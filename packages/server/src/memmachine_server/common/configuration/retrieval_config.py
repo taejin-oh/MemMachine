@@ -34,16 +34,17 @@ class RetrievalAgentConf(YamlSerializableMixin):
     longmemeval_answer_prompt: Literal[
         "memmachine_original", "agent_lightning", "LME_origin_prompt"
     ] = Field(
-        default="memmachine_original",
+        default="LME_origin_prompt",
         description=(
-            "LongMemEval answer prompt body. 'memmachine_original' (default) "
-            "is a hybrid: upstream-aligned properties (memory-only basis, "
-            "Current Date, no length cap) plus MemMachine's KNOWLEDGE UPDATES / "
+            "LongMemEval answer prompt body. 'LME_origin_prompt' (default) is "
+            "a verbatim copy of xiaowu0162/LongMemEval upstream "
+            "(src/generation/run_generation.py answer_prompt_template, "
+            "no-merge no-CoT branch); use this for direct comparison with "
+            "the upstream paper baseline. 'memmachine_original' is a hybrid "
+            "with upstream-aligned properties (memory-only basis, Current "
+            "Date, no length cap) plus MemMachine's KNOWLEDGE UPDATES / "
             "PLANNED ACTIONS reasoning guides. 'agent_lightning' preserves "
             "the v0.5 prompt (Agent Lightning paper, arXiv:2508.03680) for "
-            "baseline reruns. 'LME_origin_prompt' is a verbatim copy of "
-            "xiaowu0162/LongMemEval upstream "
-            "(src/generation/run_generation.py answer_prompt_template, "
-            "no-merge no-CoT branch). CLI / run_cfg overrides take precedence."
+            "v0.5 baseline reruns. CLI / run_cfg overrides take precedence."
         ),
     )
