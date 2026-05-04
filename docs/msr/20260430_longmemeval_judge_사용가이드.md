@@ -9,9 +9,9 @@
 
 - LongMemEval 행은 generic judge가 아니라 task별 프롬프트 judge로 채점된다.
 - `question_id`에 `_abs`가 있으면 abstention 전용 프롬프트로 바뀐다.
-- yes/no 파싱은 원본보다 엄격해서 형식이 흐트러지면 0점 처리될 수 있다.
+- yes/no 파싱은 **default `lenient`** (원본 LongMemEval `'yes' in lower(raw)` 그대로 — paper 수치 재현용) 이고, **`strict` 는 옵트인** (whole-string 매칭, 운영용 false-positive 회피). 정책에 따라 동일 judge 출력이 다른 점수가 된다.
 
-즉, 성능 수치에는 “모델 품질”뿐 아니라 “judge 출력 형식”이 강하게 개입한다.
+즉, 성능 수치에는 “모델 품질”뿐 아니라 “judge 출력 형식 + 선택한 파서 정책”이 함께 개입한다.
 
 ---
 
@@ -193,15 +193,20 @@ PY
 
 ## 5) 자주 터지는 실패 패턴과 즉시 대응
 
-1. **점수가 갑자기 크게 하락**
-   - 원인 후보: judge가 verbose reply를 많이 내서 strict parser 실패
-   - 대응: judge raw 출력 샘플링, yes/no 단답 유도 설정 강화
+1. **점수가 갑자기 크게 하락 (`strict` 선택 시)**
+   - 원인 후보: judge 가 verbose reply 를 많이 내서 strict parser 가 모두 0 으로 처리
+   - 대응: 정책을 `lenient` 로 되돌려 paper 수치 베이스라인 확인 → 차이가 곧 strict 가 깎은 양. judge raw 출력 샘플링, yes/no 단답 유도 설정 강화
 
-2. **원본 LongMemEval 결과와 미묘하게 불일치**
-   - 원인 후보: strict parser 차이 + category/_abs 메타 차이
-   - 대응: 소량 샘플을 원본 judge와 교차검증
+2. **점수가 비정상적으로 높음 (`lenient` 선택 시 substring trap)**
+   - 원인 후보: temporal-reasoning 등에서 judge 가 `"yesterday"` 류를 내면 lenient 는 1 로 채점 (원본 LongMemEval 의 알려진 동작이지만 false positive)
+   - 대응: 운영 환경/내부 비교에선 `strict` 로 재채점 + lenient 와의 차이를 격차로 보고. paper 비교가 목적이면 lenient 그대로 유지
 
-3. **분리 judge를 썼다고 생각했는데 실제론 fallback**
+3. **원본 LongMemEval 결과와 미묘하게 불일치**
+   - 원인 후보 1: 정책 자체. paper 비교라면 반드시 `lenient` 사용해야 함 (`strict` 면 underestimate)
+   - 원인 후보 2: category/_abs 메타 차이
+   - 대응: `[evaluate]/[judge] longmemeval_yesno_policy=...` 로그로 사용 정책 확인, 소량 샘플을 원본 judge 와 교차검증
+
+4. **분리 judge를 썼다고 생각했는데 실제론 fallback**
    - 원인 후보: `judge_llm_model` 미설정/미등록
    - 대응: 실행 전후 config snapshot + resolved model ID 로그 기록
 

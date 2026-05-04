@@ -305,14 +305,21 @@ def test_longmemeval_preference_prompt_used():
 
 
 # ---------------------------------------------------------------------------
-# _parse_yes_no — substring/false-positive regression tests
+# _parse_yes_no — strict-policy regression tests
+#
+# All tests in this section pin ``policy="strict"`` because the default
+# ``lenient`` policy preserves the original LongMemEval ``'yes' in lower(raw)``
+# heuristic and would mark several of these inputs as 1 (e.g. ``yesterday`` /
+# ``YES — the answer matches`` / ``I think yes`` all contain the substring
+# ``yes``). These tests document the *strict-only* behavior — they are NOT
+# assertions about the default policy.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        # Exact yes/no — the only accepted forms:
+        # Exact yes/no — the only accepted forms under strict policy:
         ("yes", 1),
         ("Yes", 1),
         ("YES", 1),
@@ -326,16 +333,17 @@ def test_longmemeval_preference_prompt_used():
         ("No", 0),
         ("No.", 0),
         ("no!", 0),
-        # Verbose / ambiguous replies — all rejected (default to WRONG):
+        # Verbose / ambiguous replies — all rejected under strict policy
+        # (lenient would mark every line below containing "yes" as 1):
         ("yes and no", 0),
         ("YES — the answer matches", 0),
         ("No, off by two days", 0),
         ("not yes", 0),
         ("I think yes", 0),
-        # Substring traps:
+        # Substring traps — rejected under strict; lenient marks them 1:
         ("yesterday", 0),
         ("nope", 0),
-        # Empty / non-yes-no replies:
+        # Empty / non-yes-no replies — rejected under strict:
         ("", 0),
         ("maybe", 0),
         ("I think so", 0),
@@ -345,8 +353,11 @@ def test_parse_yes_no_strict(raw, expected):
     assert _parse_yes_no(raw, policy="strict") == expected
 
 
-def test_longmemeval_yesterday_false_positive_rejected():
-    """Reply ``yesterday`` must NOT be marked correct (substring trap)."""
+def test_longmemeval_strict_rejects_yesterday_substring():
+    """Under strict policy, ``yesterday`` is rejected (substring trap).
+
+    Lenient policy would mark this 1 because the reply contains ``yes``.
+    """
     fn, _ = _capturing_call_fn("yesterday")
     assert (
         evaluate_llm_judge_longmemeval(
@@ -356,8 +367,8 @@ def test_longmemeval_yesterday_false_positive_rejected():
     )
 
 
-def test_longmemeval_not_yes_rejected():
-    """``not yes`` is ambiguous; default to WRONG (0)."""
+def test_longmemeval_strict_rejects_not_yes():
+    """Under strict policy, ``not yes`` is rejected as ambiguous (0)."""
     fn, _ = _capturing_call_fn("not yes")
     assert (
         evaluate_llm_judge_longmemeval(
@@ -367,8 +378,8 @@ def test_longmemeval_not_yes_rejected():
     )
 
 
-def test_longmemeval_yes_and_no_rejected():
-    """``yes and no`` is ambiguous and must NOT be marked correct."""
+def test_longmemeval_strict_rejects_yes_and_no():
+    """Under strict policy, ``yes and no`` is rejected as ambiguous (0)."""
     fn, _ = _capturing_call_fn("yes and no")
     assert (
         evaluate_llm_judge_longmemeval(
@@ -378,8 +389,8 @@ def test_longmemeval_yes_and_no_rejected():
     )
 
 
-def test_longmemeval_i_think_yes_rejected():
-    """``I think yes`` has extra text; reject."""
+def test_longmemeval_strict_rejects_i_think_yes():
+    """Under strict policy, ``I think yes`` is rejected (extra text — 0)."""
     fn, _ = _capturing_call_fn("I think yes")
     assert (
         evaluate_llm_judge_longmemeval(
@@ -429,7 +440,7 @@ class _RecordingOpenAI:
 
 
 def test_create_judge_fn_chat_text_mode_kwargs(tmp_path, monkeypatch):
-    """json_mode=False on chat-completions: no response_format, max_tokens=10."""
+    """json_mode=False on chat-completions: no response_format, max_tokens=10, temperature=0."""
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_chat_kwargs = None
 
@@ -443,10 +454,11 @@ def test_create_judge_fn_chat_text_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert "response_format" not in kwargs
     assert kwargs.get("max_tokens") == 10
+    assert kwargs.get("temperature") == 0
 
 
 def test_create_judge_fn_chat_json_mode_kwargs(tmp_path, monkeypatch):
-    """Default (json_mode=True) keeps response_format and omits max_tokens."""
+    """Default (json_mode=True) keeps response_format and omits max_tokens / temperature."""
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_chat_kwargs = None
 
@@ -460,10 +472,16 @@ def test_create_judge_fn_chat_json_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert kwargs.get("response_format") == {"type": "json_object"}
     assert "max_tokens" not in kwargs
+    assert "temperature" not in kwargs
 
 
 def test_create_judge_fn_responses_text_mode_kwargs(tmp_path, monkeypatch):
-    """json_mode=False on openai-responses: no `text` arg, max_output_tokens=10."""
+    """json_mode=False on openai-responses: no `text` arg, max_output_tokens=10.
+
+    Responses API is intentionally NOT given ``temperature=0`` because some
+    reasoning models reject it; the chat-completions branch is the only one
+    that hard-codes determinism.
+    """
     monkeypatch.setattr("openai.OpenAI", _RecordingOpenAI)
     _RecordingOpenAI.last_responses_kwargs = None
 
@@ -478,3 +496,4 @@ def test_create_judge_fn_responses_text_mode_kwargs(tmp_path, monkeypatch):
     assert kwargs is not None
     assert "text" not in kwargs
     assert kwargs.get("max_output_tokens") == 10
+    assert "temperature" not in kwargs

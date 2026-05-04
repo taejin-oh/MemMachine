@@ -1,5 +1,9 @@
 # 20260430 Modified List v0.4
 
+> 🗂️ **historical 문서 — 최신 상태는 [`20260504_modified_list_v0.5.md`](20260504_modified_list_v0.5.md) 참고**
+>
+> 본 v0.4 는 HEAD `d55caf2` 시점의 스냅샷이다. 이후 v0.5 (HEAD `a919a67`) 에서 LongMemEval yes/no 파서 default 가 **`strict` → `lenient` 로 전환** (원본 LongMemEval `'yes' in lower(raw)` 그대로) 되었고, `strict` 는 옵트인 옵션이 됐다. 본 문서의 §0' / §1 의 “whole-string strict 매칭” 관련 서술은 **그 시점의 default 동작**이며, v0.5 이후엔 “옵션 동작”으로 읽어야 한다. 본문은 v0.4 시점 사실 기록으로 보존.
+
 - 작성일: 2026-04-30
 - 기준 문서: `docs/msr/09_Reproduction_Code_Changes.md`
 - 점검 범위: `scripts/*`, `configs/*`, `prompts/*`, `evaluation/retrieval_agent/*`, `evaluation/utils/agent_utils.py`, `packages/server/*`
@@ -11,6 +15,7 @@
 > - v0.0 / v0.1 / v0.2 (`docs/msr/20260425_modified_list_v0.{0,1,2}.md`) 는 historical 상태입니다.
 > - v0.3 (`docs/msr/20260430_modified_list_v0.3.md`) 은 PR #7 이후 추가 commit 까지 반영한 시점입니다.
 > - 본 v0.4 는 v0.3 이후 PR #27 (LongMemEval judge 정렬 + lazy init) 까지 반영한 단일 표 입니다. v0.3 본문을 변경하지 않고 §0' 에 v0.3 → v0.4 delta 만 추가, §1 표는 갱신해서 다시 적었습니다.
+> - **v0.5 (`20260504_modified_list_v0.5.md`)** 가 v0.4 이후 parser default 전환을 담는 후속 문서입니다.
 
 ---
 
