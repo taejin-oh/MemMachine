@@ -119,13 +119,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--longmemeval-yesno-policy",
         type=str,
         choices=["lenient", "strict"],
-        default="lenient",
+        default=None,
         help=(
-            "Parser policy for LongMemEval yes/no judge replies. "
-            "Default: lenient (upstream-like substring behavior)."
+            "Parser policy for LongMemEval yes/no judge replies. When unset, "
+            "falls back to retrieval_agent.longmemeval_yesno_policy in "
+            "configuration.yml (default: lenient)."
         ),
     )
     return parser
+
+
+def _resolve_yesno_policy(args, config_path: str) -> str:
+    """CLI flag wins; otherwise read configuration.yml's RetrievalAgentConf default."""
+    if args.longmemeval_yesno_policy is not None:
+        return args.longmemeval_yesno_policy
+    from memmachine_server.common.configuration import Configuration
+
+    conf = Configuration.load_yml_file(config_path)
+    return conf.retrieval_agent.longmemeval_yesno_policy
 
 
 def main():
@@ -135,6 +146,8 @@ def main():
         data = json.load(f)
 
     json_call_fn = create_judge_fn(args.config_path)
+    yesno_policy = _resolve_yesno_policy(args, args.config_path)
+    print(f"[evaluate] longmemeval_yesno_policy={yesno_policy}")
 
     results = defaultdict(list)
     results_lock = threading.Lock()
@@ -163,7 +176,7 @@ def main():
                 item,
                 json_call_fn,
                 get_text_call_fn,
-                args.longmemeval_yesno_policy,
+                yesno_policy,
             )
             for group_key, item in sample_tasks
         ]

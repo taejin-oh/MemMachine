@@ -67,6 +67,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--judge-model", help="judge.llm_model_id override")
     parser.add_argument(
+        "--longmemeval-yesno-policy",
+        choices=["lenient", "strict"],
+        help=(
+            "LongMemEval judge yes/no parser policy. 'lenient' (default) "
+            "matches xiaowu0162/LongMemEval upstream substring behavior; "
+            "'strict' requires whole-string match. Maps to "
+            "judge.longmemeval_yesno_policy in run_cfg."
+        ),
+    )
+    parser.add_argument(
         "--length", type=int, help="benchmark.length override (dataset slice)"
     )
     parser.add_argument(
@@ -134,7 +144,12 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
         ]
 
     if args.judge_model:
-        out["judge"] = {"llm_model_id": args.judge_model}
+        out.setdefault("judge", {})["llm_model_id"] = args.judge_model
+
+    if args.longmemeval_yesno_policy is not None:
+        out.setdefault("judge", {})["longmemeval_yesno_policy"] = (
+            args.longmemeval_yesno_policy
+        )
 
     if args.length is not None:
         out.setdefault("benchmark", {})["length"] = args.length

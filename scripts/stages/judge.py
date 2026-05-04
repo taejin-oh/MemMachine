@@ -82,6 +82,25 @@ _LONGMEMEVAL_TASKS = frozenset(
 )
 
 
+def _resolve_yesno_policy(run_cfg: dict[str, Any], config_path: str) -> str:
+    """Decide LongMemEval yes/no policy. run_cfg.judge.longmemeval_yesno_policy
+    wins; otherwise read retrieval_agent.longmemeval_yesno_policy from the
+    (possibly swapped) configuration.yml. Validates the final value.
+    """
+    policy = (run_cfg.get("judge") or {}).get("longmemeval_yesno_policy")
+    if policy is None:
+        from memmachine_server.common.configuration import Configuration
+
+        conf = Configuration.load_yml_file(config_path)
+        policy = conf.retrieval_agent.longmemeval_yesno_policy
+    if policy not in {"lenient", "strict"}:
+        raise ValueError(
+            "longmemeval_yesno_policy must be 'lenient' or 'strict', "
+            f"got {policy!r}"
+        )
+    return policy
+
+
 def run(run_cfg: dict[str, Any]) -> Path:
     from evaluation.retrieval_agent.llm_judge import (
         create_judge_fn,
@@ -100,14 +119,7 @@ def run(run_cfg: dict[str, Any]) -> Path:
 
     config_path = cm.resolve_config_path(run_cfg)
     judge_config = _judge_config_path(run_cfg, config_path)
-    yesno_policy = (run_cfg.get("judge") or {}).get(
-        "longmemeval_yesno_policy", "lenient"
-    )
-    if yesno_policy not in {"lenient", "strict"}:
-        raise ValueError(
-            "judge.longmemeval_yesno_policy must be 'lenient' or 'strict', "
-            f"got {yesno_policy!r}"
-        )
+    yesno_policy = _resolve_yesno_policy(run_cfg, judge_config)
     rows = cm.read_jsonl(generate_path)
     print(
         f"[judge] {len(rows)} rows  config={judge_config}  "

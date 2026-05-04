@@ -22,7 +22,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 |---|---|---|
 | Judge prompt — Legacy `evaluate.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** (`get_anscheck_prompt` 이식) — `684f1d6` |
 | Judge prompt — Wrapper `scripts/stages/judge.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** — review-fix 에서 wrapper 도 동일 routing 적용 |
-| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **whole-string strict 매칭** — "yes" / "Yes." / "yes!" 만 허용. "yesterday" / "not yes" / "yes and no" / "I think yes" 등 모든 ambiguous reply 는 0 처리 — review-fix |
+| Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **default lenient (`'yes' in lower(raw)`, 원본 동일)** + 옵션 strict (whole-string). `retrieval_agent.longmemeval_yesno_policy` / `--longmemeval-yesno-policy` / `judge.longmemeval_yesno_policy` 로 전환 가능 — v0.5 |
 | Judge prompt (LOCOMO/Wiki/HotpotQA) — 두 경로 모두 | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
 | Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | (변경 없음) v1 결론 그대로 — **여전히 미정렬** |
 | Metric (LongMemEval) | task-averaged / abstention 미보고 | (변경 없음) v1 결론 그대로 — **여전히 미보고** |
@@ -32,8 +32,9 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 - `evaluation/retrieval_agent/llm_judge.py`
   - `_LME_TEMPLATE_GENERAL / _TEMPORAL / _KNOWLEDGE_UPDATE / _PREFERENCE / _ABSTENTION` 5+1 상수
   - `get_anscheck_prompt(task, q, a, r, abstention=False) -> str`
-  - `_parse_yes_no(raw)` — review-fix. `\A\s*(yes|no)[\s.!?,]*\Z` regex 로 **whole-string** 매칭. "yes" / "Yes." / "yes!" / "no" / "No." 만 허용. "yesterday" / "not yes" / "yes and no" / "I think yes" / "" 는 모두 0 (WRONG).
-  - `evaluate_llm_judge_longmemeval(question, gold, generated, question_type, question_id, call_fn) -> int` — `_abs` 접미사 → abstention 분기, `_parse_yes_no` 로 응답 파싱
+  - `_parse_yes_no(raw, policy="lenient"|"strict")` — v0.5. `policy="lenient"` (기본, 원본 LongMemEval 일치) 는 `'yes' in lower(raw)` substring 매칭, `policy="strict"` 는 `\A\s*(yes|no)[\s.!?,]*\Z` whole-string 매칭. lenient 에선 `"yesterday"` 도 1 (substring trap, 원본과 동일).
+  - `evaluate_llm_judge_longmemeval(question, gold, generated, question_type, question_id, call_fn, yesno_policy="lenient") -> int` — `_abs` 접미사 → abstention 분기, `_parse_yes_no` 로 응답 파싱
+  - **Policy 전달 경로**: legacy `evaluate.py` 는 `--longmemeval-yesno-policy` CLI 플래그 (미지정 시 `retrieval_agent.longmemeval_yesno_policy` config 폴백); wrapper `judge.py` 는 `run_cfg.judge.longmemeval_yesno_policy` 우선, 미지정 시 동일 config 폴백. 두 경로 모두 실행 시점에 `[evaluate] longmemeval_yesno_policy=...` / `[judge] ... longmemeval_yesno_policy=...` 로그 출력.
   - `create_judge_fn(config_path, json_mode: bool = True)` — `json_mode=False` 시 OpenAI 호출에서 `response_format` / `text.format` 제거 + `max_tokens=10` 추가. Bedrock 분기 no-op.
 - **Legacy 경로** — `evaluation/retrieval_agent/evaluate.py`
   - `_LONGMEMEVAL_TASKS` frozenset 6개 task name → 라우팅 키
@@ -56,7 +57,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 
 | v1 시사점 | v2 갱신 |
 |---|---|
-| **Judge 충실도 손실** | ✅ **해결 (양쪽 경로)** — `evaluation/retrieval_agent/evaluate.py` (legacy) 와 `scripts/run_pipeline.py --stage judge` 두 진입점 모두 LongMemEval 한해 task별 분기 + abstention 평가 복원. yes/no 파싱은 원본보다 strict — review-fix 에서 substring trap (`yesterday`, `not yes`) 제거 |
+| **Judge 충실도 손실** | ✅ **해결 (양쪽 경로)** — `evaluation/retrieval_agent/evaluate.py` (legacy) 와 `scripts/run_pipeline.py --stage judge` 두 진입점 모두 LongMemEval 한해 task별 분기 + abstention 평가 복원. yes/no 파싱은 v0.5 부터 **default lenient (원본 100% 일치)**, strict 는 옵트인. paper 수치 재현 가능 |
 | **Answer prompt 평가 누수 위험** | 🟥 미해결 — open-domain fallback / Current Date 부재 그대로 |
 | **표준 지표 부재** | 🟥 미해결 — task-averaged / abstention accuracy / NDCG / recall@k 미보고 |
 | **레포 내부에 충실 버전 존재** | 참고 사항으로 유효 — `episodic_memory/longmemeval_evaluate.py:155` 의 `get_anscheck_prompt` 와 `retrieval_agent/llm_judge.py` 의 신규 함수가 **본문이 동일한 두 정적 카피** 로 공존 (의도된 결정 — import 의존성 추가 회피) |

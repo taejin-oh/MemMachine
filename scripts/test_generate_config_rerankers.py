@@ -270,6 +270,7 @@ def _ns(**overrides):
         "use_existing_config": None,
         "k_list": None,
         "judge_model": None,
+        "longmemeval_yesno_policy": None,
         "length": None,
         "n_runs": None,
         "reuse_run": None,

@@ -72,15 +72,23 @@ rg -n "_abs|abstention|evaluate_llm_judge_longmemeval" evaluation/retrieval_agen
 의미:
 - `question_id`에 `_abs`가 포함되면 abstention prompt로 전환되는지 확인.
 
-## Step 5. strict yes/no 파싱 규칙 확인
+## Step 5. yes/no 파싱 정책 확인 (lenient / strict)
 
 ```bash
-rg -n "_YES_NO_RE|def _parse_yes_no|Stricter than the original" evaluation/retrieval_agent/llm_judge.py
+rg -n "_YES_NO_RE|def _parse_yes_no|policy ==|LongMemEvalYesNoPolicy" evaluation/retrieval_agent/llm_judge.py
 ```
 
 의미:
-- substring 기반이 아니라 whole-string 기반 yes/no 판정임을 확인.
-- verbose 답변(`I think yes`)이 0 처리될 수 있음을 확인.
+- 두 가지 정책이 있음을 확인:
+  - **`lenient` (기본)** — `'yes' in lower(raw)` substring 매칭. `xiaowu0162/LongMemEval` 원본과 100% 동일. `"yesterday"` / `"Yes, the answer..."` / `"yes and no"` 모두 1. **paper 수치 재현용**.
+  - **`strict`** — `\A\s*(yes|no)[\s.!?,]*\Z` whole-string 매칭. 위 케이스 모두 0. substring trap (`yesterday`) 회피용.
+- 정책 설정 우선순위:
+  1. (legacy) `python evaluate.py --longmemeval-yesno-policy {lenient,strict}` CLI 플래그
+  2. (eval-tool) `python generate_config.py --longmemeval-yesno-policy {lenient,strict}` → `run_cfg.judge.longmemeval_yesno_policy`
+  3. fallback: `configuration.yml` 의 `retrieval_agent.longmemeval_yesno_policy` (Pydantic default = `lenient`)
+- 실행 시점에 `[evaluate] longmemeval_yesno_policy=...` 또는 `[judge] ... longmemeval_yesno_policy=...` 로그가 항상 찍히므로 결과 jsonl 옆에 어떤 정책이었는지 추적 가능.
+
+> ⚠️ **lenient 의 substring trap 주의**: `"yesterday"` 도 1 로 채점됨. 원본 LongMemEval 의 알려진 동작이며, paper 수치 재현 시엔 그대로 유지해야 함. 운영용 / 점수 부풀리기 회피용에선 `strict` 권장.
 
 ## Step 6. judge 모델 선택 우선순위 확인
 
@@ -106,10 +114,14 @@ LongMemEval 여부는 데이터셋명이 아니라 row의 `category` 문자열�
 abstention 문항은 일반 문항과 판정 기준이 다르다.
 `_abs` 태깅이 틀리면 채점 의미 자체가 바뀐다.
 
-## 3.3 yes/no 형식 확인이 중요한 이유
+## 3.3 yes/no 정책 (lenient / strict) 확인이 중요한 이유
 
 strict parser는 보수적이다.
-judge 모델이 친절하게 설명문을 붙이면 semantic 정답이어도 0점이 될 수 있다.
+정책에 따라 동일한 judge 출력이 다른 점수가 된다:
+- 작은 / verbose judge 모델 (Llama 8B, Mistral 7B 등) + `strict` 조합은 정답을 0 으로 깎음 → judge format compliance 가 측정됨
+- 큰 / 지시 잘 따르는 judge (GPT-4o) + 어느 정책이든 → 거의 동일
+- paper 수치 재현 / leaderboard 비교 → `lenient` 필수
+- 운영 환경에서 false positive 회피 → `strict` 권장
 
 ## 3.4 judge 모델 ID 확인이 중요한 이유
 

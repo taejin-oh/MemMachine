@@ -51,6 +51,17 @@ def _patch_common(monkeypatch, tmp_path: Path, out_dir: Path):
     # _judge_config_path() reads the yaml to look up resources.language_models;
     # we stub it out entirely so tests don't need a real configuration.yml.
     monkeypatch.setattr(judge_stage, "_judge_config_path", lambda _r, p: p)
+    # _resolve_yesno_policy() also reads yaml when run_cfg doesn't set the
+    # policy. Stub it to a fixed default ("lenient") so tests that don't care
+    # about policy resolution don't need a real configuration.yml. Tests that
+    # specifically exercise policy resolution patch this themselves.
+    monkeypatch.setattr(
+        judge_stage,
+        "_resolve_yesno_policy",
+        lambda run_cfg, _path: (run_cfg.get("judge") or {}).get(
+            "longmemeval_yesno_policy", "lenient"
+        ),
+    )
 
 
 def test_run_routes_longmemeval_category_to_longmemeval_judge(monkeypatch, tmp_path):
@@ -256,6 +267,96 @@ def test_run_writes_judge_jsonl_with_llm_score(monkeypatch, tmp_path):
     with judged_path.open() as f:
         rows = [json.loads(line) for line in f if line.strip()]
     assert [row["llm_score"] for row in rows] == [0, 1]
+
+
+# ---------------------------------------------------------------------------
+# _resolve_yesno_policy: precedence + log + validation
+# ---------------------------------------------------------------------------
+
+
+def _write_minimal_cfg(path: Path, *, policy: str | None = None) -> None:
+    """Materialize a minimal configuration.yml that the Pydantic schema accepts."""
+    import yaml
+
+    REPO_ROOT_LOCAL = Path(__file__).resolve().parent.parent
+    sample = (
+        REPO_ROOT_LOCAL / "sample_configs" / "episodic_memory_config.cpu.sample"
+    ).read_text()
+    base = yaml.safe_load(sample)
+    if policy is not None:
+        base.setdefault("retrieval_agent", {})["longmemeval_yesno_policy"] = policy
+    path.write_text(yaml.safe_dump(base))
+
+
+def test_resolve_yesno_policy_run_cfg_wins(tmp_path):
+    """run_cfg.judge.longmemeval_yesno_policy overrides configuration.yml."""
+    cfg_path = tmp_path / "cfg.yml"
+    _write_minimal_cfg(cfg_path, policy="lenient")  # config says lenient
+    policy = judge_stage._resolve_yesno_policy(
+        {"judge": {"longmemeval_yesno_policy": "strict"}}, str(cfg_path)
+    )
+    assert policy == "strict"
+
+
+def test_resolve_yesno_policy_falls_back_to_config(tmp_path):
+    """run_cfg unset → read retrieval_agent.longmemeval_yesno_policy from yaml."""
+    cfg_path = tmp_path / "cfg.yml"
+    _write_minimal_cfg(cfg_path, policy="strict")
+    policy = judge_stage._resolve_yesno_policy({}, str(cfg_path))
+    assert policy == "strict"
+
+
+def test_resolve_yesno_policy_default_lenient_when_unset(tmp_path):
+    """Both unset → Pydantic default 'lenient'."""
+    cfg_path = tmp_path / "cfg.yml"
+    _write_minimal_cfg(cfg_path)  # no policy field
+    policy = judge_stage._resolve_yesno_policy({}, str(cfg_path))
+    assert policy == "lenient"
+
+
+def test_resolve_yesno_policy_invalid_run_cfg_raises(tmp_path):
+    cfg_path = tmp_path / "cfg.yml"
+    _write_minimal_cfg(cfg_path)
+    with pytest.raises(ValueError, match=r"must be 'lenient' or 'strict'"):
+        judge_stage._resolve_yesno_policy(
+            {"judge": {"longmemeval_yesno_policy": "loose"}}, str(cfg_path)
+        )
+
+
+def test_run_logs_yesno_policy(monkeypatch, tmp_path, capsys):
+    """`[judge] ... longmemeval_yesno_policy=...` must appear in stdout."""
+    out_dir = _write_rows(
+        tmp_path,
+        [
+            {
+                "question": "q",
+                "category": "multi-session",
+                "question_id": "qid_1",
+                "golden_answer": "a",
+                "model_answer": "yes",
+            }
+        ],
+    )
+    _patch_common(monkeypatch, tmp_path, out_dir)
+
+    import evaluation.retrieval_agent.llm_judge as lm
+
+    monkeypatch.setattr(
+        lm, "create_judge_fn", lambda _path, json_mode=True: (lambda _p: "yes")
+    )
+    monkeypatch.setattr(lm, "evaluate_llm_judge_longmemeval", lambda **_kw: 1)
+    monkeypatch.setattr(lm, "evaluate_llm_judge", lambda **_kw: 0)
+
+    judge_stage.run(
+        {
+            "run_name": "test_run",
+            "configuration": {"generated_path": "x"},
+            "judge": {"longmemeval_yesno_policy": "strict"},
+        }
+    )
+
+    out = capsys.readouterr().out
+    assert "longmemeval_yesno_policy=strict" in out
 
 
 if __name__ == "__main__":

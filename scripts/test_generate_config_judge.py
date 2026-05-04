@@ -262,3 +262,124 @@ def test_schema_roundtrip_judge_llm_model_default_none(tmp_path):
 
     conf = Configuration.load_yml_file(str(fixture))
     assert conf.retrieval_agent.judge_llm_model is None
+
+
+# ---------------------------------------------------------------------------
+# longmemeval_yesno_policy: schema roundtrip + generate_config CLI mapping
+# ---------------------------------------------------------------------------
+
+
+def test_schema_roundtrip_longmemeval_yesno_policy_default_lenient(tmp_path):
+    """Sample config without the field defaults to 'lenient' (upstream behavior)."""
+    from memmachine_server.common.configuration import Configuration
+
+    fixture = tmp_path / "configuration.yml"
+    fixture.write_text(_sample_config_path().read_text())
+
+    conf = Configuration.load_yml_file(str(fixture))
+    assert conf.retrieval_agent.longmemeval_yesno_policy == "lenient"
+
+
+def test_schema_roundtrip_longmemeval_yesno_policy_strict_preserved(tmp_path):
+    from memmachine_server.common.configuration import Configuration
+
+    base = yaml.safe_load(_sample_config_path().read_text())
+    base.setdefault("retrieval_agent", {})["longmemeval_yesno_policy"] = "strict"
+    fixture = tmp_path / "configuration.yml"
+    fixture.write_text(yaml.safe_dump(base))
+
+    conf = Configuration.load_yml_file(str(fixture))
+    assert conf.retrieval_agent.longmemeval_yesno_policy == "strict"
+
+
+def test_schema_roundtrip_longmemeval_yesno_policy_invalid_raises(tmp_path):
+    """Pydantic Literal rejects values outside {'lenient', 'strict'}."""
+    from memmachine_server.common.configuration import Configuration
+
+    base = yaml.safe_load(_sample_config_path().read_text())
+    base.setdefault("retrieval_agent", {})["longmemeval_yesno_policy"] = "loose"
+    fixture = tmp_path / "configuration.yml"
+    fixture.write_text(yaml.safe_dump(base))
+
+    with pytest.raises(Exception):  # pydantic.ValidationError
+        Configuration.load_yml_file(str(fixture))
+
+
+def _parse_args(argv: list[str]):
+    """Run scripts.generate_config.parse_args() with a custom argv."""
+    import scripts.generate_config as gc
+
+    saved = sys.argv
+    sys.argv = ["generate_config.py", *argv]
+    try:
+        return gc.parse_args()
+    finally:
+        sys.argv = saved
+
+
+def test_cli_longmemeval_yesno_policy_lenient_maps_to_run_cfg():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        ["--problem", "4", "--run-name", "x", "--longmemeval-yesno-policy", "lenient"]
+    )
+    out = cli_to_overrides(args)
+    assert out["judge"]["longmemeval_yesno_policy"] == "lenient"
+
+
+def test_cli_longmemeval_yesno_policy_strict_maps_to_run_cfg():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        ["--problem", "4", "--run-name", "x", "--longmemeval-yesno-policy", "strict"]
+    )
+    out = cli_to_overrides(args)
+    assert out["judge"]["longmemeval_yesno_policy"] == "strict"
+
+
+def test_cli_longmemeval_yesno_policy_unset_omits_key():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(["--problem", "4", "--run-name", "x"])
+    out = cli_to_overrides(args)
+    assert "judge" not in out or "longmemeval_yesno_policy" not in out.get(
+        "judge", {}
+    )
+
+
+def test_cli_judge_model_and_yesno_policy_share_judge_dict():
+    """--judge-model and --longmemeval-yesno-policy must coexist under one judge dict."""
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        [
+            "--problem",
+            "4",
+            "--run-name",
+            "x",
+            "--judge-model",
+            "judge_llm",
+            "--longmemeval-yesno-policy",
+            "strict",
+        ]
+    )
+    out = cli_to_overrides(args)
+    assert out["judge"] == {
+        "llm_model_id": "judge_llm",
+        "longmemeval_yesno_policy": "strict",
+    }
+
+
+def test_cli_invalid_yesno_policy_rejected():
+    """argparse choices=['lenient','strict'] must reject other values."""
+    with pytest.raises(SystemExit):
+        _parse_args(
+            [
+                "--problem",
+                "4",
+                "--run-name",
+                "x",
+                "--longmemeval-yesno-policy",
+                "loose",
+            ]
+        )
