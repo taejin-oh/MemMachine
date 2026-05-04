@@ -2,6 +2,16 @@
 
 > 세션 메모. 문제4(LongMemEval k sweep) 를 예시로 PR #7 평가 도구가 옵션을 어떻게 받아 어떻게 처리하는지 정리.
 
+> **이 문서의 위치 (관련 문서 정리)**
+>
+> 본 walkthrough 는 “p4 LongMemEval k sweep 을 실제로 따라가며 실행하는 **상세 가이드**”. 다른 문서와의 분담:
+>
+> - 짧은 실행 가이드 / 6 problem 명령 모음 → [`docs/USAGE.md`](../USAGE.md)
+> - LongMemEval judge 동작 (task별 prompt, `_abs` 분기, yes/no 파서 정책) 단독 가이드 → [`docs/msr/20260430_longmemeval_judge_사용가이드.md`](20260430_longmemeval_judge_사용가이드.md)
+> - eval_claude 변경 이력의 단일 출처 (v0.5 — `lenient` default, `--longmemeval-yesno-policy` 등) → [`docs/msr/20260504_modified_list_v0.5.md`](20260504_modified_list_v0.5.md)
+>
+> 본 문서가 judge 정책의 1차 출처는 아니다. 본 문서는 **p4 빠른 시작 + judge 정책을 어떻게 “쓰는지”** 만 다루고, 정책 자체의 동작 / 결정 사유는 위 두 문서를 참조한다.
+
 ---
 
 
@@ -49,6 +59,11 @@ cp configs/profiles/dbs/_example.yaml     configs/profiles/dbs/my_db.yaml
 # 1. run yaml 생성 (smoke: 질문 5개, k 두 개만)
 python scripts/generate_config.py --problem 4 --run-name p4_pilot \
     --model-profile my_model --db-profile my_db --k-list 10,20 --length 5
+# (선택) yes/no judge 정책을 명시적으로 고정하고 싶을 때:
+#   --longmemeval-yesno-policy lenient   # paper 수치 재현 (default — 생략 시 동일)
+#   --longmemeval-yesno-policy strict    # 운영용 false-positive 회피
+# 생략하면 `lenient` (원본 LongMemEval `'yes' in lower(raw)` 그대로). 정책별 차이는
+# `docs/msr/20260430_longmemeval_judge_사용가이드.md` 참고.
 
 # 2. 전체 pipeline 실행 (ingest → retrieve → generate → judge → analyze)
 python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml --stage all
@@ -1110,6 +1125,21 @@ judged.append({**row, "llm_score": int(score)})
 # 50 행마다 진행 로그 + running accuracy 출력
 ```
 
+LongMemEval row (`category` 가 6 task 중 하나) 는 **task별 prompt + plain-text yes/no judge** 로 자동 routing 됨 (`evaluate_llm_judge_longmemeval`). LOCOMO/Wiki/HotpotQA 는 기존 generic JSON judge 그대로. routing 키와 자세한 동작은 `docs/msr/20260430_longmemeval_judge_사용가이드.md`.
+
+#### judge stage 실행 시 보일 로그 (정책 추적용)
+
+`scripts/run_pipeline.py --stage judge` 또는 `--stage all` 실행 시 stdout 첫 줄에 아래 두 값이 항상 같이 찍힘:
+
+```
+[judge] 500 rows  config=configs/generated/p4_pilot_configuration.yml  longmemeval_yesno_policy=lenient
+```
+
+- `config=...` → judge 가 실제 읽은 working configuration.yml. judge swap 적용 시 `..._judge_*.yml` 임시 파일.
+- `longmemeval_yesno_policy={lenient|strict}` → 이번 run 에서 적용된 yes/no 파서 정책.
+
+**결과 해석 시 두 값을 함께 메모해 둘 것.** 같은 retrieve 결과라도 정책에 따라 cell accuracy 가 달라질 수 있어서, 결과 jsonl 옆에 “어떤 정책으로 채점했는가” 를 박아두면 cross-run 비교가 안전.
+
 #### judge LLM swap (eval_claude 신규)
 
 `_judge_config_path()` (`judge.py:25-64`) 가 `run_cfg.judge.llm_model_id` 가 설정돼 있으면 임시 configuration.yml 을 만들어 **`retrieval_agent.judge_llm_model`** 만 그 ID 로 swap. **`retrieval_agent.llm_model` (답변 LLM) 은 절대 안 건드림** — 답변과 채점이 분리.
@@ -1133,6 +1163,52 @@ python scripts/generate_config.py --problem 4 --run-name p4_pilot \
 python scripts/run_pipeline.py --config configs/runs/p4_pilot.yaml \
     --stage judge,analyze
 ```
+
+#### LongMemEval yes/no 파서 정책 (eval_claude v0.5)
+
+LongMemEval task별 judge 는 plain-text “yes / no” 답변을 파싱해 0/1 로 변환한다. 파서는 두 가지 정책을 지원하며 **default 는 `lenient`**:
+
+| 정책 | 매칭 규칙 | 언제 쓰나 |
+|---|---|---|
+| **`lenient` (default)** | `1 if "yes" in raw.lower() else 0` — `xiaowu0162/LongMemEval` 원본과 100% 동일 | **paper 수치 재현 / leaderboard 비교**. 단, 알려진 substring trap 그대로 — `"yesterday"` 도 1 로 채점됨 (원본 동작) |
+| **`strict` (옵트인)** | `\A\s*(yes\|no)[\s.!?,]*\Z` whole-string 매칭 | **운영용 false-positive 회피** — `"yesterday"` / `"yes and no"` / `"I think yes"` 등을 모두 0 으로 처리. 작은/verbose judge 모델에선 점수가 lenient 보다 낮게 나올 수 있음 (judge format 순응도까지 같이 측정) |
+
+설정 우선순위 (높은 쪽이 이김):
+1. (legacy 단독 실행) `python evaluation/retrieval_agent/evaluate.py --longmemeval-yesno-policy {lenient,strict}` CLI 플래그
+2. (eval-tool wrapper) `python scripts/generate_config.py --longmemeval-yesno-policy {lenient,strict}` → run_cfg `judge.longmemeval_yesno_policy` 로 박힘
+3. (fallback) `configuration.yml` 의 `retrieval_agent.longmemeval_yesno_policy` (Pydantic default = `lenient`)
+
+p4 quick-start 예 (default lenient — 두 명령은 동일 결과):
+```sh
+python scripts/generate_config.py --problem 4 --run-name p4_pilot \
+    --model-profile my_model --db-profile my_db --k-list 10,20 --length 5
+python scripts/generate_config.py --problem 4 --run-name p4_pilot \
+    --model-profile my_model --db-profile my_db --k-list 10,20 --length 5 \
+    --longmemeval-yesno-policy lenient
+```
+
+내부 검증용으로 strict 를 쓰고 싶을 때:
+```sh
+python scripts/generate_config.py --problem 4 --run-name p4_pilot_strict \
+    --model-profile my_model --db-profile my_db --k-list 10,20 --length 5 \
+    --longmemeval-yesno-policy strict
+python scripts/run_pipeline.py --config configs/runs/p4_pilot_strict.yaml \
+    --stage judge,analyze
+# stdout 첫 줄에 "longmemeval_yesno_policy=strict" 가 박혀 있는지 확인
+```
+
+> 결정 사유 / 테스트 검증 / 다른 진입점에서의 동일 동작은 `docs/msr/20260504_modified_list_v0.5.md` 참고. 정책별 prompt 동작과 실패 패턴은 `docs/msr/20260430_longmemeval_judge_사용가이드.md`.
+
+#### chat-completions text-mode judge 의 `temperature=0` (eval_claude v0.5 후속)
+
+LongMemEval 채점은 plain-text yes/no judge 를 쓴다 (`create_judge_fn(json_mode=False)`). `openai-chat-completions` provider 분기에는 `temperature=0` 이 박혀 있어 채점이 결정적이다 (yes/no 의 sampling noise 회피).
+
+**provider별 적용 차이**:
+- `openai-chat-completions` → `temperature=0` 적용 (모든 chat-completion 호환 호스트가 지원).
+- `openai-responses` → 미적용. 일부 reasoning model 이 `temperature` 를 거부하는 사례가 있어 의도적 보류.
+- `amazon-bedrock` → 미적용. Bedrock Converse API 는 `temperature` 가 top-level kwarg 가 아니라 `inferenceConfig.temperature` 로 들어가야 해서 shape 가 다름.
+
+따라서 judge 모델을 `openai-responses` 또는 `amazon-bedrock` 으로 띄우면 sampling 이 provider 기본값을 따른다. 결과 비교 신뢰성을 높이려면 가능한 경우 chat-completions 호환 endpoint 를 사용하거나 model 측 정책으로 deterministic decoding 을 강제할 것.
 
 ### 6) analyze — "이 run 이 어떤 질문에 답했는지" 보여주는 단계
 
