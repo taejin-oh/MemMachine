@@ -13,7 +13,7 @@ retrieval_agent 경로의 LongMemEval **answer prompt** 를 3-정책 시스템�
 
 | 정책 | 본문 출처 | 평가 제약 충족 | 사용 시나리오 |
 |---|---|---|---|
-| `LME_origin_prompt` (**default**) | `xiaowu0162/LongMemEval` upstream verbatim 복사 (`src/generation/run_generation.py` `answer_prompt_template`, no-merge no-CoT 분기). 위치 `{}` 만 named placeholder 로 변환, 그 외 텍스트 비변경 | ✅ (verbatim) | upstream 논문 baseline 과 직접 비교. MemMachine 의 추론 가이드 없이 순수 upstream prompt 측정 |
+| `LME_origin_prompt` (**default**) | `xiaowu0162/LongMemEval` upstream verbatim 복사 (`src/generation/run_generation.py` `answer_prompt_template`, no-merge no-CoT 분기). 위치 `{}` 만 named placeholder 로 변환, 그 외 텍스트 비변경 | ✅ (verbatim) | upstream **prompt template 영향만 분리해서 측정** 하기 위한 기준점. retrieval / memory formatting / generation pipeline 은 MemMachine `retrieval_agent` 경로를 그대로 사용 — upstream baseline 전체 재현이 아님 |
 | `memmachine_original` | **MemMachine episodic_memory LongMemEval prompt 본문을 retrieval_agent 경로에 적용** (`evaluation/episodic_memory/longmemeval_search.py:36-52` 차용, KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드 포함) + `Current date: {question_date}` placeholder | ✅ (구조적 속성 모두 만족, 단 본문은 verbatim 아님 — hybrid) | 두 진입점(`evaluation/episodic_memory/` 와 `evaluation/retrieval_agent/`) 모두에서 동일한 prompt 본문으로 비교가 필요할 때 |
 | `agent_lightning` | v0.5 까지 사용한 Agent Lightning paper(arXiv:2508.03680) prompt 그대로 | ❌ (Current Date 없음, open-domain fallback 허용, "max 2 sentences" 제약) | v0.5 baseline 점수와 1:1 비교가 필요할 때 |
 
@@ -26,8 +26,8 @@ v0.5 시점 잔여 항목 — `docs/msr/20260430_longmemeval_retrieval_agent_vs_
 3. "max 2 sentences" 출력 제약 — 원본은 길이 cap 없음.
 
 v0.6 의 핵심 변경은 **단일 본문 교체가 아니라 정책 시스템 도입**:
-- default `LME_origin_prompt` 는 upstream 본문을 글자 그대로 복사한 정책 — 이걸 통해 LongMemEval 점수를 보고할 때 "MemMachine 변형 없이 upstream prompt 그대로 측정" 이라고 정확히 말할 수 있음.
-- `memmachine_original` 정책은 **MemMachine 의 episodic_memory LongMemEval 본문을 retrieval_agent 경로에 적용** 한 hybrid — 두 진입점 간 일관성이 필요할 때 옵트인.
+- default `LME_origin_prompt` 는 upstream `answer_prompt_template` 의 no-merge no-CoT 분기 본문**만** verbatim 적용한 정책. retrieval / memory formatting / generation pipeline 은 MemMachine `retrieval_agent` 경로를 그대로 사용하므로, **upstream baseline 전체 재현이 아니라 prompt template 영향 분리용 기준점**. 이 정책에서 보고된 점수는 "본문은 upstream verbatim, 그 외 파이프라인은 MemMachine retrieval_agent" 로 해석해야 함.
+- `memmachine_original` 정책은 **MemMachine 의 episodic_memory LongMemEval prompt 본문을 retrieval_agent 경로에 적용** 한 hybrid — 두 진입점 간 일관성이 필요할 때 옵트인.
 - `agent_lightning` 정책은 v0.5 까지 사용한 prompt 를 그대로 보존 — v0.5 점수와 1:1 비교 baseline.
 
 ### 평가 대상 범위
@@ -80,7 +80,7 @@ v0.6 의 핵심 변경은 **단일 본문 교체가 아니라 정책 시스템 �
 
 | 결정 항목 | 채택 | 사유 |
 |---|---|---|
-| **Default 정책** | **`LME_origin_prompt`** — xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기 verbatim 복사 | MemMachine 의 LongMemEval 점수가 어떤 prompt 본문에서 나왔는지를 default 단계에서 모호함 없이 전달 — "MemMachine 변형 없이 upstream prompt 그대로" |
+| **Default 정책** | **`LME_origin_prompt`** — xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기 verbatim 복사 | default 점수가 어떤 prompt template 본문에서 나왔는지를 모호함 없이 전달. **prompt template 만 upstream verbatim, retrieval / memory formatting / generation pipeline 은 MemMachine `retrieval_agent` 경로 그대로** — upstream baseline 전체 재현이 아니라 prompt template 영향 분리용 기준점 |
 | Hybrid 정책 (`memmachine_original`) | MemMachine episodic_memory LongMemEval prompt 본문을 retrieval_agent 경로에 적용 (`evaluation/episodic_memory/longmemeval_search.py:36-52` 본문 차용) | 두 진입점(`episodic_memory/` 와 `retrieval_agent/`) 모두에서 동일한 prompt 본문으로 평가 비교가 필요한 경우 |
 | v0.5 baseline 정책 (`agent_lightning`) | Agent Lightning paper prompt 그대로 보존 | v0.5 점수와 1:1 비교 |
 | Date 포맷 | `"%A, %B %d, %Y at %I:%M %p"` (e.g. "Monday, April 10, 2023 at 11:07 PM") | `episodic_memory/longmemeval_search.py:175-177` 와 동일 → 두 entrypoint 간 일치 |

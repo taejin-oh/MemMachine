@@ -208,7 +208,7 @@ CLI 인자와 JSON 이 충돌하면 CLI 가 우선.
 
 | 정책 | 본문 출처 | 평가 제약 충족 | 사용 시점 |
 |---|---|---|---|
-| `LME_origin_prompt` (**default**) | `xiaowu0162/LongMemEval` upstream verbatim 복사 (`answer_prompt_template`, no-merge no-CoT 분기) | ✅ verbatim | upstream 논문 baseline 과 직접 비교 — MemMachine 변형 없이 순수 upstream prompt 측정 |
+| `LME_origin_prompt` (**default**) | `xiaowu0162/LongMemEval` upstream verbatim 복사 (`answer_prompt_template`, no-merge no-CoT 분기) | ✅ verbatim | upstream **prompt template 영향만 분리** 측정. retrieval / memory formatting / generation pipeline 은 MemMachine `retrieval_agent` 경로 그대로 사용 — upstream baseline 전체 재현이 아닌 prompt template 영향 분리용 기준점 |
 | `memmachine_original` | **MemMachine episodic_memory LongMemEval prompt 본문을 retrieval_agent 경로에 적용** (`evaluation/episodic_memory/longmemeval_search.py:36-52` 차용, KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드 포함) | ✅ (구조 충족, 본문은 hybrid) | 두 진입점 (`episodic_memory/` + `retrieval_agent/`) 간 동일 본문 비교가 필요할 때 |
 | `agent_lightning` | v0.5 까지 사용한 Agent Lightning paper(arXiv:2508.03680) prompt 그대로 | ❌ (Current Date 없음, open-domain fallback, length cap) | v0.5 baseline 점수와 1:1 비교 |
 

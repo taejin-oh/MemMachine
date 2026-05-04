@@ -17,12 +17,16 @@ if str(REPO_ROOT) not in sys.path:
 
 from evaluation.retrieval_agent.cli_utils import positive_int  # noqa: E402
 
-# Aligned with xiaowu0162/LongMemEval upstream (src/generation/run_generation.py:46-69):
-# memory-only basis, Current Date field, no length cap. The body retains
-# MemMachine's KNOWLEDGE UPDATES / PLANNED ACTIONS reasoning guides
-# (originally adapted from Mastra OM, see evaluation/episodic_memory/
-# longmemeval_search.py:36-52) — those guides reinforce the temporal-reasoning
-# and knowledge-update task categories called out in the LongMemEval paper.
+# MemMachine episodic_memory LongMemEval prompt body
+# (`evaluation/episodic_memory/longmemeval_search.py:36-52`) applied to the
+# retrieval_agent path. Satisfies LongMemEval's key prompt-side evaluation
+# constraints — memory-only basis, Current Date field, no open-domain
+# fallback, no length cap — but the body itself is NOT a verbatim copy of
+# xiaowu0162/LongMemEval upstream. It additionally carries MemMachine's
+# KNOWLEDGE UPDATES / PLANNED ACTIONS reasoning hints (originally adapted
+# from Mastra OM); those reinforce the temporal-reasoning and
+# knowledge-update LongMemEval task categories. For an upstream-template
+# baseline, opt into _ANSWER_PROMPT_LME_ORIGIN instead.
 _ANSWER_PROMPT_MEMMACHINE_ORIGINAL = """You are a helpful assistant with access to extensive conversation history.
 When answering questions, carefully review the conversation history to identify and use any relevant user preferences, interests, or specific details they have mentioned.
 
