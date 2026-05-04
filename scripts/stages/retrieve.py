@@ -108,6 +108,38 @@ def _apply_cell_to_config(config_path: str, params: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_answer_prompt_policy(
+    run_cfg: dict[str, Any], config_path: str
+) -> str:
+    """Decide LongMemEval answer prompt policy.
+
+    Priority: ``run_cfg.evaluation.longmemeval.answer_prompt`` (run-yaml override)
+    wins; otherwise read ``retrieval_agent.longmemeval_answer_prompt`` from the
+    working configuration.yml. Validates the final value against the bodies
+    registered in ``longmemeval_test._ANSWER_PROMPT_BY_POLICY``.
+    """
+    from evaluation.retrieval_agent.longmemeval_test import (
+        _ANSWER_PROMPT_BY_POLICY,
+    )
+
+    policy = (
+        ((run_cfg.get("evaluation") or {}).get("longmemeval") or {}).get(
+            "answer_prompt"
+        )
+    )
+    if policy is None:
+        from memmachine_server.common.configuration import Configuration
+
+        conf = Configuration.load_yml_file(config_path)
+        policy = conf.retrieval_agent.longmemeval_answer_prompt
+    valid = sorted(_ANSWER_PROMPT_BY_POLICY)
+    if policy not in _ANSWER_PROMPT_BY_POLICY:
+        raise ValueError(
+            f"longmemeval_answer_prompt must be one of {valid}, got {policy!r}"
+        )
+    return policy
+
+
 async def _run_longmemeval_cell(
     run_cfg: dict[str, Any],
     config_path: str,
@@ -118,9 +150,10 @@ async def _run_longmemeval_cell(
     # longmemeval_search() so recall numbers stay comparable. These helpers are
     # private-prefixed but stable; SLF001 is allowed for scripts/.
     from evaluation.retrieval_agent.longmemeval_test import (
-        ANSWER_PROMPT,
         _collect_supporting_facts,
         _collect_turn_contents,
+        _format_question_date,
+        _select_answer_prompt,
         load_longmemeval_dataset,
     )
     from evaluation.utils import agent_utils
@@ -152,6 +185,10 @@ async def _run_longmemeval_cell(
     search_limit = int(params.get("search_limit", 20))
     pure_llm = test_target == "llm"
 
+    answer_prompt_policy = _resolve_answer_prompt_policy(run_cfg, config_path)
+    answer_prompt = _select_answer_prompt(answer_prompt_policy)
+    needs_question_date = "{question_date}" in answer_prompt
+
     tasks = []
     concurrency = int(run_cfg.get("evaluation", {}).get("search_concurrency", 4))
     responses: list[tuple[str, dict[str, Any]]] = []
@@ -167,9 +204,17 @@ async def _run_longmemeval_cell(
         all_content = _collect_turn_contents(sample)
         full_content = "\n".join(all_content)
 
+        prompt_extra: dict[str, str] | None = None
+        if needs_question_date:
+            prompt_extra = {
+                "question_date": _format_question_date(
+                    sample.get("question_date", "")
+                )
+            }
+
         tasks.append(
             agent_utils.process_question(
-                answer_prompt=ANSWER_PROMPT,
+                answer_prompt=answer_prompt,
                 query_agent=query_agent,
                 memory=memory,
                 answer_model=answer_model,
@@ -180,6 +225,7 @@ async def _run_longmemeval_cell(
                 search_limit=search_limit,
                 full_content=full_content if pure_llm else None,
                 extra_attributes={"question_id": sample.get("question_id", "")},
+                prompt_extra=prompt_extra,
             )
         )
         if len(tasks) >= concurrency or sample is dataset[-1]:
@@ -357,9 +403,16 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
     bench_name = run_cfg["benchmark"]["name"]
 
     sweep_cells = _expand_sweep(run_cfg.get("sweep", {}))
-    print(
-        f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  config={config_path}"
+    header = (
+        f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  "
+        f"config={config_path}"
     )
+    if bench_name == "longmemeval":
+        header += (
+            "  longmemeval_answer_prompt="
+            f"{_resolve_answer_prompt_policy(run_cfg, config_path)}"
+        )
+    print(header)
 
     retrieve_rows: list[dict[str, Any]] = []
     generate_rows: list[dict[str, Any]] = []

@@ -136,10 +136,14 @@ def load_longmemeval_local(
     """Read a local LongMemEval JSON and apply the same minimal normalize as
     `evaluation/retrieval_agent/longmemeval_test.py:load_longmemeval_dataset()`.
 
-    Mirrors that function's `min(length, len(records))` semantics and four-field
-    normalize (question / answer / question_type / haystack_sessions / split)
-    so downstream `_collect_supporting_facts` / `_collect_turn_contents` /
-    `process_question` see the same shape regardless of source.
+    Mirrors that function's `min(length, len(records))` semantics and the same
+    field normalize (question / answer / question_type / haystack_sessions /
+    question_date / split) so downstream `_collect_supporting_facts` /
+    `_collect_turn_contents` / `process_question` see the same shape
+    regardless of source. ``question_date`` parity is required because the
+    LME_origin_prompt and memmachine_original answer-prompt policies both
+    interpolate a ``Current date:`` line — synthetic fixtures missing the
+    field would render an empty value otherwise.
     """
     import json
 
@@ -157,6 +161,7 @@ def load_longmemeval_local(
         normalized["answer"] = str(normalized.get("answer", ""))
         normalized.setdefault("question_type", "unknown")
         normalized.setdefault("haystack_sessions", [])
+        normalized["question_date"] = str(normalized.get("question_date", "") or "")
         normalized["split"] = split
         out.append(normalized)
     return out

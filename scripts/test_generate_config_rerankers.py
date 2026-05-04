@@ -271,6 +271,7 @@ def _ns(**overrides):
         "k_list": None,
         "judge_model": None,
         "longmemeval_yesno_policy": None,
+        "longmemeval_answer_prompt": None,
         "length": None,
         "n_runs": None,
         "reuse_run": None,
@@ -384,3 +385,57 @@ def test_load_longmemeval_local_length_exceeds_returns_all(tmp_path):
     fp.write_text(json.dumps([{"question": "q", "answer": "a"}]))
     out = load_longmemeval_local(fp, length=999)
     assert len(out) == 1
+
+
+def test_load_longmemeval_local_preserves_question_date(tmp_path):
+    """Local loader must keep question_date verbatim — both LME_origin_prompt
+    and memmachine_original answer-prompt policies render this into the
+    'Current date:' line via _format_question_date(). Parity with
+    evaluation/retrieval_agent/longmemeval_test.py:load_longmemeval_dataset()
+    normalization."""
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fp = tmp_path / "with_date.json"
+    fp.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "q",
+                    "answer": "a",
+                    "question_date": "2023/04/10 (Mon) 23:07",
+                }
+            ]
+        )
+    )
+    out = load_longmemeval_local(fp, length=1)
+    assert out[0]["question_date"] == "2023/04/10 (Mon) 23:07"
+
+
+def test_load_longmemeval_local_question_date_missing_defaults_empty(tmp_path):
+    """Synthetic fixtures often omit question_date. Local loader must default
+    to '' so the answer prompt's 'Current date:' line stays renderable
+    (str.format won't KeyError)."""
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fp = tmp_path / "no_date.json"
+    fp.write_text(json.dumps([{"question": "q", "answer": "a"}]))
+    out = load_longmemeval_local(fp, length=1)
+    assert out[0]["question_date"] == ""
+
+
+def test_load_longmemeval_local_question_date_none_normalizes_to_empty(tmp_path):
+    """When the JSON contains ``question_date: null`` (HF cleaned dump occasionally
+    has this), the loader must coerce it to '' instead of leaving the literal
+    None — otherwise format() would render the string 'None' as the date."""
+    import json
+
+    from scripts.stages._common import load_longmemeval_local
+
+    fp = tmp_path / "null_date.json"
+    fp.write_text(json.dumps([{"question": "q", "answer": "a", "question_date": None}]))
+    out = load_longmemeval_local(fp, length=1)
+    assert out[0]["question_date"] == ""
