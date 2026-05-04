@@ -39,7 +39,13 @@ _LONGMEMEVAL_TASKS = frozenset(
 )
 
 
-def process_sample(group_key: str, item: dict, json_call_fn, get_text_call_fn):
+def process_sample(
+    group_key: str,
+    item: dict,
+    json_call_fn,
+    get_text_call_fn,
+    longmemeval_yesno_policy: str,
+):
     question = str(item["question"])
     locomo_answer = str(item["golden_answer"])
     response = str(item["model_answer"])
@@ -57,6 +63,7 @@ def process_sample(group_key: str, item: dict, json_call_fn, get_text_call_fn):
             category,
             str(item.get("question_id", "")),
             get_text_call_fn(),
+            longmemeval_yesno_policy,
         )
     else:
         llm_score = evaluate_llm_judge(question, locomo_answer, response, json_call_fn)
@@ -108,6 +115,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to configuration.yml (used to select the judge LLM)",
     )
+    parser.add_argument(
+        "--longmemeval-yesno-policy",
+        type=str,
+        choices=["lenient", "strict"],
+        default="lenient",
+        help=(
+            "Parser policy for LongMemEval yes/no judge replies. "
+            "Default: lenient (upstream-like substring behavior)."
+        ),
+    )
     return parser
 
 
@@ -146,6 +163,7 @@ def main():
                 item,
                 json_call_fn,
                 get_text_call_fn,
+                args.longmemeval_yesno_policy,
             )
             for group_key, item in sample_tasks
         ]

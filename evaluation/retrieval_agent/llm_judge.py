@@ -7,6 +7,7 @@ import logging
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from typing import Literal
 
 import json_repair
 import numpy as np
@@ -324,8 +325,10 @@ def evaluate_llm_judge(
 # Stricter than the original LongMemEval ``'yes' in lower(raw)`` heuristic.
 _YES_NO_RE = re.compile(r"\A\s*(yes|no)[\s.!?,]*\Z", re.IGNORECASE)
 
+LongMemEvalYesNoPolicy = Literal["lenient", "strict"]
 
-def _parse_yes_no(raw: str) -> int:
+
+def _parse_yes_no(raw: str, policy: LongMemEvalYesNoPolicy = "lenient") -> int:
     """Parse a yes/no judge reply, defaulting to 0 (WRONG) on anything else.
 
     Accepts only an exact ``yes`` / ``no`` token, optionally with leading or
@@ -333,10 +336,18 @@ def _parse_yes_no(raw: str) -> int:
     ``,``). Any extra text — including ``yes and no``, ``not yes``,
     ``yesterday``, ``I think yes`` — returns 0. See :data:`_YES_NO_RE`.
     """
-    match = _YES_NO_RE.match(raw or "")
-    if match is None:
-        return 0
-    return 1 if match.group(1).lower() == "yes" else 0
+    text = raw or ""
+    if policy == "lenient":
+        return 1 if "yes" in text.lower() else 0
+    if policy == "strict":
+        match = _YES_NO_RE.match(text)
+        if match is None:
+            return 0
+        return 1 if match.group(1).lower() == "yes" else 0
+    raise ValueError(
+        f"Unsupported LongMemEval yes/no policy: {policy!r}. "
+        "Expected one of: 'lenient', 'strict'."
+    )
 
 
 def evaluate_llm_judge_longmemeval(
@@ -346,6 +357,7 @@ def evaluate_llm_judge_longmemeval(
     question_type: str,
     question_id: str,
     call_fn: Callable[[str], str],
+    yesno_policy: LongMemEvalYesNoPolicy = "lenient",
 ) -> int:
     """LongMemEval judge: task-specific prompt + plain-text yes/no scoring.
 
@@ -359,7 +371,7 @@ def evaluate_llm_judge_longmemeval(
     prompt = get_anscheck_prompt(
         question_type, question, gold_answer, generated_answer, abstention=abstention
     )
-    return _parse_yes_no(call_fn(prompt) or "")
+    return _parse_yes_no(call_fn(prompt) or "", policy=yesno_policy)
 
 
 def main():

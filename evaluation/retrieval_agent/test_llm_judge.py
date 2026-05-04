@@ -342,7 +342,7 @@ def test_longmemeval_preference_prompt_used():
     ],
 )
 def test_parse_yes_no_strict(raw, expected):
-    assert _parse_yes_no(raw) == expected
+    assert _parse_yes_no(raw, policy="strict") == expected
 
 
 def test_longmemeval_yesterday_false_positive_rejected():
@@ -350,7 +350,7 @@ def test_longmemeval_yesterday_false_positive_rejected():
     fn, _ = _capturing_call_fn("yesterday")
     assert (
         evaluate_llm_judge_longmemeval(
-            "q", "gold", "gen", "temporal-reasoning", "qid_1", fn
+            "q", "gold", "gen", "temporal-reasoning", "qid_1", fn, "strict"
         )
         == 0
     )
@@ -361,7 +361,7 @@ def test_longmemeval_not_yes_rejected():
     fn, _ = _capturing_call_fn("not yes")
     assert (
         evaluate_llm_judge_longmemeval(
-            "q", "gold", "gen", "single-session-user", "qid_1", fn
+            "q", "gold", "gen", "single-session-user", "qid_1", fn, "strict"
         )
         == 0
     )
@@ -372,7 +372,7 @@ def test_longmemeval_yes_and_no_rejected():
     fn, _ = _capturing_call_fn("yes and no")
     assert (
         evaluate_llm_judge_longmemeval(
-            "q", "gold", "gen", "multi-session", "qid_1", fn
+            "q", "gold", "gen", "multi-session", "qid_1", fn, "strict"
         )
         == 0
     )
@@ -383,7 +383,7 @@ def test_longmemeval_i_think_yes_rejected():
     fn, _ = _capturing_call_fn("I think yes")
     assert (
         evaluate_llm_judge_longmemeval(
-            "q", "gold", "gen", "single-session-user", "qid_1", fn
+            "q", "gold", "gen", "single-session-user", "qid_1", fn, "strict"
         )
         == 0
     )

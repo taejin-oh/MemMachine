@@ -75,12 +75,21 @@ def test_run_routes_longmemeval_category_to_longmemeval_judge(monkeypatch, tmp_p
     longmemeval_calls = []
     legacy_calls = []
 
-    def fake_lme(question, gold_answer, generated_answer, question_type, question_id, call_fn):
+    def fake_lme(
+        question,
+        gold_answer,
+        generated_answer,
+        question_type,
+        question_id,
+        call_fn,
+        yesno_policy="lenient",
+    ):
         longmemeval_calls.append(
             {
                 "question_type": question_type,
                 "question_id": question_id,
                 "call_fn": call_fn,
+                "yesno_policy": yesno_policy,
             }
         )
         return 1
@@ -106,6 +115,7 @@ def test_run_routes_longmemeval_category_to_longmemeval_judge(monkeypatch, tmp_p
     assert len(longmemeval_calls) == 1
     assert longmemeval_calls[0]["question_type"] == "temporal-reasoning"
     assert longmemeval_calls[0]["question_id"] == "qid_1"
+    assert longmemeval_calls[0]["yesno_policy"] == "lenient"
     # text-mode judge (json_mode=False) should be passed
     assert longmemeval_calls[0]["call_fn"] is text_judge
     assert legacy_calls == []

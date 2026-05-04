@@ -100,8 +100,19 @@ def run(run_cfg: dict[str, Any]) -> Path:
 
     config_path = cm.resolve_config_path(run_cfg)
     judge_config = _judge_config_path(run_cfg, config_path)
+    yesno_policy = (run_cfg.get("judge") or {}).get(
+        "longmemeval_yesno_policy", "lenient"
+    )
+    if yesno_policy not in {"lenient", "strict"}:
+        raise ValueError(
+            "judge.longmemeval_yesno_policy must be 'lenient' or 'strict', "
+            f"got {yesno_policy!r}"
+        )
     rows = cm.read_jsonl(generate_path)
-    print(f"[judge] {len(rows)} rows  config={judge_config}")
+    print(
+        f"[judge] {len(rows)} rows  config={judge_config}  "
+        f"longmemeval_yesno_policy={yesno_policy}"
+    )
 
     json_call_fn = create_judge_fn(judge_config)
     text_call_fn: Callable[[str], str] | None = None
@@ -123,6 +134,7 @@ def run(run_cfg: dict[str, Any]) -> Path:
                 question_type=category,
                 question_id=str(row.get("question_id", "")),
                 call_fn=text_call_fn,
+                yesno_policy=yesno_policy,
             )
         else:
             score = evaluate_llm_judge(
