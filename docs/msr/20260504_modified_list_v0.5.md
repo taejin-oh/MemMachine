@@ -61,7 +61,7 @@ v0.4 시점의 strict whole-string 파서가 **default = lenient (원본 LongMem
 
 ### Out of scope
 
-- ~~Answer prompt 정렬 (v2 §2 잔여 항목) 그대로 미해결.~~ → **v0.6 (`20260504_modified_list_v0.6.md`) 에서 해결됨**: opt-in `longmemeval_answer_prompt` 3-정책 도입 (default `LME_origin_prompt` upstream verbatim, `memmachine_original` 하이브리드, `agent_lightning` v0.5 baseline).
+- ~~Answer prompt 평가 제약 정렬 (v2 §2 잔여 항목) 그대로 미해결.~~ → **v0.6 (`20260504_modified_list_v0.6.md`) 에서 해소됨**: opt-in `longmemeval_answer_prompt` 3-정책 시스템 도입. default `LME_origin_prompt` 는 xiaowu0162 upstream verbatim 복사. `memmachine_original` 은 episodic_memory 본문을 retrieval_agent 경로에 적용한 hybrid. `agent_lightning` 은 v0.5 baseline.
 - `generate_scores.py` macro / abstention metric 추가 미진행.
 - `create_judge_fn` C901 complexity 경고 미해결.
 

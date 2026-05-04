@@ -26,7 +26,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 | Judge prompt — Wrapper `scripts/stages/judge.py` 경로 (LongMemEval) | 단일 `ACCURACY_PROMPT` (분기 없음) | **task별 6분기 + abstention 분기** — review-fix 에서 wrapper 도 동일 routing 적용 |
 | Judge 출력 형식 (LongMemEval) | JSON `{label: CORRECT/WRONG}` 강제 | **plain-text yes/no** (`max_tokens=10`). yes/no 파싱은 `_parse_yes_no` 로 **default lenient (`'yes' in lower(raw)`, 원본 동일)** + 옵션 strict (whole-string). `retrieval_agent.longmemeval_yesno_policy` / `--longmemeval-yesno-policy` / `judge.longmemeval_yesno_policy` 로 전환 가능 — v0.5 |
 | Judge prompt (LOCOMO/Wiki/HotpotQA) — 두 경로 모두 | 단일 `ACCURACY_PROMPT` | (변경 없음) 단일 `ACCURACY_PROMPT` 유지 |
-| Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | **v0.6 (`20260504_modified_list_v0.6.md`) 에서 3-정책화** — `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "LME_origin_prompt"`. default `LME_origin_prompt` 는 xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기를 글자 그대로 복사한 본문. 하이브리드(`memmachine_original`) 또는 v0.5 baseline(`agent_lightning`) 비교가 필요할 때 명시적 옵트인 |
+| Answer prompt (LongMemEval) | Agent Lightning 식, Current Date 없음, open-domain fallback 허용 | **v0.6 (`20260504_modified_list_v0.6.md`) 에서 3-정책 시스템 도입** — `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "LME_origin_prompt"`. **default `LME_origin_prompt` 는 xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기 verbatim 복사**. `memmachine_original` 은 MemMachine episodic_memory prompt 본문을 retrieval_agent 경로에 적용한 hybrid (`evaluation/episodic_memory/longmemeval_search.py:36-52` 차용). `agent_lightning` 은 v0.5 baseline 보존. LongMemEval 원본의 핵심 평가 제약(Current Date / memory-only / no open-domain fallback / no length cap)은 default + memmachine_original 양쪽 모두에서 충족 |
 | Metric (LongMemEval) | task-averaged / abstention 미보고 | (변경 없음) v1 결론 그대로 — **여전히 미보고** |
 | `generate_scores.py` 카테고리 매핑 dead code | dead code 존재 | (변경 없음) — 별도 PR 후보 |
 
@@ -62,7 +62,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 | v1 시사점 | v2 갱신 |
 |---|---|
 | **Judge 충실도 손실** | ✅ **해결 (양쪽 경로)** — `evaluation/retrieval_agent/evaluate.py` (legacy) 와 `scripts/run_pipeline.py --stage judge` 두 진입점 모두 LongMemEval 한해 task별 분기 + abstention 평가 복원. yes/no 파싱은 v0.5 부터 **default lenient (원본 100% 일치)**, strict 는 옵트인. paper 수치 재현 가능 |
-| **Answer prompt 평가 누수 위험** | ✅ **해결 (v0.6)** — `longmemeval_answer_prompt` 정책 도입 (default `memmachine_original`). open-domain fallback 제거, `Current date: {question_date}` 추가, length cap 제거. `agent_lightning` 옵트인으로 baseline rerun 가능 |
+| **Answer prompt 평가 누수 위험** | ✅ **해결 (v0.6)** — `longmemeval_answer_prompt` 3-정책 도입. default `LME_origin_prompt` (upstream verbatim) 와 `memmachine_original` (episodic_memory 본문 retrieval_agent 적용 hybrid) 모두 LongMemEval 원본 평가 제약 (memory-only / Current Date / no open-domain fallback / no length cap) 충족. `agent_lightning` 은 v0.5 baseline rerun 용으로 의도적 비충족 보존 |
 | **표준 지표 부재** | 🟥 미해결 — task-averaged / abstention accuracy / NDCG / recall@k 미보고 |
 | **레포 내부에 충실 버전 존재** | 참고 사항으로 유효 — `episodic_memory/longmemeval_evaluate.py:155` 의 `get_anscheck_prompt` 와 `retrieval_agent/llm_judge.py` 의 신규 함수가 **본문이 동일한 두 정적 카피** 로 공존 (의도된 결정 — import 의존성 추가 회피) |
 
@@ -71,7 +71,7 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 | 항목 | 상태 |
 |---|---|
 | `llm_judge.py` 의 task별 분기 도입 (`get_anscheck_prompt` + `_abs` 검출) | ✅ 완료 (PR #27 / commit `684f1d6`) |
-| `ANSWER_PROMPT` 에 `{question_date}` 추가, 외부 지식 금지, 출력 길이 제약 완화 | ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`) — `longmemeval_answer_prompt` 3-정책 도입. default `LME_origin_prompt` (verbatim upstream) + `memmachine_original` (하이브리드 옵트인) + `agent_lightning` (v0.5 baseline 옵트인) |
+| `ANSWER_PROMPT` 에 `{question_date}` 추가, 외부 지식 금지, 출력 길이 제약 완화 | ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`) — `longmemeval_answer_prompt` 3-정책 시스템 도입. default `LME_origin_prompt` (xiaowu0162 upstream verbatim 복사) + `memmachine_original` (episodic_memory 본문을 retrieval_agent 에 적용한 hybrid 옵트인) + `agent_lightning` (v0.5 baseline 옵트인). 평가 제약은 default + hybrid 양쪽 모두에서 충족 |
 | `generate_scores.py` 에 macro task-averaged / abstention-only accuracy 추가 | ❌ 미진행 — **v2 잔여 항목** |
 | dead code `categories` 매핑 제거 / LongMemEval task name 갱신 | ❌ 미진행 — **v2 잔여 항목** |
 | chunk-level gold relevance 있을 때 NDCG/recall@k 추가 보고 | ❌ 미진행 (선택) |
@@ -82,11 +82,12 @@ PR #27 의 후속 commit (`684f1d6` / `465d8b8` / `d55caf2` + review-fix `c1`) �
 
 우선순위 순:
 
-1. ~~**Answer prompt 정렬**~~ — ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`):
-   - `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "LME_origin_prompt"` 3-정책 도입 (default = upstream verbatim).
-   - default `LME_origin_prompt` 는 **xiaowu0162/LongMemEval upstream verbatim** — `src/generation/run_generation.py` `answer_prompt_template` 의 no-merge no-CoT 분기. 위치 `{}` placeholder 만 named (`{memories}` / `{question_date}` / `{question}`) 로 변환, 그 외 텍스트 비변경.
-   - `memmachine_original` 정책으로 **하이브리드 본문** (`evaluation/episodic_memory/longmemeval_search.py:36-52` + KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드) 옵트인 가능.
-   - `agent_lightning` 정책은 v0.5 까지 사용한 prompt 그대로 보존, baseline rerun 용.
+1. ~~**Answer prompt 평가 제약 정렬**~~ — ✅ **v0.6 완료** (`20260504_modified_list_v0.6.md`):
+   - `longmemeval_answer_prompt: Literal["memmachine_original", "agent_lightning", "LME_origin_prompt"] = "LME_origin_prompt"` 3-정책 시스템 도입.
+   - **default `LME_origin_prompt` 는 xiaowu0162/LongMemEval upstream `answer_prompt_template` no-merge no-CoT 분기 verbatim 복사** — 위치 `{}` placeholder 만 named (`{memories}` / `{question_date}` / `{question}`) 로 변환, 그 외 텍스트 비변경. MemMachine 변형 없음.
+   - `memmachine_original` 정책은 **MemMachine episodic_memory LongMemEval prompt 본문(`evaluation/episodic_memory/longmemeval_search.py:36-52`)을 retrieval_agent 경로에 적용한 hybrid** — KNOWLEDGE UPDATES / PLANNED ACTIONS 추론 가이드 포함 + `Current date: {question_date}` placeholder. 두 진입점 간 본문 일관성이 필요한 경우 옵트인.
+   - `agent_lightning` 정책은 v0.5 까지 사용한 Agent Lightning paper prompt 그대로 보존, v0.5 baseline rerun 용.
+   - LongMemEval 원본의 핵심 평가 제약 (Current Date 제공, memory 기반 답변, open-domain fallback 제거, 출력 길이 제한 제거) 은 default `LME_origin_prompt` 와 `memmachine_original` 양쪽 모두에서 충족됨. `agent_lightning` 은 비충족 (의도적 — v0.5 점수 비교용).
    - `agent_utils.process_question(prompt_extra=...)` 시그니처 확장 — sibling benchmark (HotpotQA/LoCoMo/Wiki-MH) backward compat 유지.
    - `_format_question_date()` 가 LongMemEval upstream `"YYYY/MM/DD (Day) HH:MM"` → `"%A, %B %d, %Y at %I:%M %p"` 변환.
    - 두 entrypoint (legacy `longmemeval_test.py`, wrapper `scripts/stages/retrieve.py`) 모두 동일 정책 적용 + 실행 시점 로그 출력.
