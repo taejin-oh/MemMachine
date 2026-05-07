@@ -25,7 +25,10 @@ for extra in (
 from evaluation.retrieval_agent.longmemeval_test import (  # noqa: E402
     _ANSWER_PROMPT_AGENT_LIGHTNING,
     _ANSWER_PROMPT_BY_POLICY,
+    _ANSWER_PROMPT_EDWIN1,
+    _ANSWER_PROMPT_EDWIN3,
     _ANSWER_PROMPT_LME_ORIGIN,
+    _ANSWER_PROMPT_LME_ORIGIN_COT,
     _ANSWER_PROMPT_MEMMACHINE_ORIGINAL,
     ANSWER_PROMPT,
     _format_question_date,
@@ -128,12 +131,156 @@ def test_public_alias_points_to_default_policy():
 
 
 def test_policy_registry_keys():
-    """Policy registry must list all three bodies."""
+    """Policy registry must list every supported policy body."""
     assert set(_ANSWER_PROMPT_BY_POLICY) == {
         "memmachine_original",
         "agent_lightning",
         "LME_origin_prompt",
+        "LME_origin_cot_prompt",
+        "edwin1",
+        "edwin3",
     }
+
+
+# ---------------------------------------------------------------------------
+# LME_origin_cot_prompt (xiaowu0162/LongMemEval upstream CoT branch)
+# ---------------------------------------------------------------------------
+
+
+def test_lme_origin_cot_prompt_is_verbatim_upstream():
+    """LME_origin_cot_prompt must match xiaowu0162/LongMemEval upstream verbatim
+    (src/generation/run_generation.py answer_prompt_template, cot=True branch).
+
+    Differs from LME_origin_prompt by exactly two changes:
+      - one CoT instruction sentence inserted into the preamble, and
+      - the trailing ``Answer (step by step):`` cue (vs. ``Answer:``).
+    Only positional ``{}`` placeholders are converted to named ones — no
+    other text is altered. This test guards against accidental drift.
+    """
+    expected = (
+        "I will give you several history chats between you and a user. "
+        "Please answer the question based on the relevant chat history. "
+        "Answer the question step by step: first extract all the relevant "
+        "information, and then reason over the information to get the answer."
+        "\n\n\n"
+        "History Chats:\n\n{memories}\n\n"
+        "Current Date: {question_date}\n"
+        "Question: {question}\n"
+        "Answer (step by step):"
+    )
+    assert expected == _ANSWER_PROMPT_LME_ORIGIN_COT
+
+
+def test_lme_origin_cot_prompt_renders_with_question_date():
+    """CoT prompt must format with the same kwargs as every other policy."""
+    prompt = _ANSWER_PROMPT_LME_ORIGIN_COT.format(
+        memories="MEM",
+        question="Q",
+        question_date="Monday, April 10, 2023 at 11:07 PM",
+    )
+    assert "MEM" in prompt
+    assert "Q" in prompt
+    assert "Current Date: Monday, April 10, 2023 at 11:07 PM" in prompt
+    # CoT-specific markers — present in cot=True, absent in no-CoT.
+    assert "step by step" in prompt
+    assert prompt.endswith("Answer (step by step):")
+
+
+def test_lme_origin_cot_prompt_differs_from_no_cot():
+    """The CoT and no-CoT bodies must be distinct (sanity guard).
+
+    Both share the upstream framing — this test pins that the CoT-specific
+    additions are present in CoT and absent in no-CoT.
+    """
+    assert _ANSWER_PROMPT_LME_ORIGIN_COT != _ANSWER_PROMPT_LME_ORIGIN
+    assert "step by step" not in _ANSWER_PROMPT_LME_ORIGIN
+    assert "step by step" in _ANSWER_PROMPT_LME_ORIGIN_COT
+
+
+# ---------------------------------------------------------------------------
+# edwin1 / edwin3 (docs/msr/edwin_prompt.md alternates)
+# ---------------------------------------------------------------------------
+
+
+def test_edwin1_prompt_renders_with_question_date():
+    """EDWIN1 must format with memories+question+question_date (placeholders normalized)."""
+    prompt = _ANSWER_PROMPT_EDWIN1.format(
+        memories="MEM",
+        question="Q",
+        question_date="Monday, April 10, 2023 at 11:07 PM",
+    )
+    assert "MEM" in prompt
+    assert "Q" in prompt
+    # docs/msr/edwin_prompt.md uses the label "Question timestamp:" — the
+    # label text is preserved verbatim, only the placeholder name is
+    # normalized to {question_date}.
+    assert "Question timestamp: Monday, April 10, 2023 at 11:07 PM" in prompt
+    # 8-rule reasoning prompt: each numbered rule should be present.
+    for n in range(1, 9):
+        assert f"\n{n}. " in prompt
+    # Length cue from EDWIN1 — pinning so future edits don't silently drop it.
+    assert "no more than a couple of sentences" in prompt
+
+
+def test_edwin1_prompt_has_no_unsubstituted_placeholders():
+    """After format(), no ``{...}`` placeholder fragments should remain.
+
+    Guards against accidental ``{joined_history}`` / ``{question_timestamp}``
+    leftovers from the docs/msr source — those would break str.format() calls
+    elsewhere in the pipeline.
+    """
+    prompt = _ANSWER_PROMPT_EDWIN1.format(
+        memories="MEM", question="Q", question_date="DATE"
+    )
+    assert "{joined_history}" not in prompt
+    assert "{question_timestamp}" not in prompt
+    assert "{memories}" not in prompt
+    assert "{question_date}" not in prompt
+
+
+def test_edwin3_prompt_renders_with_question_date():
+    """EDWIN3 must format with memories+question+question_date."""
+    prompt = _ANSWER_PROMPT_EDWIN3.format(
+        memories="MEM",
+        question="Q",
+        question_date="Monday, April 10, 2023 at 11:07 PM",
+    )
+    assert "MEM" in prompt
+    assert "Q" in prompt
+    assert "Current date: Monday, April 10, 2023 at 11:07 PM" in prompt
+    # EDWIN3 distinguishing markers vs memmachine_original:
+    assert "MOST RECENT USER INPUT" in prompt
+    # KNOWLEDGE UPDATES / PLANNED ACTIONS guides preserved from the source.
+    assert "KNOWLEDGE UPDATES" in prompt
+    assert "PLANNED ACTIONS" in prompt
+    # Unlike memmachine_original, EDWIN3 omits the <history>...</history> wrap.
+    assert "<history>" not in prompt
+    assert "</history>" not in prompt
+
+
+def test_edwin3_prompt_has_no_unsubstituted_placeholders():
+    """After format(), no ``{...}`` placeholder fragments should remain."""
+    prompt = _ANSWER_PROMPT_EDWIN3.format(
+        memories="MEM", question="Q", question_date="DATE"
+    )
+    assert "{joined_history}" not in prompt
+    assert "{question_timestamp}" not in prompt
+    assert "{memories}" not in prompt
+    assert "{question_date}" not in prompt
+
+
+def test_edwin3_distinct_from_memmachine_original():
+    """EDWIN3 is closely related to memmachine_original but must not be identical.
+
+    Pins the two distinguishing changes documented in the prompt body
+    docstring: the MOST RECENT USER INPUT paragraph (added) and the absence
+    of the ``<history>...</history>`` wrapper.
+    """
+    assert _ANSWER_PROMPT_EDWIN3 != _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
+    assert "MOST RECENT USER INPUT" in _ANSWER_PROMPT_EDWIN3
+    assert "MOST RECENT USER INPUT" not in _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
+    assert "<history>" in _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
+    assert "<history>" not in _ANSWER_PROMPT_EDWIN3
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +300,20 @@ def test_select_answer_prompt_agent_lightning():
 
 def test_select_answer_prompt_lme_origin():
     assert _select_answer_prompt("LME_origin_prompt") is _ANSWER_PROMPT_LME_ORIGIN
+
+
+def test_select_answer_prompt_lme_origin_cot():
+    assert _select_answer_prompt("LME_origin_cot_prompt") is (
+        _ANSWER_PROMPT_LME_ORIGIN_COT
+    )
+
+
+def test_select_answer_prompt_edwin1():
+    assert _select_answer_prompt("edwin1") is _ANSWER_PROMPT_EDWIN1
+
+
+def test_select_answer_prompt_edwin3():
+    assert _select_answer_prompt("edwin3") is _ANSWER_PROMPT_EDWIN3
 
 
 def test_select_answer_prompt_invalid_raises():
