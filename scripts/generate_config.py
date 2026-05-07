@@ -41,7 +41,14 @@ CONFIGS_DIR = REPO_ROOT / "configs"
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser without consuming ``sys.argv``.
+
+    Split out from :func:`parse_args` so tests can inspect the parser's
+    structure (notably the ``choices`` for ``--longmemeval-answer-prompt``)
+    against the eval-side / Pydantic-side policy registries without going
+    through ``sys.argv`` mutation.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -78,7 +85,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--longmemeval-answer-prompt",
-        choices=["memmachine_original", "agent_lightning", "LME_origin_prompt"],
+        choices=[
+            "memmachine_original",
+            "agent_lightning",
+            "LME_origin_prompt",
+            "LME_origin_cot_prompt",
+            "edwin1",
+            "edwin3",
+        ],
         help=(
             "LongMemEval answer prompt body. 'LME_origin_prompt' (default) is "
             "a verbatim copy of xiaowu0162/LongMemEval upstream "
@@ -86,10 +100,16 @@ def parse_args() -> argparse.Namespace:
             "prompt template is substituted, retrieval / memory formatting / "
             "generation pipeline stays on MemMachine's retrieval_agent path "
             "(prompt-template-isolation reference point, not full "
-            "upstream-baseline reproduction). 'memmachine_original' applies "
+            "upstream-baseline reproduction). 'LME_origin_cot_prompt' is the "
+            "upstream cot=True branch (step-by-step preamble + 'Answer (step "
+            "by step):' cue — more output tokens / higher latency than the "
+            "no-CoT baseline). 'memmachine_original' applies "
             "MemMachine's episodic_memory LongMemEval prompt body to the "
             "retrieval_agent path (hybrid). 'agent_lightning' preserves the "
-            "v0.5 prompt for v0.5 baseline reruns. Maps to "
+            "v0.5 prompt for v0.5 baseline reruns. 'edwin1' / 'edwin3' are "
+            "opt-in alternates from docs/msr/edwin_prompt.md "
+            "(8-rule reasoning + length cue / KNOWLEDGE UPDATES + PLANNED "
+            "ACTIONS + MOST RECENT USER INPUT). Maps to "
             "evaluation.longmemeval.answer_prompt in run_cfg."
         ),
     )
@@ -127,7 +147,11 @@ def parse_args() -> argparse.Namespace:
     # Bulk JSON override (highest precedence)
     parser.add_argument("--from-json", help="Path to JSON file with overrides")
 
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 # ---------------------------------------------------------------------------
