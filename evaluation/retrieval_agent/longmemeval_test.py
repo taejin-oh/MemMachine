@@ -99,6 +99,82 @@ _ANSWER_PROMPT_LME_ORIGIN = (
     "Answer:"
 )
 
+# Verbatim copy of xiaowu0162/LongMemEval upstream
+# (src/generation/run_generation.py: answer_prompt_template, no-merge **CoT**
+# branch). Same placeholder normalization rule as ``_ANSWER_PROMPT_LME_ORIGIN``
+# — positional ``{}`` → named, body text unchanged. Differs from the no-CoT
+# baseline by (a) a one-sentence CoT instruction inserted into the preamble
+# and (b) the trailing ``Answer (step by step):`` cue. Use this when
+# reproducing the upstream paper's CoT-on numbers; expect more output tokens
+# and slightly higher latency than the no-CoT baseline.
+_ANSWER_PROMPT_LME_ORIGIN_COT = (
+    "I will give you several history chats between you and a user. "
+    "Please answer the question based on the relevant chat history. "
+    "Answer the question step by step: first extract all the relevant "
+    "information, and then reason over the information to get the answer."
+    "\n\n\n"
+    "History Chats:\n\n{memories}\n\n"
+    "Current Date: {question_date}\n"
+    "Question: {question}\n"
+    "Answer (step by step):"
+)
+
+# EDWIN1 — opt-in alternative answer-prompt body sourced from
+# ``docs/msr/edwin_prompt.md`` (``EDWIN1_ANSWER_PROMPT``). Eight numbered
+# reasoning rules (multi-answer enumeration, item counting, time-interval
+# subtraction, episodic-memory framing, latest-wins) + a "couple of sentences"
+# length cap. Placeholder normalization: ``{joined_history}`` →
+# ``{memories}`` and ``{question_timestamp}`` → ``{question_date}`` so the
+# template renders with the same kwargs as every other policy in this
+# registry; no other text is altered.
+_ANSWER_PROMPT_EDWIN1 = """You are asked to answer a question from a user based on your memories of a conversation between the user and an assistant.
+
+
+1. Prioritize memories that answer the question directly. Be meticulous about recalling details.
+2. When there may be multiple answers to the question, think hard to remember and list all possible answers. Do not become satisfied with just the first few answers you remember.
+3. When asked to count items, carefully enumerate the items using numbers.
+4. When asked about time intervals, the duration between events is computed by subtracting the start date from the end date in the chosen unit.
+5. When asked for advice or suggestions, synthesize your memories of the user's interests, preferences, possessions, and problems to provide tailored recommendations.
+6. Your memories are episodic, meaning that they consist of only your raw observations of what was said. You may need to reason about or guess what the memories imply in order to answer the question.
+7. Your memories may include small or large jumps in time or context. You are not confused by this. You just did not bother to remember everything in between.
+8. Your memories are ordered from earliest to latest. Prioritize the latest memories if anything has changed over time. Consider the question datetime when determining whether an event has actually occurred.
+
+
+
+{memories}
+
+
+Question timestamp: {question_date}
+Question: {question}
+Your short response to the question without fluff (no more than a couple of sentences):
+"""
+
+# EDWIN3 — opt-in alternative answer-prompt body sourced from
+# ``docs/msr/edwin_prompt.md`` (``EDWIN3_ANSWER_PROMPT``). Closely related to
+# ``_ANSWER_PROMPT_MEMMACHINE_ORIGINAL`` (KNOWLEDGE UPDATES + PLANNED ACTIONS
+# guides), but adds an explicit MOST RECENT USER INPUT priority paragraph and
+# omits the ``<history>...</history>`` wrapping that ``memmachine_original``
+# uses. Placeholder normalization: ``{joined_history}`` → ``{memories}`` and
+# ``{question_timestamp}`` → ``{question_date}``; no other text is altered.
+_ANSWER_PROMPT_EDWIN3 = """You are a helpful assistant with access to extensive conversation history.
+When answering questions, carefully review the conversation history to identify and use any relevant user preferences, interests, or specific details they have mentioned.
+
+
+{memories}
+
+
+IMPORTANT: When responding, reference specific details from these observations. Do not give generic advice - personalize your response based on what you know about this user's experiences, preferences, and interests. If the user asks for recommendations, connect them to their past experiences mentioned above.
+
+KNOWLEDGE UPDATES: When asked about current state (e.g., "where do I currently...", "what is my current..."), always prefer the MOST RECENT information. Observations include dates - if you see conflicting information, the newer observation supersedes the older one. Look for phrases like "will start", "is switching", "changed to", "moved to" as indicators that previous information has been updated.
+
+PLANNED ACTIONS: If the user stated they planned to do something (e.g., "I'm going to...", "I'm looking forward to...", "I will...") and the date they planned to do it is now in the past (check the relative time like "3 weeks ago"), assume they completed the action unless there's evidence they didn't. For example, if someone said "I'll start my new diet on Monday" and that was 2 weeks ago, assume they started the diet.
+
+MOST RECENT USER INPUT: Treat the most recent user message as the highest-priority signal for what to do next. Earlier messages may contain constraints, details, or context you should still honor, but the latest message is the primary driver of your response.
+
+Current date: {question_date}
+Question: {question}
+"""
+
 # Public alias — points to the default policy body (LME_origin_prompt =
 # upstream verbatim). Importers keep working without changes; runtime
 # selection between the prompts happens via `_select_answer_prompt()`.
@@ -108,6 +184,9 @@ _ANSWER_PROMPT_BY_POLICY: dict[str, str] = {
     "memmachine_original": _ANSWER_PROMPT_MEMMACHINE_ORIGINAL,
     "agent_lightning": _ANSWER_PROMPT_AGENT_LIGHTNING,
     "LME_origin_prompt": _ANSWER_PROMPT_LME_ORIGIN,
+    "LME_origin_cot_prompt": _ANSWER_PROMPT_LME_ORIGIN_COT,
+    "edwin1": _ANSWER_PROMPT_EDWIN1,
+    "edwin3": _ANSWER_PROMPT_EDWIN3,
 }
 
 DEFAULT_CONCURRENCY = 30
@@ -528,10 +607,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "LongMemEval answer prompt body. 'LME_origin_prompt' (default) "
-            "is a verbatim copy of xiaowu0162/LongMemEval upstream; "
-            "'memmachine_original' is a hybrid with MemMachine reasoning "
-            "guides; 'agent_lightning' preserves the v0.5 prompt for "
-            "baseline reruns. When omitted, falls back to "
+            "is a verbatim copy of xiaowu0162/LongMemEval upstream no-CoT; "
+            "'LME_origin_cot_prompt' is the upstream CoT branch (step-by-step "
+            "reasoning, more output tokens); 'memmachine_original' is a "
+            "hybrid with MemMachine reasoning guides; 'agent_lightning' "
+            "preserves the v0.5 prompt for baseline reruns; 'edwin1' / "
+            "'edwin3' are opt-in alternates from docs/msr/edwin_prompt.md "
+            "(8-rule reasoning / KNOWLEDGE UPDATES + PLANNED ACTIONS + MOST "
+            "RECENT USER INPUT, respectively). When omitted, falls back to "
             "retrieval_agent.longmemeval_answer_prompt from configuration.yml."
         ),
     )

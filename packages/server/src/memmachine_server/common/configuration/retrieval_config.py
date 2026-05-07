@@ -32,7 +32,12 @@ class RetrievalAgentConf(YamlSerializableMixin):
         ),
     )
     longmemeval_answer_prompt: Literal[
-        "memmachine_original", "agent_lightning", "LME_origin_prompt"
+        "memmachine_original",
+        "agent_lightning",
+        "LME_origin_prompt",
+        "LME_origin_cot_prompt",
+        "edwin1",
+        "edwin3",
     ] = Field(
         default="LME_origin_prompt",
         description=(
@@ -43,13 +48,24 @@ class RetrievalAgentConf(YamlSerializableMixin):
             "substituted; retrieval / memory formatting / generation pipeline "
             "still run through MemMachine's retrieval_agent path, so this is "
             "a prompt-template-isolation reference point, not a full "
-            "upstream-baseline reproduction. 'memmachine_original' applies "
+            "upstream-baseline reproduction. 'LME_origin_cot_prompt' is the "
+            "upstream CoT branch (same source file, cot=True): adds a "
+            "step-by-step reasoning instruction and an 'Answer (step by "
+            "step):' cue — expect more output tokens / higher latency than "
+            "the no-CoT baseline. 'memmachine_original' applies "
             "MemMachine's episodic_memory LongMemEval prompt body to the "
             "retrieval_agent path (hybrid) — satisfies LongMemEval's "
             "prompt-side evaluation constraints (memory-only basis, Current "
             "Date, no length cap) but body is not verbatim upstream. "
             "'agent_lightning' preserves the v0.5 prompt (Agent Lightning "
             "paper, arXiv:2508.03680) for v0.5 baseline reruns. "
-            "CLI / run_cfg overrides take precedence."
+            "'edwin1' / 'edwin3' are opt-in alternates lifted from "
+            "docs/msr/edwin_prompt.md: 'edwin1' is an 8-rule reasoning "
+            "prompt with an explicit 'no more than a couple of sentences' "
+            "length cue, 'edwin3' adds a MOST RECENT USER INPUT priority "
+            "rule on top of the KNOWLEDGE UPDATES / PLANNED ACTIONS guides "
+            "(closely related to 'memmachine_original' but without the "
+            "<history>...</history> wrapping). CLI / run_cfg overrides take "
+            "precedence."
         ),
     )
