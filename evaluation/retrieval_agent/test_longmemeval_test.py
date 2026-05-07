@@ -142,6 +142,26 @@ def test_policy_registry_keys():
     }
 
 
+def test_pydantic_literal_matches_policy_registry():
+    """The Pydantic ``Literal[...]`` for ``retrieval_agent.longmemeval_answer_prompt``
+    must list exactly the keys of ``_ANSWER_PROMPT_BY_POLICY`` — no more, no less.
+
+    Two files maintain the policy list manually (registry here, Literal in
+    ``packages/server/.../retrieval_config.py``). Drift between them shows up
+    only at runtime: a key in Literal but missing from the registry triggers
+    ``KeyError`` when the policy is selected; a key in the registry but
+    missing from Literal causes Pydantic to reject configs that use it.
+    This test catches the drift at test time instead.
+    """
+    from memmachine_server.common.configuration.retrieval_config import (
+        RetrievalAgentConf,
+    )
+
+    field = RetrievalAgentConf.model_fields["longmemeval_answer_prompt"]
+    literal_keys = set(field.annotation.__args__)
+    assert literal_keys == set(_ANSWER_PROMPT_BY_POLICY)
+
+
 # ---------------------------------------------------------------------------
 # LME_origin_cot_prompt (xiaowu0162/LongMemEval upstream CoT branch)
 # ---------------------------------------------------------------------------
@@ -222,22 +242,6 @@ def test_edwin1_prompt_renders_with_question_date():
     assert "no more than a couple of sentences" in prompt
 
 
-def test_edwin1_prompt_has_no_unsubstituted_placeholders():
-    """After format(), no ``{...}`` placeholder fragments should remain.
-
-    Guards against accidental ``{joined_history}`` / ``{question_timestamp}``
-    leftovers from the docs/msr source — those would break str.format() calls
-    elsewhere in the pipeline.
-    """
-    prompt = _ANSWER_PROMPT_EDWIN1.format(
-        memories="MEM", question="Q", question_date="DATE"
-    )
-    assert "{joined_history}" not in prompt
-    assert "{question_timestamp}" not in prompt
-    assert "{memories}" not in prompt
-    assert "{question_date}" not in prompt
-
-
 def test_edwin3_prompt_renders_with_question_date():
     """EDWIN3 must format with memories+question+question_date."""
     prompt = _ANSWER_PROMPT_EDWIN3.format(
@@ -258,9 +262,16 @@ def test_edwin3_prompt_renders_with_question_date():
     assert "</history>" not in prompt
 
 
-def test_edwin3_prompt_has_no_unsubstituted_placeholders():
-    """After format(), no ``{...}`` placeholder fragments should remain."""
-    prompt = _ANSWER_PROMPT_EDWIN3.format(
+@pytest.mark.parametrize("policy", ["edwin1", "edwin3"])
+def test_edwin_prompts_have_no_unsubstituted_placeholders(policy):
+    """Edwin prompts must format cleanly with the project's standard kwargs.
+
+    Guards against accidental ``{joined_history}`` / ``{question_timestamp}``
+    leftovers from the docs/msr/edwin_prompt.md source — those would survive
+    ``.format(memories=..., question=..., question_date=...)`` and break the
+    pipeline downstream.
+    """
+    prompt = _ANSWER_PROMPT_BY_POLICY[policy].format(
         memories="MEM", question="Q", question_date="DATE"
     )
     assert "{joined_history}" not in prompt
@@ -288,32 +299,15 @@ def test_edwin3_distinct_from_memmachine_original():
 # ---------------------------------------------------------------------------
 
 
-def test_select_answer_prompt_memmachine_original():
-    assert _select_answer_prompt("memmachine_original") is (
-        _ANSWER_PROMPT_MEMMACHINE_ORIGINAL
-    )
+@pytest.mark.parametrize("policy", sorted(_ANSWER_PROMPT_BY_POLICY))
+def test_select_answer_prompt_returns_registry_body(policy):
+    """For every key in _ANSWER_PROMPT_BY_POLICY, _select_answer_prompt must
+    return the registered body (identity check, not equality).
 
-
-def test_select_answer_prompt_agent_lightning():
-    assert _select_answer_prompt("agent_lightning") is _ANSWER_PROMPT_AGENT_LIGHTNING
-
-
-def test_select_answer_prompt_lme_origin():
-    assert _select_answer_prompt("LME_origin_prompt") is _ANSWER_PROMPT_LME_ORIGIN
-
-
-def test_select_answer_prompt_lme_origin_cot():
-    assert _select_answer_prompt("LME_origin_cot_prompt") is (
-        _ANSWER_PROMPT_LME_ORIGIN_COT
-    )
-
-
-def test_select_answer_prompt_edwin1():
-    assert _select_answer_prompt("edwin1") is _ANSWER_PROMPT_EDWIN1
-
-
-def test_select_answer_prompt_edwin3():
-    assert _select_answer_prompt("edwin3") is _ANSWER_PROMPT_EDWIN3
+    Auto-extends as new policies are added to the registry, so future
+    contributors don't have to add per-policy lookup tests.
+    """
+    assert _select_answer_prompt(policy) is _ANSWER_PROMPT_BY_POLICY[policy]
 
 
 def test_select_answer_prompt_invalid_raises():
