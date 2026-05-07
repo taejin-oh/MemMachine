@@ -104,8 +104,8 @@ def _resolve_yesno_policy(run_cfg: dict[str, Any], config_path: str) -> str:
 def run(run_cfg: dict[str, Any]) -> Path:
     from evaluation.retrieval_agent.llm_judge import (
         create_judge_fn,
-        evaluate_llm_judge,
-        evaluate_llm_judge_longmemeval,
+        evaluate_llm_judge_longmemeval_with_details,
+        evaluate_llm_judge_with_details,
     )
 
     out_dir = cm.results_dir_for(run_cfg)
@@ -139,7 +139,7 @@ def run(run_cfg: dict[str, Any]) -> Path:
                 # contains LongMemEval rows. Mirrors the lazy init in
                 # evaluation/retrieval_agent/evaluate.py:get_text_call_fn.
                 text_call_fn = create_judge_fn(judge_config, json_mode=False)
-            score = evaluate_llm_judge_longmemeval(
+            details = evaluate_llm_judge_longmemeval_with_details(
                 question=row.get("question", ""),
                 gold_answer=row.get("golden_answer", ""),
                 generated_answer=row.get("model_answer", ""),
@@ -149,14 +149,27 @@ def run(run_cfg: dict[str, Any]) -> Path:
                 yesno_policy=yesno_policy,
             )
         else:
-            score = evaluate_llm_judge(
+            details = evaluate_llm_judge_with_details(
                 question=row.get("question", ""),
                 gold_answer=row.get("golden_answer", ""),
                 generated_answer=row.get("model_answer", ""),
                 call_fn=json_call_fn,
             )
+        score = details["score"]
         correct += score
-        judged.append({**row, "llm_score": int(score)})
+        judged.append(
+            {
+                **row,
+                "llm_score": int(score),
+                # Persist raw judge LLM reply + parsed label so all-zeros runs
+                # can be diagnosed without re-running judge. parsed_label is
+                # "CORRECT"/"WRONG" for the JSON judge, "yes"/"no" for the
+                # LongMemEval judge, or null when parsing failed.
+                "judge_raw_response": details["raw_response"],
+                "judge_parsed_label": details["parsed_label"],
+                "judge_attempts": details["attempts"],
+            }
+        )
         if (i + 1) % 50 == 0:
             print(f"[judge] {i + 1}/{len(rows)}  running acc={correct / (i + 1):.3f}")
 
