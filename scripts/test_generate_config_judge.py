@@ -445,7 +445,24 @@ def test_schema_roundtrip_longmemeval_answer_prompt_invalid_raises(tmp_path):
         Configuration.load_yml_file(str(fixture))
 
 
-def test_cli_longmemeval_answer_prompt_memmachine_original_maps_to_run_cfg():
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "memmachine_original",
+        "agent_lightning",
+        "LME_origin_prompt",
+        "LME_origin_cot_prompt",
+        "edwin1",
+        "edwin3",
+    ],
+)
+def test_cli_longmemeval_answer_prompt_maps_to_run_cfg(policy):
+    """Every accepted policy maps to ``evaluation.longmemeval.answer_prompt``.
+
+    Replaces the per-policy boilerplate with a single parametrized test —
+    new policies are covered automatically as soon as ``--longmemeval-
+    answer-prompt`` ``choices`` accepts them.
+    """
     from scripts.generate_config import cli_to_overrides
 
     args = _parse_args(
@@ -455,45 +472,32 @@ def test_cli_longmemeval_answer_prompt_memmachine_original_maps_to_run_cfg():
             "--run-name",
             "x",
             "--longmemeval-answer-prompt",
-            "memmachine_original",
+            policy,
         ]
     )
     out = cli_to_overrides(args)
-    assert out["evaluation"]["longmemeval"]["answer_prompt"] == "memmachine_original"
+    assert out["evaluation"]["longmemeval"]["answer_prompt"] == policy
 
 
-def test_cli_longmemeval_answer_prompt_agent_lightning_maps_to_run_cfg():
-    from scripts.generate_config import cli_to_overrides
+def test_cli_longmemeval_answer_prompt_choices_match_registry():
+    """argparse ``choices`` must match ``_ANSWER_PROMPT_BY_POLICY`` exactly.
 
-    args = _parse_args(
-        [
-            "--problem",
-            "4",
-            "--run-name",
-            "x",
-            "--longmemeval-answer-prompt",
-            "agent_lightning",
-        ]
+    Three places (eval-side dict, server-side Pydantic Literal, this CLI
+    flag) maintain the policy list manually. ``test_longmemeval_test.py``
+    pins the first two; this guards the third. Drift surfaces as a confused
+    operator (CLI rejects a policy the rest of the stack accepts, or
+    vice-versa) — caught at test time instead of at run time.
+    """
+    from evaluation.retrieval_agent.longmemeval_test import _ANSWER_PROMPT_BY_POLICY
+    from scripts.generate_config import build_parser
+
+    parser = build_parser()
+    # argparse exposes parser actions only via the private ``_actions`` list;
+    # enumerating them is the standard idiom for choices introspection.
+    action = next(
+        a for a in parser._actions if a.dest == "longmemeval_answer_prompt"  # noqa: SLF001
     )
-    out = cli_to_overrides(args)
-    assert out["evaluation"]["longmemeval"]["answer_prompt"] == "agent_lightning"
-
-
-def test_cli_longmemeval_answer_prompt_lme_origin_maps_to_run_cfg():
-    from scripts.generate_config import cli_to_overrides
-
-    args = _parse_args(
-        [
-            "--problem",
-            "4",
-            "--run-name",
-            "x",
-            "--longmemeval-answer-prompt",
-            "LME_origin_prompt",
-        ]
-    )
-    out = cli_to_overrides(args)
-    assert out["evaluation"]["longmemeval"]["answer_prompt"] == "LME_origin_prompt"
+    assert set(action.choices) == set(_ANSWER_PROMPT_BY_POLICY)
 
 
 def test_cli_longmemeval_answer_prompt_unset_omits_key():
