@@ -20,9 +20,12 @@ for extra in (
 from evaluation.retrieval_agent.llm_judge import (  # noqa: E402
     _MAX_JUDGE_ATTEMPTS,
     _parse_yes_no,
+    _parse_yes_no_with_label,
     create_judge_fn,
     evaluate_llm_judge,
     evaluate_llm_judge_longmemeval,
+    evaluate_llm_judge_longmemeval_with_details,
+    evaluate_llm_judge_with_details,
 )
 
 
@@ -136,6 +139,168 @@ def test_label_with_whitespace_and_case_normalized():
     call_fn = _call_fn_returning(json.dumps({"label": "  correct\n"}))
     assert evaluate_llm_judge("q", "gold", "gen", call_fn) == 1
     assert call_fn.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# evaluate_llm_judge_with_details — exposes raw reply + parsed label
+# ---------------------------------------------------------------------------
+
+
+def test_with_details_correct_label_payload():
+    """First-try CORRECT: details dict carries raw reply, label, attempts=1."""
+    raw = json.dumps({"label": "CORRECT"})
+    call_fn = _call_fn_returning(raw)
+    details = evaluate_llm_judge_with_details("q", "gold", "gen", call_fn)
+    assert details == {
+        "score": 1,
+        "raw_response": raw,
+        "parsed_label": "CORRECT",
+        "attempts": 1,
+    }
+
+
+def test_with_details_retry_then_success_records_last_raw():
+    """On retry → success, ``raw_response`` is the SUCCESSFUL attempt's reply.
+
+    Documenting this so debug logs reflect what the judge ultimately said,
+    not the (irrelevant) first-attempt failure text.
+    """
+    bad = "not json at all"
+    good = json.dumps({"label": "WRONG"})
+    call_fn = _call_fn_returning(bad, good)
+    details = evaluate_llm_judge_with_details("q", "gold", "gen", call_fn)
+    assert details["score"] == 0
+    assert details["parsed_label"] == "WRONG"
+    assert details["raw_response"] == good
+    assert details["attempts"] == 2
+
+
+def test_with_details_all_attempts_fail_returns_label_none():
+    """Both attempts fail to parse → score=0, parsed_label=None, raw=last reply.
+
+    This is the all-zeros debug path: the operator can read raw_response to
+    see *what* the judge LLM actually returned.
+    """
+    last_raw = "still not json"
+    call_fn = _call_fn_returning("first not json", last_raw)
+    details = evaluate_llm_judge_with_details("q", "gold", "gen", call_fn)
+    assert details == {
+        "score": 0,
+        "raw_response": last_raw,
+        "parsed_label": None,
+        "attempts": _MAX_JUDGE_ATTEMPTS,
+    }
+
+
+def test_with_details_call_fn_returning_none_yields_empty_raw():
+    """call_fn returning None → raw_response coerced to '' (no TypeError downstream)."""
+    call_fn = MagicMock(side_effect=[None, None])
+    details = evaluate_llm_judge_with_details("q", "gold", "gen", call_fn)
+    assert details["raw_response"] == ""
+    assert details["parsed_label"] is None
+    assert details["score"] == 0
+
+
+# ---------------------------------------------------------------------------
+# evaluate_llm_judge_longmemeval_with_details — raw reply + parsed yes/no
+# ---------------------------------------------------------------------------
+
+
+def test_lme_with_details_yes_lenient_payload():
+    fn, _ = _capturing_call_fn("yes")
+    details = evaluate_llm_judge_longmemeval_with_details(
+        "q", "gold", "gen", "single-session-user", "qid_1", fn
+    )
+    assert details == {
+        "score": 1,
+        "raw_response": "yes",
+        "parsed_label": "yes",
+        "attempts": 1,
+    }
+
+
+def test_lme_with_details_lenient_yesterday_substring_trap_records_yes():
+    """Lenient policy marks ``yesterday`` as 1 (substring trap) — details echo it.
+
+    Pinning this so the all-zeros debug story stays clear: parsed_label='yes'
+    plus raw_response='yesterday' tells the operator exactly which trap fired.
+    """
+    fn, _ = _capturing_call_fn("yesterday")
+    details = evaluate_llm_judge_longmemeval_with_details(
+        "q", "gold", "gen", "temporal-reasoning", "qid_1", fn
+    )
+    assert details["score"] == 1
+    assert details["parsed_label"] == "yes"
+    assert details["raw_response"] == "yesterday"
+
+
+def test_lme_with_details_strict_unparseable_label_none():
+    """Strict policy rejects ``not yes`` → score=0, parsed_label=None."""
+    fn, _ = _capturing_call_fn("not yes")
+    details = evaluate_llm_judge_longmemeval_with_details(
+        "q", "gold", "gen", "single-session-user", "qid_1", fn, "strict"
+    )
+    assert details["score"] == 0
+    assert details["parsed_label"] is None
+    assert details["raw_response"] == "not yes"
+
+
+def test_lme_with_details_call_fn_returning_none_yields_empty_raw():
+    """call_fn returning None → raw='' and lenient parses to 'no'."""
+    fn = MagicMock(return_value=None)
+    details = evaluate_llm_judge_longmemeval_with_details(
+        "q", "gold", "gen", "multi-session", "qid_1", fn
+    )
+    assert details["raw_response"] == ""
+    assert details["parsed_label"] == "no"
+    assert details["score"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _parse_yes_no_with_label — distinguishes "no" from "unparseable"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("yes", (1, "yes")),
+        ("Yes\n", (1, "yes")),
+        ("no", (0, "no")),
+        ("nope", (0, "no")),  # lenient: no 'yes' substring → "no"
+        ("yesterday", (1, "yes")),  # lenient substring trap
+        ("", (0, "no")),
+    ],
+)
+def test_parse_yes_no_with_label_lenient(raw, expected):
+    assert _parse_yes_no_with_label(raw, policy="lenient") == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("yes", (1, "yes")),
+        ("no", (0, "no")),
+        ("Yes.", (1, "yes")),
+        # Unparseable under strict → None (NOT "no") so callers can tell
+        # "judge said no" from "judge said something we couldn't parse".
+        ("yes and no", (0, None)),
+        ("yesterday", (0, None)),
+        ("", (0, None)),
+        ("maybe", (0, None)),
+    ],
+)
+def test_parse_yes_no_with_label_strict(raw, expected):
+    assert _parse_yes_no_with_label(raw, policy="strict") == expected
+
+
+def test_parse_yes_no_int_wrapper_matches_with_label():
+    """The int-only ``_parse_yes_no`` returns the same score as ``_parse_yes_no_with_label``."""
+    for raw in ("yes", "no", "yesterday", "not yes", "", "maybe"):
+        for policy in ("lenient", "strict"):
+            assert _parse_yes_no(raw, policy=policy) == (
+                _parse_yes_no_with_label(raw, policy=policy)[0]
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -103,11 +103,21 @@ def test_run_routes_longmemeval_category_to_longmemeval_judge(monkeypatch, tmp_p
                 "yesno_policy": yesno_policy,
             }
         )
-        return 1
+        return {
+            "score": 1,
+            "raw_response": "yes",
+            "parsed_label": "yes",
+            "attempts": 1,
+        }
 
     def fake_legacy(question, gold_answer, generated_answer, call_fn):
         legacy_calls.append({"call_fn": call_fn})
-        return 1
+        return {
+            "score": 1,
+            "raw_response": '{"label":"CORRECT"}',
+            "parsed_label": "CORRECT",
+            "attempts": 1,
+        }
 
     # judge.run() imports from this module *inside* the function body,
     # so patches must target the source module — not judge_stage itself.
@@ -118,8 +128,8 @@ def test_run_routes_longmemeval_category_to_longmemeval_judge(monkeypatch, tmp_p
         "create_judge_fn",
         lambda _path, json_mode=True: json_judge if json_mode else text_judge,
     )
-    monkeypatch.setattr(lm, "evaluate_llm_judge_longmemeval", fake_lme)
-    monkeypatch.setattr(lm, "evaluate_llm_judge", fake_legacy)
+    monkeypatch.setattr(lm, "evaluate_llm_judge_longmemeval_with_details", fake_lme)
+    monkeypatch.setattr(lm, "evaluate_llm_judge_with_details", fake_legacy)
 
     judge_stage.run({"run_name": "test_run", "configuration": {"generated_path": "x"}})
 
@@ -169,13 +179,28 @@ def test_run_routes_non_longmemeval_category_to_json_judge(monkeypatch, tmp_path
     import evaluation.retrieval_agent.llm_judge as lm
 
     monkeypatch.setattr(lm, "create_judge_fn", fake_create)
+
+    def _fake_legacy_details(**kw):
+        legacy_calls.append(kw)
+        return {
+            "score": 1,
+            "raw_response": '{"label":"CORRECT"}',
+            "parsed_label": "CORRECT",
+            "attempts": 1,
+        }
+
+    def _fake_lme_details(**kw):
+        longmemeval_calls.append(kw)
+        return {
+            "score": 1,
+            "raw_response": "yes",
+            "parsed_label": "yes",
+            "attempts": 1,
+        }
+
+    monkeypatch.setattr(lm, "evaluate_llm_judge_with_details", _fake_legacy_details)
     monkeypatch.setattr(
-        lm, "evaluate_llm_judge", lambda **kw: legacy_calls.append(kw) or 1
-    )
-    monkeypatch.setattr(
-        lm,
-        "evaluate_llm_judge_longmemeval",
-        lambda **kw: longmemeval_calls.append(kw) or 1,
+        lm, "evaluate_llm_judge_longmemeval_with_details", _fake_lme_details
     )
 
     judge_stage.run({"run_name": "test_run", "configuration": {"generated_path": "x"}})
@@ -228,6 +253,79 @@ def test_run_abstention_question_id_uses_abstention_prompt(monkeypatch, tmp_path
     assert "unanswerable question" in captured["prompt"]
 
 
+def test_run_persists_judge_raw_response_and_label(monkeypatch, tmp_path):
+    """judge.jsonl must include raw judge reply + parsed label per row.
+
+    Regression for the 'all-zeros judge run with no way to debug' case:
+    without these fields, an operator who sees every llm_score=0 cannot tell
+    whether the judge LLM returned malformed JSON, returned ``"WRONG"``, or
+    returned text that the LongMemEval policy rejected.
+    """
+    out_dir = _write_rows(
+        tmp_path,
+        [
+            # JSON judge path → expects judge_raw_response='garbage', label=None.
+            {
+                "question": "q1",
+                "category": "1",
+                "golden_answer": "a",
+                "model_answer": "y",
+            },
+            # LongMemEval path → expects raw='yes', parsed_label='yes'.
+            {
+                "question": "q2",
+                "category": "multi-session",
+                "question_id": "qid_2",
+                "golden_answer": "a",
+                "model_answer": "y",
+            },
+        ],
+    )
+    _patch_common(monkeypatch, tmp_path, out_dir)
+
+    import evaluation.retrieval_agent.llm_judge as lm
+
+    monkeypatch.setattr(
+        lm, "create_judge_fn", lambda _path, json_mode=True: (lambda _p: "irrelevant")
+    )
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_with_details",
+        lambda **_kw: {
+            "score": 0,
+            "raw_response": "garbage non-json reply",
+            "parsed_label": None,
+            "attempts": 2,
+        },
+    )
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_longmemeval_with_details",
+        lambda **_kw: {
+            "score": 1,
+            "raw_response": "yes",
+            "parsed_label": "yes",
+            "attempts": 1,
+        },
+    )
+
+    judge_stage.run({"run_name": "test_run", "configuration": {"generated_path": "x"}})
+
+    judged_path = out_dir / "judge.jsonl"
+    with judged_path.open() as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+
+    assert rows[0]["llm_score"] == 0
+    assert rows[0]["judge_raw_response"] == "garbage non-json reply"
+    assert rows[0]["judge_parsed_label"] is None
+    assert rows[0]["judge_attempts"] == 2
+
+    assert rows[1]["llm_score"] == 1
+    assert rows[1]["judge_raw_response"] == "yes"
+    assert rows[1]["judge_parsed_label"] == "yes"
+    assert rows[1]["judge_attempts"] == 1
+
+
 def test_run_writes_judge_jsonl_with_llm_score(monkeypatch, tmp_path):
     """End-to-end smoke: judge.jsonl receives ``llm_score`` per row."""
     out_dir = _write_rows(
@@ -257,8 +355,26 @@ def test_run_writes_judge_jsonl_with_llm_score(monkeypatch, tmp_path):
         "create_judge_fn",
         lambda _path, json_mode=True: (lambda _p: "yes"),
     )
-    monkeypatch.setattr(lm, "evaluate_llm_judge", lambda **_kw: 0)
-    monkeypatch.setattr(lm, "evaluate_llm_judge_longmemeval", lambda **_kw: 1)
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_with_details",
+        lambda **_kw: {
+            "score": 0,
+            "raw_response": '{"label":"WRONG"}',
+            "parsed_label": "WRONG",
+            "attempts": 1,
+        },
+    )
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_longmemeval_with_details",
+        lambda **_kw: {
+            "score": 1,
+            "raw_response": "yes",
+            "parsed_label": "yes",
+            "attempts": 1,
+        },
+    )
 
     judge_stage.run({"run_name": "test_run", "configuration": {"generated_path": "x"}})
 
@@ -344,8 +460,26 @@ def test_run_logs_yesno_policy(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         lm, "create_judge_fn", lambda _path, json_mode=True: (lambda _p: "yes")
     )
-    monkeypatch.setattr(lm, "evaluate_llm_judge_longmemeval", lambda **_kw: 1)
-    monkeypatch.setattr(lm, "evaluate_llm_judge", lambda **_kw: 0)
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_longmemeval_with_details",
+        lambda **_kw: {
+            "score": 1,
+            "raw_response": "yes",
+            "parsed_label": "yes",
+            "attempts": 1,
+        },
+    )
+    monkeypatch.setattr(
+        lm,
+        "evaluate_llm_judge_with_details",
+        lambda **_kw: {
+            "score": 0,
+            "raw_response": '{"label":"WRONG"}',
+            "parsed_label": "WRONG",
+            "attempts": 1,
+        },
+    )
 
     judge_stage.run(
         {

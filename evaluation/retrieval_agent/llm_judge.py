@@ -7,7 +7,7 @@ import logging
 import re
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Literal
+from typing import Literal, TypedDict
 
 import json_repair
 import numpy as np
@@ -15,6 +15,22 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 _MAX_JUDGE_ATTEMPTS = 2
+
+
+class JudgeDetails(TypedDict):
+    """Per-row debug payload returned by ``*_with_details`` judge variants.
+
+    ``score`` mirrors the legacy int-returning judges. The remaining fields
+    let callers persist *why* a score was assigned — most importantly,
+    ``raw_response`` exposes the judge LLM's actual reply so all-zeros runs
+    caused by JSON parse failures or unexpected text can be diagnosed without
+    re-running the pipeline.
+    """
+
+    score: int
+    raw_response: str
+    parsed_label: str | None
+    attempts: int
 
 ACCURACY_PROMPT = """
 Your task is to label an answer to a question as 'CORRECT' or 'WRONG'. You will be given the following data:
@@ -276,13 +292,18 @@ def create_judge_fn(
     )
 
 
-def evaluate_llm_judge(
+def evaluate_llm_judge_with_details(
     question: str,
     gold_answer: str,
     generated_answer: str,
     call_fn: Callable[[str], str],
-) -> int:
-    """Evaluate a generated answer against the gold answer using an LLM judge.
+) -> JudgeDetails:
+    """Same as :func:`evaluate_llm_judge` but returns the raw reply and parsed label.
+
+    Use this from callers that need to persist *why* a score was assigned —
+    typically the pipeline ``judge`` stage, where writing the raw judge reply
+    into ``judge.jsonl`` is the only way to debug all-zeros runs caused by
+    JSON parse failures (no ``label`` key, non-JSON text, etc.).
 
     Args:
         question: The question being evaluated.
@@ -291,15 +312,21 @@ def evaluate_llm_judge(
         call_fn: A synchronous callable returned by :func:`create_judge_fn`.
 
     Returns:
-        1 if the answer is CORRECT, 0 if WRONG.
+        A :class:`JudgeDetails` dict. ``raw_response`` is the LLM's reply on
+        the *last* attempt (after retries exhausted, or the only attempt on
+        first-try success). ``parsed_label`` is ``"CORRECT"`` / ``"WRONG"``
+        when parsing succeeded, or ``None`` when both attempts failed (in
+        which case ``score`` defaults to 0 — same fallback as the legacy
+        int-returning function).
     """
     prompt = ACCURACY_PROMPT.format(
         question=question,
         gold_answer=gold_answer,
         generated_answer=generated_answer,
     )
+    raw: str = ""
     for attempt in range(1, _MAX_JUDGE_ATTEMPTS + 1):
-        raw = call_fn(prompt)
+        raw = call_fn(prompt) or ""
         label: str | None = None
         try:
             result = json_repair.loads(raw)
@@ -311,7 +338,12 @@ def evaluate_llm_judge(
         except Exception:
             label = None
         if label is not None:
-            return 1 if label == "CORRECT" else 0
+            return JudgeDetails(
+                score=1 if label == "CORRECT" else 0,
+                raw_response=raw,
+                parsed_label=label,
+                attempts=attempt,
+            )
         if attempt < _MAX_JUDGE_ATTEMPTS:
             logger.warning(
                 "LLM judge missing or invalid 'label' on attempt %d/%d, retrying",
@@ -322,7 +354,38 @@ def evaluate_llm_judge(
         "LLM judge failed to return a valid 'label' after %d attempts; defaulting to WRONG",
         _MAX_JUDGE_ATTEMPTS,
     )
-    return 0
+    return JudgeDetails(
+        score=0,
+        raw_response=raw,
+        parsed_label=None,
+        attempts=_MAX_JUDGE_ATTEMPTS,
+    )
+
+
+def evaluate_llm_judge(
+    question: str,
+    gold_answer: str,
+    generated_answer: str,
+    call_fn: Callable[[str], str],
+) -> int:
+    """Evaluate a generated answer against the gold answer using an LLM judge.
+
+    Thin int-returning wrapper around :func:`evaluate_llm_judge_with_details`,
+    kept for callers that only need the score and don't want to deal with the
+    details payload.
+
+    Args:
+        question: The question being evaluated.
+        gold_answer: The ground-truth answer.
+        generated_answer: The model-produced answer.
+        call_fn: A synchronous callable returned by :func:`create_judge_fn`.
+
+    Returns:
+        1 if the answer is CORRECT, 0 if WRONG.
+    """
+    return evaluate_llm_judge_with_details(
+        question, gold_answer, generated_answer, call_fn
+    )["score"]
 
 
 # Regex used by the ``strict`` policy only. Matches the entire reply exactly
@@ -340,32 +403,79 @@ LongMemEvalYesNoPolicy = Literal["lenient", "strict"]
 def _parse_yes_no(raw: str, policy: LongMemEvalYesNoPolicy = "lenient") -> int:
     """Parse a yes/no judge reply under the selected policy.
 
+    Thin int-returning wrapper around :func:`_parse_yes_no_with_label`.
+    See that function for policy semantics.
+    """
+    return _parse_yes_no_with_label(raw, policy=policy)[0]
+
+
+def _parse_yes_no_with_label(
+    raw: str, policy: LongMemEvalYesNoPolicy = "lenient"
+) -> tuple[int, str | None]:
+    """Parse a yes/no judge reply, returning both the score and the parsed label.
+
     Two policies are supported:
 
     - ``lenient`` (default): ``1 if "yes" in raw.lower() else 0``. Identical to
       the original LongMemEval ``evaluate_qa.py`` behavior — required for
       paper-number reproduction. Note the known substring trap: ``"yesterday"``
-      also returns 1 because it contains ``"yes"``.
+      also returns 1 because it contains ``"yes"``. ``parsed_label`` is always
+      ``"yes"`` (score 1) or ``"no"`` (score 0) — never ``None``, since lenient
+      makes a binary decision on every input.
     - ``strict``: whole-string match against :data:`_YES_NO_RE`. Only an exact
       ``yes`` / ``no`` token (optionally wrapped by whitespace and trailing
       ``.``, ``!``, ``?``, or ``,``) returns 1/0; anything else — including
-      ``yes and no``, ``not yes``, ``yesterday``, ``I think yes`` — returns 0.
-      Use this to avoid substring traps and verbose-reply false positives;
-      expect lower scores than ``lenient`` on small / verbose judge models.
+      ``yes and no``, ``not yes``, ``yesterday``, ``I think yes`` — returns 0
+      with ``parsed_label=None`` (so callers can distinguish "judge said no"
+      from "judge said something we couldn't parse" when debugging).
 
     Any other value raises :class:`ValueError`.
     """
     text = raw or ""
     if policy == "lenient":
-        return 1 if "yes" in text.lower() else 0
+        if "yes" in text.lower():
+            return 1, "yes"
+        return 0, "no"
     if policy == "strict":
         match = _YES_NO_RE.match(text)
         if match is None:
-            return 0
-        return 1 if match.group(1).lower() == "yes" else 0
+            return 0, None
+        token = match.group(1).lower()
+        return (1 if token == "yes" else 0), token
     raise ValueError(
         f"Unsupported LongMemEval yes/no policy: {policy!r}. "
         "Expected one of: 'lenient', 'strict'."
+    )
+
+
+def evaluate_llm_judge_longmemeval_with_details(
+    question: str,
+    gold_answer: str,
+    generated_answer: str,
+    question_type: str,
+    question_id: str,
+    call_fn: Callable[[str], str],
+    yesno_policy: LongMemEvalYesNoPolicy = "lenient",
+) -> JudgeDetails:
+    """Same as :func:`evaluate_llm_judge_longmemeval` but returns raw reply + parsed label.
+
+    Use this from callers that need to persist *why* a score was assigned.
+    For LongMemEval rows, ``parsed_label`` is ``"yes"``/``"no"`` (always set
+    under ``lenient``; ``None`` under ``strict`` when the reply doesn't match
+    the whole-string regex). ``attempts`` is always 1 — the LongMemEval judge
+    never retries.
+    """
+    abstention = "_abs" in question_id
+    prompt = get_anscheck_prompt(
+        question_type, question, gold_answer, generated_answer, abstention=abstention
+    )
+    raw = call_fn(prompt) or ""
+    score, label = _parse_yes_no_with_label(raw, policy=yesno_policy)
+    return JudgeDetails(
+        score=score,
+        raw_response=raw,
+        parsed_label=label,
+        attempts=1,
     )
 
 
@@ -380,6 +490,10 @@ def evaluate_llm_judge_longmemeval(
 ) -> int:
     """LongMemEval judge: task-specific prompt + plain-text yes/no scoring.
 
+    Thin int-returning wrapper around
+    :func:`evaluate_llm_judge_longmemeval_with_details`, kept for callers that
+    only need the score.
+
     Mirrors the original ``evaluate_qa.py`` pipeline. Abstention is detected
     from the ``_abs`` substring in ``question_id``. ``call_fn`` should be built
     with ``create_judge_fn(..., json_mode=False)``. Reply parsing follows
@@ -387,11 +501,15 @@ def evaluate_llm_judge_longmemeval(
     ``'yes' in lower(raw)`` substring heuristic exactly, and ``strict`` is an
     opt-in whole-string parser — see :func:`_parse_yes_no`.
     """
-    abstention = "_abs" in question_id
-    prompt = get_anscheck_prompt(
-        question_type, question, gold_answer, generated_answer, abstention=abstention
-    )
-    return _parse_yes_no(call_fn(prompt) or "", policy=yesno_policy)
+    return evaluate_llm_judge_longmemeval_with_details(
+        question,
+        gold_answer,
+        generated_answer,
+        question_type,
+        question_id,
+        call_fn,
+        yesno_policy,
+    )["score"]
 
 
 def main():
