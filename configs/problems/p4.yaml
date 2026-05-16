@@ -1,5 +1,4 @@
 # #4 — k 비단조성 (LongMemEval k sweep)
-# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #4
 # 본 run 은 #6 (analyze --decompose-multisession) / #12 (analyze --pareto) 와 산출물 공유
 problem: 4
 description: "LongMemEval 500 — k sweep {10,20,30,50,100} (chunk=on, prefix=on)"
@@ -7,9 +6,9 @@ description: "LongMemEval 500 — k sweep {10,20,30,50,100} (chunk=on, prefix=on
 benchmark:
   name: longmemeval
   length: 500
-  # Unified with the eval-tool default (longmemeval_test.py) and
-  # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
-  # score divergence, so keep this single canonical name.
+  # Canonical split name aligned with the eval-tool default
+  # (longmemeval_test.py). The earlier `longmemeval_s` value silently
+  # diverged in score, so the cleaned variant is the single source of truth.
   split: longmemeval_s_cleaned
   # Local JSON wins over HF download. repo-root relative; generate_config.py
   # main() resolves to absolute. Comment out to fall back to HF online

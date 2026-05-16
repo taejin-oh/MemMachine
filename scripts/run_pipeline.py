@@ -74,8 +74,7 @@ def main() -> int:
     if n_runs != 1:
         raise NotImplementedError(
             f"n_runs={n_runs} is not yet supported (MVP runs each stage once). "
-            "Set n_runs=1 in the run YAML or omit --n-runs. "
-            "Repeated-run wrapper is tracked as future work in DECISIONS.md."
+            "Set n_runs=1 in the run YAML or omit --n-runs."
         )
 
     reuse_run = run_cfg.get("reuse_run")

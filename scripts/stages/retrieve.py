@@ -263,17 +263,18 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
     session_id = cm.session_id_for(run_cfg)
     bench_name = run_cfg["benchmark"]["name"]
 
-    sweep_cells = _expand_sweep(run_cfg.get("sweep", {}))
-    header = (
-        f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  "
-        f"config={config_path}"
-    )
-    if bench_name == "longmemeval":
-        header += (
-            "  longmemeval_answer_prompt="
-            f"{_resolve_answer_prompt_policy(run_cfg, config_path)}"
+    if bench_name != "longmemeval":
+        raise ValueError(
+            f"Unsupported benchmark.name: {bench_name!r}. "
+            "This eval-tool branch supports longmemeval only."
         )
-    print(header)
+
+    sweep_cells = _expand_sweep(run_cfg.get("sweep", {}))
+    print(
+        f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  "
+        f"config={config_path}  "
+        f"longmemeval_answer_prompt={_resolve_answer_prompt_policy(run_cfg, config_path)}"
+    )
 
     retrieve_rows: list[dict[str, Any]] = []
     generate_rows: list[dict[str, Any]] = []
@@ -286,15 +287,9 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
         cell_dir = out_dir / "_cells" / f"cell_{cell_idx:03d}"
         cell_dir.mkdir(parents=True, exist_ok=True)
 
-        if bench_name == "longmemeval":
-            responses = asyncio.run(
-                _run_longmemeval_cell(run_cfg, config_path, session_id, params)
-            )
-        else:
-            raise ValueError(
-                f"Unsupported benchmark.name: {bench_name!r}. "
-                "This eval-tool branch supports longmemeval only."
-            )
+        responses = asyncio.run(
+            _run_longmemeval_cell(run_cfg, config_path, session_id, params)
+        )
 
         # Annotate fact_hits / fact_miss on each response in-place. process_question()
         # itself does not produce these — they're computed by agent_utils.update_results

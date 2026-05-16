@@ -49,7 +49,8 @@ class RetrievalAgentConf(YamlSerializableMixin):
             "adds step-by-step reasoning instruction and an 'Answer (step by "
             "step):' cue. 'memmachine_original' applies MemMachine's "
             "episodic_memory LongMemEval prompt body to the retrieval_agent "
-            "path (hybrid). 'edwin1' / 'edwin3' are opt-in alternates from "
-            "docs/msr/edwin_prompt.md. CLI / run_cfg overrides take precedence."
+            "path (hybrid). 'edwin1' is an 8-rule reasoning prompt; 'edwin3' "
+            "is a KNOWLEDGE UPDATES + PLANNED ACTIONS + MOST RECENT USER "
+            "INPUT priority variant. CLI / run_cfg overrides take precedence."
         ),
     )

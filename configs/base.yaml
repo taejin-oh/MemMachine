@@ -4,7 +4,7 @@
 # 산출물 위치
 results_dir: results
 
-# configuration.yml 처리 모드 (DECISIONS.md D-002)
+# configuration.yml 처리 모드
 configuration:
   # "profile" : configs/profiles/{models,dbs}/*.yaml 조합으로 매 run 생성
   # "existing" : 사용자가 직접 만든 configuration.yml 경로 사용
@@ -40,6 +40,6 @@ evaluation:
   search_concurrency: 4
   judge_concurrency: 4
 
-# 반복 실행 (DECISIONS.md D-001 / 설계 §3.5 fallback)
-# 현재 MVP 는 n_runs=1 만 지원. 그 외 값은 run_pipeline.py 가 NotImplementedError.
+# 반복 실행. 현재 MVP 는 n_runs=1 만 지원.
+# 그 외 값은 run_pipeline.py 가 NotImplementedError.
 n_runs: 1

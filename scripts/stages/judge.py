@@ -65,11 +65,10 @@ def _judge_config_path(run_cfg: dict[str, Any], base_config_path: str) -> str:
     return tmp.name
 
 
-# LongMemEval question_type values (xiaowu0162/longmemeval-cleaned). Same
-# routing key as evaluation/retrieval_agent/evaluate.py: when the row's
-# category matches, route to the original task-specific judge instead of the
-# default ACCURACY_PROMPT path. Kept as a local constant rather than imported
-# to avoid coupling the wrapper stage to legacy evaluate.py internals.
+# LongMemEval question_type values (xiaowu0162/longmemeval-cleaned). When the
+# row's category matches, route to the original task-specific judge templates
+# (get_anscheck_prompt + LongMemEval text mode) instead of the default
+# ACCURACY_PROMPT JSON path used for HotpotQA / LoCoMo / Wiki rows.
 _LONGMEMEVAL_TASKS = frozenset(
     {
         "single-session-user",

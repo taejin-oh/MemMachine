@@ -207,7 +207,7 @@ def test_lme_origin_cot_prompt_differs_from_no_cot():
 
 
 # ---------------------------------------------------------------------------
-# edwin1 / edwin3 (docs/msr/edwin_prompt.md alternates)
+# edwin1 / edwin3 (opt-in alternates)
 # ---------------------------------------------------------------------------
 
 
@@ -220,8 +220,8 @@ def test_edwin1_prompt_renders_with_question_date():
     )
     assert "MEM" in prompt
     assert "Q" in prompt
-    # docs/msr/edwin_prompt.md uses the label "Question timestamp:" — the
-    # label text is preserved verbatim, only the placeholder name is
+    # EDWIN1 uses the label "Question timestamp:" — the label text is
+    # preserved verbatim from the source, only the placeholder name is
     # normalized to {question_date}.
     assert "Question timestamp: Monday, April 10, 2023 at 11:07 PM" in prompt
     # 8-rule reasoning prompt: each numbered rule should be present.
@@ -256,7 +256,7 @@ def test_edwin_prompts_have_no_unsubstituted_placeholders(policy):
     """Edwin prompts must format cleanly with the project's standard kwargs.
 
     Guards against accidental ``{joined_history}`` / ``{question_timestamp}``
-    leftovers from the docs/msr/edwin_prompt.md source — those would survive
+    leftovers from the source template — those would survive
     ``.format(memories=..., question=..., question_date=...)`` and break the
     pipeline downstream.
     """

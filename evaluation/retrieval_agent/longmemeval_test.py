@@ -80,14 +80,13 @@ _ANSWER_PROMPT_LME_ORIGIN_COT = (
     "Answer (step by step):"
 )
 
-# EDWIN1 — opt-in alternative answer-prompt body sourced from
-# ``docs/msr/edwin_prompt.md`` (``EDWIN1_ANSWER_PROMPT``). Eight numbered
-# reasoning rules (multi-answer enumeration, item counting, time-interval
-# subtraction, episodic-memory framing, latest-wins) + a "couple of sentences"
-# length cap. Placeholder normalization: ``{joined_history}`` →
-# ``{memories}`` and ``{question_timestamp}`` → ``{question_date}`` so the
-# template renders with the same kwargs as every other policy in this
-# registry; no other text is altered.
+# EDWIN1 — opt-in alternative answer-prompt body. Eight numbered reasoning
+# rules (multi-answer enumeration, item counting, time-interval subtraction,
+# episodic-memory framing, latest-wins) + a "couple of sentences" length cap.
+# Placeholder normalization: ``{joined_history}`` → ``{memories}`` and
+# ``{question_timestamp}`` → ``{question_date}`` so the template renders with
+# the same kwargs as every other policy in this registry; no other text is
+# altered.
 _ANSWER_PROMPT_EDWIN1 = """You are asked to answer a question from a user based on your memories of a conversation between the user and an assistant.
 
 
@@ -110,8 +109,7 @@ Question: {question}
 Your short response to the question without fluff (no more than a couple of sentences):
 """
 
-# EDWIN3 — opt-in alternative answer-prompt body sourced from
-# ``docs/msr/edwin_prompt.md`` (``EDWIN3_ANSWER_PROMPT``). Closely related to
+# EDWIN3 — opt-in alternative answer-prompt body. Closely related to
 # ``_ANSWER_PROMPT_MEMMACHINE_ORIGINAL`` (KNOWLEDGE UPDATES + PLANNED ACTIONS
 # guides), but adds an explicit MOST RECENT USER INPUT priority paragraph and
 # omits the ``<history>...</history>`` wrapping that ``memmachine_original``
@@ -570,10 +568,10 @@ def build_parser() -> argparse.ArgumentParser:
             "is a verbatim copy of xiaowu0162/LongMemEval upstream no-CoT; "
             "'LME_origin_cot_prompt' is the upstream CoT branch (step-by-step "
             "reasoning, more output tokens); 'memmachine_original' is a "
-            "hybrid with MemMachine reasoning guides; 'edwin1' / 'edwin3' "
-            "are opt-in alternates from docs/msr/edwin_prompt.md (8-rule "
-            "reasoning / KNOWLEDGE UPDATES + PLANNED ACTIONS + MOST RECENT "
-            "USER INPUT, respectively). When omitted, falls back to "
+            "hybrid with MemMachine reasoning guides; 'edwin1' is an 8-rule "
+            "reasoning prompt; 'edwin3' is a KNOWLEDGE UPDATES + PLANNED "
+            "ACTIONS + MOST RECENT USER INPUT priority variant. When omitted, "
+            "falls back to "
             "retrieval_agent.longmemeval_answer_prompt from configuration.yml."
         ),
     )

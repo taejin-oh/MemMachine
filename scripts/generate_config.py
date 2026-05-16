@@ -104,11 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
             "by step):' cue — more output tokens / higher latency than the "
             "no-CoT baseline). 'memmachine_original' applies "
             "MemMachine's episodic_memory LongMemEval prompt body to the "
-            "retrieval_agent path (hybrid). 'edwin1' / 'edwin3' are opt-in "
-            "alternates from docs/msr/edwin_prompt.md (8-rule reasoning + "
-            "length cue / KNOWLEDGE UPDATES + PLANNED ACTIONS + MOST RECENT "
-            "USER INPUT). Maps to evaluation.longmemeval.answer_prompt in "
-            "run_cfg."
+            "retrieval_agent path (hybrid). 'edwin1' is an 8-rule reasoning "
+            "prompt with a length cue; 'edwin3' is a KNOWLEDGE UPDATES + "
+            "PLANNED ACTIONS + MOST RECENT USER INPUT priority variant. "
+            "Maps to evaluation.longmemeval.answer_prompt in run_cfg."
         ),
     )
     parser.add_argument(
@@ -386,7 +385,9 @@ def build_configuration_yml(
                 "embedder": embedder["id"],
                 "reranker": primary_reranker_id,
                 "vector_graph_store": vgs["id"],
-                # message_sentence_chunking 은 run_pipeline 이 sweep 별로 in-place 갱신
+                # fixed-only; _apply_fixed_to_configuration overrides this
+                # value from run_cfg.fixed.message_sentence_chunking before
+                # ingest runs. Sweep is rejected (ingest-affecting key).
                 "message_sentence_chunking": False,
             },
             "long_term_memory_enabled": True,

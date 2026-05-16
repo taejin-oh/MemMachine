@@ -81,9 +81,8 @@ def write_json(path: Path, data: Any) -> None:
 def update_yaml_in_place(path: str | Path, updates: dict[str, Any]) -> None:
     """Apply a deep-merge of `updates` into the YAML at `path` (write back).
 
-    Used to toggle `evaluation.longmemeval.prepend_user_prefix` /
-    `episodic_memory.long_term_memory.message_sentence_chunking` between sweep
-    cells without rewriting the whole file (mirrors run_benchmark_matrix.sh).
+    Used to toggle `evaluation.longmemeval.prepend_user_prefix` between sweep
+    cells without rewriting the whole file.
     """
     import yaml
 

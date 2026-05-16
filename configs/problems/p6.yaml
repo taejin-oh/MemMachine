@@ -1,5 +1,4 @@
 # #6 — Multi-session reasoning 어려움 (#4 결과 재분해, 별도 run 불필요)
-# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #6
 problem: 6
 description: "#4 산출물의 카테고리 재분해 (MS vs SSU/SSP/SSA/TR/KU)"
 
