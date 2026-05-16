@@ -303,6 +303,44 @@ def test_load_longmemeval_local_length_exceeds_returns_all(tmp_path):
     assert len(out) == 1
 
 
+def test_chunking_propagates_through_partial_schema(tmp_path):
+    """Regression for the silent-drop bug caught by the dry-run smoke test.
+
+    `_apply_fixed_to_configuration` writes
+    `episodic_memory.long_term_memory.message_sentence_chunking` into
+    configuration.yml, and `agent_utils.init_memmachine_params` reads it
+    back via `getattr(ltm_conf, "message_sentence_chunking", None)`. The
+    top-level `Configuration` schema types `episodic_memory` as
+    `EpisodicMemoryConfPartial` and `long_term_memory` as
+    `LongTermMemoryConfPartial`, so the Partial MUST carry the field or
+    Pydantic's default `extra="ignore"` will silently drop the YAML key
+    and every chunk=on reproduction will quietly run as chunk=off.
+    """
+    import yaml
+
+    from memmachine_server.common.configuration import Configuration
+    from scripts.generate_config import (
+        _apply_fixed_to_configuration,
+        build_configuration_yml,
+    )
+
+    profile = _model([{"id": "my_bm25", "provider": "bm25", "config": {}}])
+    cfg = build_configuration_yml(profile, _DB_PROFILE)
+    _apply_fixed_to_configuration(cfg, {"message_sentence_chunking": True})
+
+    out = tmp_path / "configuration.yml"
+    out.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    conf = Configuration.load_yml_file(str(out))
+    assert conf.episodic_memory.long_term_memory.message_sentence_chunking is True
+
+    # And the chunk=off path round-trips too.
+    _apply_fixed_to_configuration(cfg, {"message_sentence_chunking": False})
+    out.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    conf = Configuration.load_yml_file(str(out))
+    assert conf.episodic_memory.long_term_memory.message_sentence_chunking is False
+
+
 def test_load_longmemeval_local_preserves_question_date(tmp_path):
     """Local loader must keep question_date verbatim — both LME_origin_prompt
     and memmachine_original answer-prompt policies render this into the
