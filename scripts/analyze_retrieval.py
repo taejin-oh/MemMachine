@@ -17,7 +17,8 @@ derive the gold answer. Two stages:
 
 Output:
   results/{run}/retrieve_analysis.jsonl       (per-question record)
-  results/{run}/retrieve_analysis_summary.json (aggregate)
+  results/{run}/retrieve_analysis_summary.json (aggregate, machine-readable)
+  results/{run}/retrieve_analysis_report.md   (aggregate, human-readable)
 
 LLM: reuses scripts/stages/judge.py's pattern — `create_judge_fn(config_path,
 json_mode=True)` from evaluation/retrieval_agent/llm_judge.py. The judge LLM
@@ -337,6 +338,125 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Markdown report
+# ---------------------------------------------------------------------------
+
+
+def _render_markdown(
+    summary: dict[str, Any],
+    rows: list[dict[str, Any]],
+    run_name: str,
+    config_path: str,
+) -> str:
+    import datetime as _dt
+
+    lines: list[str] = []
+    lines.append(f"# Retrieval Analysis Report — `{run_name}`")
+    lines.append("")
+    lines.append(f"- Generated: {_dt.datetime.now(_dt.UTC).isoformat(timespec='seconds')}")
+    lines.append(f"- Config: `{config_path}`")
+    lines.append(f"- Rows analyzed: **{summary['n_total']}**")
+    lines.append("")
+
+    def _verdict_table(title: str, dist: dict[str, int]) -> None:
+        lines.append(f"## {title}")
+        lines.append("")
+        lines.append("| Verdict | Count |")
+        lines.append("|---|---|")
+        for k in ("sufficient", "partial", "insufficient", "parse_error"):
+            c = dist.get(k, 0)
+            if c or k != "parse_error":
+                lines.append(f"| {k} | {c} |")
+        lines.append("")
+
+    _verdict_table("Stage 1 verdict", summary["stage1_verdict_dist"])
+    _verdict_table("Final verdict (after Stage 2)", summary["final_verdict_dist"])
+
+    s2 = summary["stage2"]
+    lines.append("## Stage 2 (chunk-by-chunk re-check)")
+    lines.append("")
+    lines.append(f"- Questions entered Stage 2: **{s2['n_questions_entered']}**")
+    lines.append(f"- Facts re-checked: **{s2['n_facts_checked']}**")
+    lines.append(
+        f"- Stage 1 false positives: **{s2['n_stage1_false_positives']}** "
+        f"(rate **{s2['stage1_false_positive_rate']:.1%}**)"
+    )
+    lines.append(f"- Truly missing facts: **{s2['n_truly_missing_facts']}**")
+    rank_dist = s2.get("found_in_chunk_rank_distribution") or {}
+    if rank_dist:
+        lines.append("")
+        lines.append("### Found-in-chunk rank distribution")
+        lines.append("")
+        lines.append("| Episode rank | Count |")
+        lines.append("|---|---|")
+        for k, v in sorted(rank_dist.items(), key=lambda x: int(x[0])):
+            lines.append(f"| {k} | {v} |")
+    lines.append("")
+
+    q = summary["answer_x_retrieve_quadrant"]
+    lines.append("## Retrieve × Answer quadrant")
+    lines.append("")
+    lines.append("| Retrieve verdict | Answer correct | Answer wrong |")
+    lines.append("|---|---|---|")
+    for v in ("sufficient", "partial", "insufficient"):
+        lines.append(
+            f"| {v} | {q.get(f'{v}_correct', 0)} | {q.get(f'{v}_wrong', 0)} |"
+        )
+    lines.append("")
+    lines.append(
+        "Interpretation: `sufficient × wrong` ≈ answer-LLM weakness; "
+        "`insufficient × wrong` ≈ retrieval weakness; "
+        "`insufficient × correct` ≈ lucky guess."
+    )
+    lines.append("")
+
+    bycat = summary.get("by_category") or {}
+    if bycat:
+        lines.append("## Per category")
+        lines.append("")
+        lines.append(
+            "| Category | n | answer_acc | sufficient | partial | insufficient |"
+        )
+        lines.append("|---|---|---|---|---|---|")
+        for cat, st in sorted(bycat.items()):
+            d = st.get("final_verdict_dist", {})
+            lines.append(
+                f"| {cat} | {st['n']} | {st['answer_correct_rate']:.2f} | "
+                f"{d.get('sufficient', 0)} | {d.get('partial', 0)} | "
+                f"{d.get('insufficient', 0)} |"
+            )
+        lines.append("")
+
+    truly_missing = [
+        (r["question_id"], f["fact"], r["category"])
+        for r in rows
+        for f in r.get("stage2") or []
+        if f.get("truly_missing")
+    ]
+    if truly_missing:
+        lines.append("## Truly missing facts (sample, max 10)")
+        lines.append("")
+        for qid, fact, cat in truly_missing[:10]:
+            lines.append(f"- `{qid}` ({cat}): {fact}")
+        lines.append("")
+
+    sufficient_wrong = [
+        r for r in rows
+        if r.get("verdict_final") == "sufficient" and r.get("judge_score") == 0
+    ]
+    if sufficient_wrong:
+        lines.append("## Sufficient retrieve but answer wrong (sample, max 10)")
+        lines.append("")
+        lines.append("These flag answer-LLM weakness rather than retrieval.")
+        lines.append("")
+        for r in sufficient_wrong[:10]:
+            lines.append(f"- `{r['question_id']}` ({r['category']})")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -414,13 +534,19 @@ async def _main_async(
 
     out_jsonl = results_dir / "retrieve_analysis.jsonl"
     out_summary = results_dir / "retrieve_analysis_summary.json"
+    out_md = results_dir / "retrieve_analysis_report.md"
     cm.write_jsonl(out_jsonl, out_rows)
     summary = _aggregate(out_rows)
     summary["run_name"] = args.run
     cm.write_json(out_summary, summary)
+    out_md.write_text(
+        _render_markdown(summary, out_rows, args.run, config_path),
+        encoding="utf-8",
+    )
 
     print(f"[analyze_retrieval] ok → {out_jsonl}")
     print(f"[analyze_retrieval] ok → {out_summary}")
+    print(f"[analyze_retrieval] ok → {out_md}")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 
