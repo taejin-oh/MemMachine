@@ -107,9 +107,7 @@ configs/base.yaml                            # repo defaults
 ## Style / repo conventions
 
 - See [AGENTS.md](AGENTS.md) for the full style guide (Python type hints everywhere, `pydantic` for structured I/O, `async def` consistency, snake_case modules / PascalCase classes / UPPER_SNAKE constants).
-- See [DECISIONS.md](DECISIONS.md) for the design decisions behind the 5-stage split (D-001), profile/existing config modes (D-002), EDWIN prompt hook scope (D-003), file layout (D-004), and benchmark dispatch (D-006).
 - See [STYLE_GUIDE.md](STYLE_GUIDE.md) for tool references.
-- `docs/msr/` holds Korean reproduction-eval design docs and run plans (notably [docs/msr/testrun/](docs/msr/testrun/)). They are tracking docs, not code — but reflect intent when changing the eval pipeline.
 
 ## Workflow notes
 
