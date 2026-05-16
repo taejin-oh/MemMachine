@@ -3,7 +3,6 @@
 
 # 산출물 위치
 results_dir: results
-prompts_dir: prompts
 
 # configuration.yml 처리 모드 (DECISIONS.md D-002)
 configuration:

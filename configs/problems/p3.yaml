@@ -23,10 +23,5 @@ fixed:
   message_sentence_chunking: false   # chunk=off
   test_target: retrieval_agent
 
-# stage hooks
-prompts:
-  # EDWIN1 향후 사용. 현재는 placeholder — 텍스트 미확보 시 fallback
-  generate_prompt_file: prompts/EDWIN1.txt
-
 metrics:
   - overall_llm_score
