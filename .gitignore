@@ -10,6 +10,9 @@ configs/generated/
 configs/runs/*.yaml
 !configs/runs/_example.json
 
+# Benchmark datasets (large; download separately — see USAGE)
+evaluation/data/longmemeval_s_cleaned.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
