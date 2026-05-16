@@ -33,8 +33,18 @@ judge:
 
 # 평가 기본값
 evaluation:
-  # LongMemEval abstention 카테고리 처리
+  # LongMemEval abstention 처리 — question_id 에 "_abs" 가 들어간 행을
+  # retrieve 단계에서 drop. default true (논문 baseline 보고가 비-abstention
+  # 기준이라 점수 비교가 자연스러움). false 로 두면 abstention 행도 평가.
   exclude_abstention: true
+  longmemeval:
+    # question_type 필터. null/[] 이면 6 카테고리 모두 평가.
+    # 부분 평가 예: ["multi-session"], ["temporal-reasoning","knowledge-update"]
+    # 유효값: single-session-user / single-session-assistant /
+    #         multi-session / temporal-reasoning / knowledge-update /
+    #         single-session-preference
+    # ingest 는 항상 전체 dataset 의 haystack 을 적재 (retrieval competition 보존).
+    include_categories: null
   # 동시성 (기존 run_test.sh 와 동일 의미)
   ingest_concurrency: 4
   search_concurrency: 4

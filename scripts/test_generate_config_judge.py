@@ -504,3 +504,78 @@ def test_cli_invalid_answer_prompt_rejected():
                 "typo",
             ]
         )
+
+
+# ---------------------------------------------------------------------------
+# --include-categories CLI mapping
+# ---------------------------------------------------------------------------
+
+
+def test_cli_include_categories_maps_to_run_cfg():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        [
+            "--problem",
+            "4",
+            "--run-name",
+            "x",
+            "--include-categories",
+            "multi-session,temporal-reasoning",
+        ]
+    )
+    out = cli_to_overrides(args)
+    assert out["evaluation"]["longmemeval"]["include_categories"] == [
+        "multi-session",
+        "temporal-reasoning",
+    ]
+
+
+def test_cli_include_categories_trims_whitespace():
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        [
+            "--problem",
+            "4",
+            "--run-name",
+            "x",
+            "--include-categories",
+            "  multi-session ,, knowledge-update  ",
+        ]
+    )
+    out = cli_to_overrides(args)
+    assert out["evaluation"]["longmemeval"]["include_categories"] == [
+        "multi-session",
+        "knowledge-update",
+    ]
+
+
+def test_cli_include_categories_empty_omits_key():
+    """Empty string / unset CLI flag must not emit an empty list."""
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(["--problem", "4", "--run-name", "x"])
+    out = cli_to_overrides(args)
+    longmemeval = (out.get("evaluation") or {}).get("longmemeval") or {}
+    assert "include_categories" not in longmemeval
+
+
+def test_cli_include_categories_validation_deferred_to_runtime():
+    """CLI does not gate values (no choices=); retrieve stage's resolver
+    is the single source of truth so the same allowlist drives both."""
+    from scripts.generate_config import cli_to_overrides
+
+    args = _parse_args(
+        [
+            "--problem",
+            "4",
+            "--run-name",
+            "x",
+            "--include-categories",
+            "typo-cat",
+        ]
+    )
+    # CLI accepts; the run_cfg-driven validator rejects later.
+    out = cli_to_overrides(args)
+    assert out["evaluation"]["longmemeval"]["include_categories"] == ["typo-cat"]

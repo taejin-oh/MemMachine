@@ -246,6 +246,7 @@ def _ns(**overrides):
         "judge_model": None,
         "longmemeval_yesno_policy": None,
         "longmemeval_answer_prompt": None,
+        "include_categories": None,
         "length": None,
         "n_runs": None,
         "reuse_run": None,
@@ -317,8 +318,8 @@ def test_chunking_propagates_through_partial_schema(tmp_path):
     and every chunk=on reproduction will quietly run as chunk=off.
     """
     import yaml
-
     from memmachine_server.common.configuration import Configuration
+
     from scripts.generate_config import (
         _apply_fixed_to_configuration,
         build_configuration_yml,

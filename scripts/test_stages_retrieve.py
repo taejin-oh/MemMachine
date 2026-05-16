@@ -140,5 +140,112 @@ def test_run_unsupported_benchmark_raises(monkeypatch, tmp_path):
         )
 
 
+# ---------------------------------------------------------------------------
+# include_categories / exclude_abstention resolution
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_include_categories_none_means_all():
+    assert retrieve_stage._resolve_include_categories({}) is None
+    assert (
+        retrieve_stage._resolve_include_categories(
+            {"evaluation": {"longmemeval": {"include_categories": None}}}
+        )
+        is None
+    )
+    assert (
+        retrieve_stage._resolve_include_categories(
+            {"evaluation": {"longmemeval": {"include_categories": []}}}
+        )
+        is None
+    )
+
+
+def test_resolve_include_categories_returns_set():
+    out = retrieve_stage._resolve_include_categories(
+        {
+            "evaluation": {
+                "longmemeval": {
+                    "include_categories": ["multi-session", "temporal-reasoning"]
+                }
+            }
+        }
+    )
+    assert out == {"multi-session", "temporal-reasoning"}
+
+
+def test_resolve_include_categories_tolerates_comma_string():
+    """Generators may emit `"a,b"` instead of `["a","b"]`; we accept both."""
+    out = retrieve_stage._resolve_include_categories(
+        {
+            "evaluation": {
+                "longmemeval": {"include_categories": "multi-session, knowledge-update"}
+            }
+        }
+    )
+    assert out == {"multi-session", "knowledge-update"}
+
+
+def test_resolve_include_categories_rejects_invalid():
+    with pytest.raises(ValueError, match=r"invalid values"):
+        retrieve_stage._resolve_include_categories(
+            {"evaluation": {"longmemeval": {"include_categories": ["typo-cat"]}}}
+        )
+
+
+def test_resolve_include_categories_partial_invalid_rejected():
+    """One bad value taints the whole list (no silent partial filter)."""
+    with pytest.raises(ValueError, match=r"\['typo-cat'\]"):
+        retrieve_stage._resolve_include_categories(
+            {
+                "evaluation": {
+                    "longmemeval": {"include_categories": ["multi-session", "typo-cat"]}
+                }
+            }
+        )
+
+
+def test_valid_categories_match_upstream_six():
+    """Drift gate: list of canonical LongMemEval categories. If LongMemEval
+    adds a 7th task, this must update + the judge router in llm_judge.py.
+    """
+    assert {
+        "single-session-user",
+        "single-session-assistant",
+        "multi-session",
+        "temporal-reasoning",
+        "knowledge-update",
+        "single-session-preference",
+    } == retrieve_stage.VALID_LONGMEMEVAL_CATEGORIES
+
+
+def test_resolve_exclude_abstention_default_true():
+    assert retrieve_stage._resolve_exclude_abstention({}) is True
+    assert (
+        retrieve_stage._resolve_exclude_abstention(
+            {"evaluation": {"exclude_abstention": None}}
+        )
+        is True
+    )
+
+
+def test_resolve_exclude_abstention_explicit_false():
+    assert (
+        retrieve_stage._resolve_exclude_abstention(
+            {"evaluation": {"exclude_abstention": False}}
+        )
+        is False
+    )
+
+
+def test_resolve_exclude_abstention_truthy_coerce():
+    assert (
+        retrieve_stage._resolve_exclude_abstention(
+            {"evaluation": {"exclude_abstention": 1}}
+        )
+        is True
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

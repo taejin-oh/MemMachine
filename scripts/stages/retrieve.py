@@ -28,6 +28,63 @@ from . import _common as cm
 # the *same* ingested corpus, defeating the experiment's intent.
 SWEEP_INGEST_AFFECTING_KEYS: set[str] = {"message_sentence_chunking"}
 
+# Canonical LongMemEval question_type values (xiaowu0162/longmemeval-cleaned).
+# evaluation.longmemeval.include_categories must be a subset of these.
+VALID_LONGMEMEVAL_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "single-session-user",
+        "single-session-assistant",
+        "multi-session",
+        "temporal-reasoning",
+        "knowledge-update",
+        "single-session-preference",
+    }
+)
+
+
+def _resolve_include_categories(run_cfg: dict[str, Any]) -> set[str] | None:
+    """Resolve ``evaluation.longmemeval.include_categories``.
+
+    Returns the set of allowed ``question_type`` values, or ``None`` when no
+    filter is requested (key absent / null / empty list). Raises ``ValueError``
+    if any value is outside :data:`VALID_LONGMEMEVAL_CATEGORIES` so a typo
+    fails loudly before retrieve burns LLM calls.
+    """
+    raw = ((run_cfg.get("evaluation") or {}).get("longmemeval") or {}).get(
+        "include_categories"
+    )
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        # Tolerate accidental "cat1,cat2" string (CLI shape leaking into yaml).
+        items = [c.strip() for c in raw.split(",") if c.strip()]
+    else:
+        items = [str(c).strip() for c in raw if str(c).strip()]
+    if not items:
+        return None
+    cats = set(items)
+    invalid = cats - VALID_LONGMEMEVAL_CATEGORIES
+    if invalid:
+        raise ValueError(
+            "evaluation.longmemeval.include_categories has invalid values: "
+            f"{sorted(invalid)}. Valid: {sorted(VALID_LONGMEMEVAL_CATEGORIES)}"
+        )
+    return cats
+
+
+def _resolve_exclude_abstention(run_cfg: dict[str, Any]) -> bool:
+    """Whether to drop ``_abs``-id questions from retrieve.
+
+    Default ``True`` (matches base.yaml). LongMemEval abstention rows are
+    routed to a different judge template upstream; the eval-tool default
+    excludes them so overall scores match the canonical "non-abstention"
+    LongMemEval reporting unless explicitly opted in.
+    """
+    val = (run_cfg.get("evaluation") or {}).get("exclude_abstention")
+    if val is None:
+        return True
+    return bool(val)
+
 
 def _validate_sweep_keys(sweep: dict[str, Any]) -> None:
     ingest_bad = sorted(k for k in sweep if k in SWEEP_INGEST_AFFECTING_KEYS)
@@ -141,6 +198,29 @@ async def _run_longmemeval_cell(
     else:
         dataset = load_longmemeval_dataset(
             length=int(bench["length"]), split=bench["split"]
+        )
+
+    # Apply category / abstention filters. Ingest stage already ran on the
+    # full haystack pool, so dropping questions here changes only what gets
+    # retrieved + judged, preserving retrieval competition.
+    include_cats = _resolve_include_categories(run_cfg)
+    exclude_abs = _resolve_exclude_abstention(run_cfg)
+    if include_cats is not None or exclude_abs:
+        before = len(dataset)
+        filtered: list[dict[str, Any]] = []
+        for sample in dataset:
+            qtype = str(sample.get("question_type", "unknown"))
+            qid = str(sample.get("question_id", ""))
+            if include_cats is not None and qtype not in include_cats:
+                continue
+            if exclude_abs and "_abs" in qid:
+                continue
+            filtered.append(sample)
+        dataset = filtered
+        cats_label = sorted(include_cats) if include_cats is not None else "ALL"
+        print(
+            f"[retrieve] question filter: include_categories={cats_label}, "
+            f"exclude_abstention={exclude_abs} → {len(dataset)}/{before} kept"
         )
 
     rm = agent_utils.load_eval_config(config_path)

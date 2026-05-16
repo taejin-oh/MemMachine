@@ -117,6 +117,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--n-runs", type=int, help="Repeat count (only n_runs=1 supported)"
     )
 
+    # Question filter
+    parser.add_argument(
+        "--include-categories",
+        help=(
+            "Comma-separated LongMemEval question_type list to keep. Default "
+            "= all 6. Valid: single-session-user, single-session-assistant, "
+            "multi-session, temporal-reasoning, knowledge-update, "
+            "single-session-preference. Affects retrieve/generate/judge/"
+            "analyze; ingest always uses the full haystack pool to preserve "
+            "retrieval competition. Maps to "
+            "evaluation.longmemeval.include_categories in run_cfg."
+        ),
+    )
+
     # #6 / #12 reuse-run
     parser.add_argument(
         "--reuse-run", help="For p6/p12: name of an earlier run to analyze"
@@ -174,6 +188,13 @@ def cli_to_overrides(args: argparse.Namespace) -> dict[str, Any]:
         out.setdefault("evaluation", {}).setdefault("longmemeval", {})[
             "answer_prompt"
         ] = args.longmemeval_answer_prompt
+
+    if args.include_categories:
+        cats = [c.strip() for c in args.include_categories.split(",") if c.strip()]
+        if cats:
+            out.setdefault("evaluation", {}).setdefault("longmemeval", {})[
+                "include_categories"
+            ] = cats
 
     if args.length is not None:
         out.setdefault("benchmark", {})["length"] = args.length
