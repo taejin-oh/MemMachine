@@ -1,0 +1,53 @@
+# Ollama-backed model profile — 진짜 end-to-end "돌아만 가는" 검증용.
+#
+# 구성:
+#   - llm_model: localhost:11434 Ollama (OpenAI 호환 endpoint)
+#   - judge_llm: 미지정 → self-judge
+#   - embedder: sentence-transformer (로컬, BAAI/bge-base-en-v1.5)
+#   - rerankers: rrf-hybrid([bm25, identity])
+#
+# 외부 호출 / 비용: 0. 디스크: ollama 모델 ~1.3GB + embedder 캐시 ~420MB.
+# 품질: 무의미 (llama3.2:1b 는 LongMemEval 답변 능력 매우 낮음).
+# 목적: "파이프라인이 진짜 backend 로 끝까지 도는지" 확인.
+#
+# 사전 준비:
+#   brew install ollama
+#   brew services start ollama
+#   ollama pull llama3.2:1b      # 또는 qwen2.5:0.5b (400MB) / phi3:mini
+
+embedder:
+  id: st_bge_base_en
+  provider: sentence-transformer
+  config:
+    model: BAAI/bge-base-en-v1.5
+    max_input_length: 512
+
+rerankers:
+  - id: bm25_main
+    provider: bm25
+    config:
+      k1: 1.5
+      b: 0.75
+      epsilon: 0.25
+      language: english
+      tokenizer: default
+  - id: identity_main
+    provider: identity
+    config: {}
+  - id: rrf_hybrid_main
+    provider: rrf-hybrid
+    config:
+      reranker_ids:
+        - bm25_main
+        - identity_main
+      k: 60
+
+primary_reranker: rrf_hybrid_main
+
+llm_model:
+  id: ollama_llama32_1b
+  provider: openai-chat-completions
+  config:
+    api_key: "ollama"                      # Ollama 는 키 검증 안 함; placeholder
+    base_url: http://localhost:11434/v1    # 기본 Ollama 포트
+    model: llama3.2:1b                     # ollama pull 한 모델명과 일치
