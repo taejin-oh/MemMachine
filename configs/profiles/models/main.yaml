@@ -2,10 +2,11 @@
 #
 # 구성:
 #   - embedder: sentence-transformer (로컬, BAAI/bge-base-en-v1.5, 768-dim)
-#   - llm_model: openai-chat-completions (gpt-4o-mini default; self-judge)
+#   - llm_model: Google Gemini (OpenAI 호환 endpoint, free tier)
 #   - rerankers: rrf-hybrid([bm25, identity]) — bm25 + identity 결합
 #
-# 사용 전: <OPENAI_API_KEY> 부분만 실제 키로 교체.
+# 사용 전: <GEMINI_API_KEY> 부분만 실제 키로 교체.
+# 키 발급: https://aistudio.google.com/apikey
 # sentence-transformer 모델은 첫 사용 시 HF cache에 자동 다운로드.
 
 embedder:
@@ -39,12 +40,22 @@ rerankers:
 primary_reranker: rrf_hybrid_main
 
 llm_model:
-  id: chat_gpt_4o_mini
+  id: gemini_25_flash
   provider: openai-chat-completions
   config:
-    api_key: "<OPENAI_API_KEY>"
-    base_url: https://api.openai.com/v1
-    model: gpt-4o-mini
+    api_key: "<GEMINI_API_KEY>"
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    model: gemini-2.5-flash
 
-# judge_llm 미지정 → self-judge (chat_gpt_4o_mini 재사용).
+# judge_llm 미지정 → self-judge (gemini_25_flash 재사용).
 # judge prompt body 는 어떤 정책을 선택해도 xiaowu0162/LongMemEval 원본 그대로.
+#
+# Free tier 제한 (gemini-2.5-flash):
+#   - 15 RPM / 1500 RPD / 1M TPM
+# LongMemEval 500문항 = answer 470 + judge 470 = ~940 호출 → 일 한도 OK,
+# RPM 때문에 ~70분 소요. 처음엔 --length 10~50 권장.
+#
+# 모델 옵션:
+#   - gemini-2.5-flash       (빠름, 권장)
+#   - gemini-2.5-flash-lite  (더 빠름/약함, RPM 한도 같음)
+#   - gemini-2.5-pro         (느림, 무료 한도 적음 — 5 RPM / 25 RPD / 250K TPM)

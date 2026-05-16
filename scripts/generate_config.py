@@ -54,7 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--problem", type=int, choices=[2, 3, 4, 5, 6, 12], help="Problem number"
+        "--problem",
+        type=int,
+        choices=[0, 2, 3, 4, 5, 6, 12],
+        help="Problem number (0 = baseline with no sweep)",
     )
     parser.add_argument(
         "--run-name", help="Output run name (used in filename and results/ dir)"
@@ -548,8 +551,11 @@ def main() -> int:
     json_overrides = load_json_overrides(args.from_json)
     cli_overrides = cli_to_overrides(args)
 
-    # Determine problem (CLI > JSON > error)
-    problem = cli_overrides.get("problem") or json_overrides.get("problem")
+    # Determine problem (CLI > JSON > error). Use explicit None check so the
+    # baseline problem id `0` is not treated as falsy.
+    problem = cli_overrides.get("problem")
+    if problem is None:
+        problem = json_overrides.get("problem")
     if problem is None:
         print("ERROR: --problem (or 'problem' in JSON) is required", file=sys.stderr)
         return 2

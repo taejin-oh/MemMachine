@@ -1,0 +1,53 @@
+# p0 — Baseline LongMemEval test (no sweep).
+#
+# 합의된 default 조합 (user 선택 사항):
+#   B. test_target = memmachine          (retrieval_agent orchestration 없음)
+#   C. search_limit = 30                 (k sweep 없음 — 단일 값)
+#   D. prepend_user_prefix = false       ("User: " prefix 비활성)
+#   E. message_sentence_chunking = false (chunk=off; ingest 빠름)
+#   F. answer_prompt = edwin3            (KNOWLEDGE UPDATES + PLANNED ACTIONS + MOST RECENT)
+#   H. longmemeval_yesno_policy = lenient  (xiaowu0162 upstream 그대로)
+#   I. exclude_abstention = true (base.yaml default)
+#
+# G/J/K/L/M/N (profile 단의 선택지) 는 configuration 빌드 시 model/db profile 로 들어감
+#   — generate_config.py --model-profile main --db-profile main 으로 지정.
+#
+# 사용 예:
+#   uv run python scripts/generate_config.py --problem 0 \
+#       --run-name my_baseline \
+#       --model-profile main --db-profile main
+#   uv run python scripts/run_pipeline.py --config configs/runs/my_baseline.yaml
+
+problem: 0
+description: "LongMemEval baseline — k=30, chunk=off, prefix=off, edwin3, lenient (no sweep)"
+
+benchmark:
+  name: longmemeval
+  length: 500
+  split: longmemeval_s_cleaned
+  # 로컬 JSON 우선 (없으면 HF 자동 다운로드 — load_longmemeval_dataset 폴백).
+  data_path: evaluation/data/longmemeval_s_cleaned.json
+
+# 단일 셀 (sweep 없음)
+sweep: {}
+
+fixed:
+  test_target: memmachine
+  search_limit: 30
+  prepend_user_prefix: false
+  message_sentence_chunking: false
+
+evaluation:
+  longmemeval:
+    answer_prompt: edwin3
+    # include_categories null (base 상속) → 6 카테고리 전부.
+    # 좁히려면 CLI --include-categories 또는 yaml 에 명시.
+
+judge:
+  # null → self-judge (answer LLM 재사용); CLI --judge-model 로 swap 가능.
+  llm_model_id: null
+  longmemeval_yesno_policy: lenient
+
+metrics:
+  - overall_llm_score
+  - per_category_llm_score
