@@ -13,7 +13,6 @@ skip work whose outputs already exist (see each stage module for details).
 from __future__ import annotations
 
 import argparse
-import contextlib
 import sys
 from pathlib import Path
 
@@ -51,74 +50,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="analyze: emit token/accuracy Pareto curve (#12)",
     )
-    parser.add_argument(
-        "--fake-backends",
-        action="store_true",
-        help=(
-            "Stub Neo4j ingest / embedder / answer LLM / judge LLM with "
-            "deterministic fakes from scripts.fake_smoke. Exercises pipeline "
-            "wiring (filter, jsonl emit, analyze aggregation) on any run "
-            "yaml without Docker / API credits. Scores are meaningless."
-        ),
-    )
     return parser.parse_args()
-
-
-@contextlib.contextmanager
-def _maybe_fake_backends(enabled: bool):
-    """Install scripts.fake_smoke patches for the duration of the pipeline run.
-
-    Imports are lazy so the regular (real-backend) path does not pull in
-    unittest.mock or the fake_smoke package at all.
-    """
-    if not enabled:
-        yield
-        return
-
-    from unittest.mock import patch
-
-    from scripts.fake_smoke import (
-        fake_create_judge_fn,
-        fake_init_memmachine_params,
-        fake_load_eval_config,
-        fake_longmemeval_ingest,
-        fake_process_question,
-    )
-
-    patches = [
-        patch(
-            "evaluation.retrieval_agent.longmemeval_test.longmemeval_ingest",
-            side_effect=fake_longmemeval_ingest,
-        ),
-        patch(
-            "evaluation.utils.agent_utils.load_eval_config",
-            side_effect=fake_load_eval_config,
-        ),
-        patch(
-            "evaluation.utils.agent_utils.init_memmachine_params",
-            side_effect=fake_init_memmachine_params,
-        ),
-        patch(
-            "evaluation.utils.agent_utils.process_question",
-            side_effect=fake_process_question,
-        ),
-        patch(
-            "evaluation.retrieval_agent.llm_judge.create_judge_fn",
-            side_effect=fake_create_judge_fn,
-        ),
-    ]
-    for p in patches:
-        p.start()
-    print(
-        "[pipeline] --fake-backends ACTIVE — scores are meaningless, "
-        "only wiring is validated",
-        file=sys.stderr,
-    )
-    try:
-        yield
-    finally:
-        for p in patches:
-            p.stop()
 
 
 def resolve_stages(arg: str) -> list[str]:
@@ -178,22 +110,21 @@ def main() -> int:
     from scripts.stages import judge as stage_judge
     from scripts.stages import retrieve as stage_retrieve
 
-    with _maybe_fake_backends(args.fake_backends):
-        for stage in stages:
-            if stage == "ingest":
-                stage_ingest.run(run_cfg)
-            elif stage == "retrieve":
-                stage_retrieve.run(run_cfg)
-            elif stage == "generate":
-                stage_generate.run(run_cfg)
-            elif stage == "judge":
-                stage_judge.run(run_cfg)
-            elif stage == "analyze":
-                stage_analyze.run(
-                    run_cfg,
-                    decompose_multisession=args.decompose_multisession,
-                    pareto=args.pareto,
-                )
+    for stage in stages:
+        if stage == "ingest":
+            stage_ingest.run(run_cfg)
+        elif stage == "retrieve":
+            stage_retrieve.run(run_cfg)
+        elif stage == "generate":
+            stage_generate.run(run_cfg)
+        elif stage == "judge":
+            stage_judge.run(run_cfg)
+        elif stage == "analyze":
+            stage_analyze.run(
+                run_cfg,
+                decompose_multisession=args.decompose_multisession,
+                pareto=args.pareto,
+            )
 
     print("[pipeline] done.")
     return 0
