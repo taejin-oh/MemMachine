@@ -1,0 +1,25 @@
+# Main DB profile — Neo4j (vector graph) + Postgres (profile storage).
+#
+# DB 인스턴스 자체는 사용자가 띄워야 함:
+#   ./memmachine-compose.sh start   # 기본 Docker compose
+# 또는 직접 운영중인 DB 가 있다면 host/port/auth 만 맞추면 됨.
+
+vector_graph_store:
+  id: neo4j_main
+  provider: neo4j
+  config:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: "<NEO4J_PASSWORD>"
+
+profile_storage:
+  id: postgres_main
+  provider: postgres
+  config:
+    dialect: postgresql
+    driver: asyncpg
+    host: localhost
+    port: 5432
+    user: memmachine
+    password: "<POSTGRES_PASSWORD>"
+    db_name: memmachine

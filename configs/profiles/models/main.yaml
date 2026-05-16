@@ -1,0 +1,50 @@
+# Main model profile — used for the baseline LongMemEval test.
+#
+# 구성:
+#   - embedder: sentence-transformer (로컬, BAAI/bge-base-en-v1.5, 768-dim)
+#   - llm_model: openai-chat-completions (gpt-4o-mini default; self-judge)
+#   - rerankers: rrf-hybrid([bm25, identity]) — bm25 + identity 결합
+#
+# 사용 전: <OPENAI_API_KEY> 부분만 실제 키로 교체.
+# sentence-transformer 모델은 첫 사용 시 HF cache에 자동 다운로드.
+
+embedder:
+  id: st_bge_base_en
+  provider: sentence-transformer
+  config:
+    model: BAAI/bge-base-en-v1.5
+    max_input_length: 512
+
+rerankers:
+  - id: bm25_main
+    provider: bm25
+    config:
+      k1: 1.5
+      b: 0.75
+      epsilon: 0.25
+      language: english
+      tokenizer: default
+  - id: identity_main
+    provider: identity
+    config: {}
+  - id: rrf_hybrid_main
+    provider: rrf-hybrid
+    config:
+      reranker_ids:
+        - bm25_main
+        - identity_main
+      k: 60
+
+# rerankers 가 3개라 primary 명시 필수
+primary_reranker: rrf_hybrid_main
+
+llm_model:
+  id: chat_gpt_4o_mini
+  provider: openai-chat-completions
+  config:
+    api_key: "<OPENAI_API_KEY>"
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+
+# judge_llm 미지정 → self-judge (chat_gpt_4o_mini 재사용).
+# judge prompt body 는 어떤 정책을 선택해도 xiaowu0162/LongMemEval 원본 그대로.
