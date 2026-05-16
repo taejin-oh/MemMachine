@@ -70,16 +70,6 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help='Comma-separated question_type filter. e.g. "multi-session,temporal-reasoning"',
     )
-    p.add_argument(
-        "--model-profile",
-        default="main",
-        help='configs/profiles/models/{NAME}.yaml. Examples: "main" (default, OpenAI placeholder), "ollama" (local LLM).',
-    )
-    p.add_argument(
-        "--db-profile",
-        default="main",
-        help="configs/profiles/dbs/{NAME}.yaml.",
-    )
     return p.parse_args()
 
 
@@ -125,14 +115,8 @@ def main() -> int:
         build_configuration_yml,
     )
 
-    mp_path = REPO / "configs" / "profiles" / "models" / f"{args.model_profile}.yaml"
-    dp_path = REPO / "configs" / "profiles" / "dbs" / f"{args.db_profile}.yaml"
-    if not mp_path.exists():
-        raise SystemExit(f"model profile missing: {mp_path}")
-    if not dp_path.exists():
-        raise SystemExit(f"db profile missing: {dp_path}")
-    mp = load_yaml(mp_path)
-    dp = load_yaml(dp_path)
+    mp = load_yaml(REPO / "configs" / "profiles" / "models" / "main.yaml")
+    dp = load_yaml(REPO / "configs" / "profiles" / "dbs" / "main.yaml")
     cfg = build_configuration_yml(mp, dp)
     _apply_fixed_to_configuration(
         cfg,
