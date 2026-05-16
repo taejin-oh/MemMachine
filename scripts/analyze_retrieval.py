@@ -202,6 +202,7 @@ async def _stage2_one_fact(
             return {
                 "fact": fact,
                 "found_in_chunk": idx,
+                "found_in_chunk_text": ep,
                 "stage1_false_positive": True,
                 "truly_missing": False,
                 "reasoning": str(parsed.get("reasoning", "")),
@@ -209,6 +210,7 @@ async def _stage2_one_fact(
     return {
         "fact": fact,
         "found_in_chunk": None,
+        "found_in_chunk_text": None,
         "stage1_false_positive": False,
         "truly_missing": True,
         "reasoning": "",
