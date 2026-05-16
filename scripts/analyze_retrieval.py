@@ -190,8 +190,17 @@ async def _stage2_one_fact(
     call_fn: Callable[[str], str],
     fact: str,
     episodes: list[str],
+    stage1_present: bool,
 ) -> dict[str, Any]:
-    """Walk episodes, ask the LLM per episode. Early-exit on first 'contains_fact=true'."""
+    """Walk episodes, ask the LLM per episode. Early-exit on first 'contains_fact=true'.
+
+    `stage1_present` is what stage 1 said about this fact. When stage 1 said
+    "absent" and stage 2 finds it, that's a stage1_false_positive. When stage
+    1 said "absent" and stage 2 doesn't find it either, it's truly_missing.
+    (When stage1_present=True, both flags stay False regardless of stage 2
+    outcome — stage 1's claim is being audited but not reclassified into the
+    legacy missing/false-positive buckets.)
+    """
     for idx, ep in enumerate(episodes):
         prompt = _STAGE2_PROMPT.format(fact=fact, episode=ep)
         parsed, _raw = await _call_llm_json(call_fn, prompt)
@@ -201,18 +210,20 @@ async def _stage2_one_fact(
         if bool(parsed.get("contains_fact", False)):
             return {
                 "fact": fact,
+                "stage1_present_in_context": stage1_present,
                 "found_in_chunk": idx,
                 "found_in_chunk_text": ep,
-                "stage1_false_positive": True,
+                "stage1_false_positive": not stage1_present,
                 "truly_missing": False,
                 "reasoning": str(parsed.get("reasoning", "")),
             }
     return {
         "fact": fact,
+        "stage1_present_in_context": stage1_present,
         "found_in_chunk": None,
         "found_in_chunk_text": None,
         "stage1_false_positive": False,
-        "truly_missing": True,
+        "truly_missing": not stage1_present,
         "reasoning": "",
     }
 
@@ -222,6 +233,7 @@ async def _analyze_question(
     jrow: dict[str, Any] | None,
     call_fn: Callable[[str], str],
     skip_stage2: bool,
+    pin_all_facts: bool,
 ) -> dict[str, Any]:
     question = rrow.get("question", "")
     chunks_text = rrow.get("chunks_text", "")
@@ -230,19 +242,50 @@ async def _analyze_question(
     s1 = await _stage1(call_fn, question, golden_answer, chunks_text)
 
     stage2_results: list[dict[str, Any]] = []
-    if s1["verdict"] in {"partial", "insufficient"} and not skip_stage2:
-        missing = [f["fact"] for f in s1["required_facts"] if not f["present_in_context"]]
+    if not skip_stage2 and s1["verdict"] != "parse_error":
+        if pin_all_facts:
+            # Pin every required fact to a chunk — including ones stage 1 said
+            # are present. Doubles stage-2 cost but gives full chunk-level
+            # provenance for every fact.
+            targets = [
+                (f["fact"], bool(f.get("present_in_context", False)))
+                for f in s1["required_facts"]
+            ]
+        elif s1["verdict"] in {"partial", "insufficient"}:
+            # Default: only re-check facts stage 1 marked as missing.
+            targets = [
+                (f["fact"], False)
+                for f in s1["required_facts"]
+                if not f.get("present_in_context", False)
+            ]
+        else:
+            targets = []
         episodes = _split_episodes(chunks_text)
-        for fact in missing:
-            res = await _stage2_one_fact(call_fn, fact, episodes)
+        for fact, present in targets:
+            res = await _stage2_one_fact(call_fn, fact, episodes, present)
             stage2_results.append(res)
 
-    # Final verdict: if stage2 turned all stage1-missing into found, treat as sufficient.
-    verdict_final = s1["verdict"]
-    if stage2_results:
-        all_found = all(r["found_in_chunk"] is not None for r in stage2_results)
-        if all_found:
+    # Final verdict: per fact, treat as "actually present" if stage 2 found it,
+    # else fall back to stage 1's claim (when stage 2 didn't run for that fact).
+    n_facts = len(s1["required_facts"])
+    if n_facts == 0 or s1["verdict"] == "parse_error":
+        verdict_final = s1["verdict"]
+    else:
+        stage2_by_fact = {r["fact"]: r for r in stage2_results}
+        n_present = 0
+        for f in s1["required_facts"]:
+            s2 = stage2_by_fact.get(f["fact"])
+            if s2 is not None:
+                if s2["found_in_chunk"] is not None:
+                    n_present += 1
+            elif f.get("present_in_context"):
+                n_present += 1
+        if n_present == n_facts:
             verdict_final = "sufficient"
+        elif n_present == 0:
+            verdict_final = "insufficient"
+        else:
+            verdict_final = "partial"
 
     return {
         "question_id": rrow.get("question_id", ""),
@@ -276,6 +319,14 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     s2_truly_missing = sum(
         sum(1 for f in r["stage2"] if f["truly_missing"]) for r in rows
+    )
+    # FP rate is meaningful only over facts stage 1 said were absent.
+    # `.get(..., False)` keeps backwards-compat with older jsonl rows that
+    # predate `stage1_present_in_context` — those rows always represented
+    # stage1-absent facts (the only ones stage 2 used to look at).
+    s2_stage1_absent_checked = sum(
+        sum(1 for f in r["stage2"] if not f.get("stage1_present_in_context", False))
+        for r in rows
     )
 
     quad: Counter[str] = Counter()
@@ -327,9 +378,12 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "stage2": {
             "n_questions_entered": s2_entered,
             "n_facts_checked": s2_facts_checked,
+            "n_stage1_absent_checked": s2_stage1_absent_checked,
             "n_stage1_false_positives": s2_false_pos,
             "stage1_false_positive_rate": (
-                (s2_false_pos / s2_facts_checked) if s2_facts_checked else 0.0
+                (s2_false_pos / s2_stage1_absent_checked)
+                if s2_stage1_absent_checked
+                else 0.0
             ),
             "n_truly_missing_facts": s2_truly_missing,
             "found_in_chunk_rank_distribution": dict(sorted(rank_dist.items())),
@@ -488,6 +542,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip stage 2 (chunk-by-chunk re-check of missing facts).",
     )
+    p.add_argument(
+        "--pin-all-facts",
+        action="store_true",
+        help=(
+            "Run stage 2 for ALL required facts (including those stage 1 "
+            "marked as present), to pin every fact to a chunk index. "
+            "Roughly doubles stage-2 LLM cost. Off by default."
+        ),
+    )
     return p.parse_args()
 
 
@@ -508,7 +571,7 @@ async def _main_async(
     print(
         f"[analyze_retrieval] run={args.run}  config={config_path}  "
         f"rows={len(retrieve_rows)}  concurrency={args.concurrency}  "
-        f"skip_stage2={args.skip_stage2}"
+        f"skip_stage2={args.skip_stage2}  pin_all_facts={args.pin_all_facts}"
     )
 
     from evaluation.retrieval_agent.llm_judge import create_judge_fn
@@ -521,7 +584,9 @@ async def _main_async(
         async with sem:
             qid = rrow.get("question_id", "")
             jrow = judge_by_qid.get(qid)
-            out = await _analyze_question(rrow, jrow, call_fn, args.skip_stage2)
+            out = await _analyze_question(
+                rrow, jrow, call_fn, args.skip_stage2, args.pin_all_facts
+            )
             print(
                 f"[analyze_retrieval] {idx + 1}/{len(retrieve_rows)}  "
                 f"qid={qid}  s1={out['stage1']['verdict']}  "
