@@ -1,0 +1,38 @@
+# #4 — k 비단조성 (LongMemEval k sweep)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #4
+# 본 run 은 #6 (analyze --decompose-multisession) / #12 (analyze --pareto) 와 산출물 공유
+problem: 4
+description: "LongMemEval 500 — k sweep {10,20,30,50,100} (chunk=on, prefix=on)"
+
+benchmark:
+  name: longmemeval
+  length: 500
+  # Unified with the eval-tool default (longmemeval_test.py) and
+  # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
+  # score divergence, so keep this single canonical name.
+  split: longmemeval_s_cleaned
+  # Local JSON wins over HF download. repo-root relative; generate_config.py
+  # main() resolves to absolute. Comment out to fall back to HF online
+  # (datasets loader → hf_hub_download).
+  data_path: evaluation/data/longmemeval_s_cleaned.json
+
+# 독립변수
+sweep:
+  search_limit: [10, 20, 30, 50, 100]
+
+# 고정변수 (paper C12 조합 — 단, JSON-str=off 본 과제 방침)
+fixed:
+  prepend_user_prefix: true
+  message_sentence_chunking: true   # chunk=on
+  test_target: retrieval_agent
+
+# stage hooks
+prompts:
+  # EDWIN3 향후 사용. 현재는 placeholder — 텍스트 미확보 시 fallback
+  generate_prompt_file: prompts/EDWIN3.txt
+
+metrics:
+  - overall_llm_score
+  - per_category_llm_score   # SSU/SSP/SSA/TR/KU/MS
+  - tokens_per_query
+  - latency_per_query

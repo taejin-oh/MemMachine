@@ -1,0 +1,32 @@
+# #3 — User/Assistant retrieval bias (LongMemEval prefix on/off)
+# 출처: docs/msr/MemMachine_재현평가_설계_0425.md §2 #3
+problem: 3
+description: "LongMemEval 500 — user_q prefix C5(off) vs C6(on) 외삽"
+
+benchmark:
+  name: longmemeval
+  length: 500
+  # Unified with the eval-tool default (longmemeval_test.py) and
+  # run_benchmark_matrix.sh; was longmemeval_s -- the diff is silent
+  # score divergence, so keep this single canonical name.
+  split: longmemeval_s_cleaned
+  # Local JSON wins over HF download. Comment out to fall back to HF online.
+  data_path: evaluation/data/longmemeval_s_cleaned.json
+
+# 독립변수
+sweep:
+  prepend_user_prefix: [false, true]
+
+# 고정변수 (paper C5/C6 조합 — 단, JSON-str=off 본 과제 방침)
+fixed:
+  search_limit: 20
+  message_sentence_chunking: false   # chunk=off
+  test_target: retrieval_agent
+
+# stage hooks
+prompts:
+  # EDWIN1 향후 사용. 현재는 placeholder — 텍스트 미확보 시 fallback
+  generate_prompt_file: prompts/EDWIN1.txt
+
+metrics:
+  - overall_llm_score
