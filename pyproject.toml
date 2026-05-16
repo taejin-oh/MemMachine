@@ -140,6 +140,38 @@ convention = "google"
     "RUF001",
     "RUF002",
 ]
+"scripts/test_*.py" = [
+    "D",
+    "ARG",
+    "T201",
+    "ANN",
+    "FA",
+    "PTH",
+    "SLF",
+    "B017",
+    "N806",
+    "RUF001",
+    "RUF002",
+]
+"evaluation/**/test_*.py" = [
+    "D",
+    "ARG",
+    "T201",
+    "ANN",
+    "FA",
+    "PTH",
+    "SLF",
+    "B017",
+    "N806",
+    "RUF001",
+    "RUF002",
+    "ASYNC230",
+    "B007",
+    "B023",
+    "PERF203",
+    "PERF401",
+    "TRY300",
+]
 
 [tool.ty.environment]
 extra-paths = ["packages/common/src", "packages/server/src", "packages/client/src"]
