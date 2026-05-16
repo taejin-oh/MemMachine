@@ -138,6 +138,10 @@ class LongTermMemoryConfPartial(BaseModel):
         default=None,
         description="ID of the Reranker instance for reranking search results",
     )
+    message_sentence_chunking: bool | None = Field(
+        default=None,
+        description="Whether to chunk message episodes into sentences for embedding",
+    )
 
     def merge(self, other: Self) -> LongTermMemoryConf:
         """Merge with another partial into a complete long-term config."""
