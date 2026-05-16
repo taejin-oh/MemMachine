@@ -1,0 +1,9 @@
+# EDWIN3 prompt placeholder
+#
+# Status: 미사용 (DECISIONS.md D-003).
+# 향후 EDWIN3 텍스트 확보 시 이 파일을 그 내용으로 덮어쓰면, generate 단계가 자동 적용합니다.
+# 형식: prompt template. 다음 placeholder 를 포함해야 합니다:
+#   {memories}   — retrieved chunks
+#   {question}   — user question
+#
+# 이 파일이 비어있거나 # 주석만 있으면 generate 단계는 기본 ANSWER_PROMPT 로 fallback 합니다.
