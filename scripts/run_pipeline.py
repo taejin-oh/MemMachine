@@ -23,6 +23,8 @@ if str(REPO_ROOT) not in sys.path:
 from scripts._merge import load_yaml  # noqa: E402
 
 STAGE_ORDER = ["ingest", "retrieve", "generate", "judge", "analyze"]
+AUX_STAGES = ["regen_answer"]  # not included in "all"; explicit invocation only
+ALL_ALLOWED = STAGE_ORDER + AUX_STAGES
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,9 +38,11 @@ def parse_args() -> argparse.Namespace:
         "--stage",
         default=None,
         help='Comma-separated stages or "all". Allowed: '
-        + ",".join(STAGE_ORDER)
+        + ",".join(ALL_ALLOWED)
         + ',all. Default: "all", or "analyze" if run YAML has a non-empty '
-        "reuse_run (analyze-only problems p6/p12).",
+        "reuse_run (analyze-only problems p6/p12). Aux stages "
+        f"({','.join(AUX_STAGES)}) require explicit invocation; they are "
+        'not included in "all".',
     )
     parser.add_argument(
         "--decompose-multisession",
@@ -55,13 +59,15 @@ def parse_args() -> argparse.Namespace:
 
 def resolve_stages(arg: str) -> list[str]:
     if arg.strip().lower() == "all":
-        return list(STAGE_ORDER)
+        return list(STAGE_ORDER)  # aux stages excluded from "all"
     parts = [s.strip() for s in arg.split(",") if s.strip()]
-    bad = [s for s in parts if s not in STAGE_ORDER]
+    bad = [s for s in parts if s not in ALL_ALLOWED]
     if bad:
-        raise SystemExit(f"Unknown stage(s): {bad}. Allowed: {[*STAGE_ORDER, 'all']}")
-    # Preserve canonical order
-    return [s for s in STAGE_ORDER if s in parts]
+        raise SystemExit(f"Unknown stage(s): {bad}. Allowed: {[*ALL_ALLOWED, 'all']}")
+    # Canonical pipeline order first, then aux in user-provided order.
+    canonical = [s for s in STAGE_ORDER if s in parts]
+    aux = [s for s in parts if s in AUX_STAGES]
+    return canonical + aux
 
 
 def main() -> int:
@@ -125,6 +131,10 @@ def main() -> int:
                 decompose_multisession=args.decompose_multisession,
                 pareto=args.pareto,
             )
+        elif stage == "regen_answer":
+            from scripts import regen_answer as regen_tool
+
+            regen_tool.run(run_cfg)
 
     print("[pipeline] done.")
     return 0
