@@ -57,6 +57,15 @@ def _parse_args() -> argparse.Namespace:
         help="Explicit run YAML path (overrides configs/runs/<run>.yaml)",
     )
     p.add_argument(
+        "--retrieve",
+        default=None,
+        help=(
+            "Explicit path to retrieve.jsonl (overrides "
+            "results/<run>/retrieve.jsonl). When set, generate.jsonl is "
+            "written next to it."
+        ),
+    )
+    p.add_argument(
         "--concurrency",
         type=int,
         default=4,
@@ -257,18 +266,25 @@ async def _main_async(
 def run(
     run_cfg: dict[str, Any],
     *,
+    retrieve_path: Path | str | None = None,
     concurrency: int = 4,
     limit: int | None = None,
     dry_run: bool = False,
 ) -> Path:
     """Public entry. Called by both stand-alone CLI and run_pipeline.py.
 
-    Resolves paths from run_cfg, runs the async regeneration, returns the
-    written generate.jsonl path (or the would-be path under --dry-run).
+    Resolves paths from run_cfg (or from ``retrieve_path`` when provided),
+    runs the async regeneration, returns the written generate.jsonl path
+    (or the would-be path under --dry-run). When ``retrieve_path`` is given,
+    generate.jsonl is written next to it.
     """
-    out_dir = cm.results_dir_for(run_cfg)
-    retrieve_path = out_dir / "retrieve.jsonl"
-    generate_path = out_dir / "generate.jsonl"
+    if retrieve_path is None:
+        out_dir = cm.results_dir_for(run_cfg)
+        retrieve_path = out_dir / "retrieve.jsonl"
+        generate_path = out_dir / "generate.jsonl"
+    else:
+        retrieve_path = Path(retrieve_path).resolve()
+        generate_path = retrieve_path.parent / "generate.jsonl"
 
     if not retrieve_path.exists():
         raise FileNotFoundError(
@@ -305,6 +321,7 @@ def main() -> int:
         raise SystemExit(f"run YAML missing 'run_name': {run_yaml_path}")
     run(
         run_cfg,
+        retrieve_path=args.retrieve,
         concurrency=args.concurrency,
         limit=args.limit,
         dry_run=args.dry_run,
