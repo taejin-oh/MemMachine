@@ -54,6 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from evaluation.retrieval_agent.longmemeval_test import _split_chunks  # noqa: E402
 from scripts.stages._common import read_jsonl, write_jsonl  # noqa: E402
 
 _LINE_SEP = "] user: "
@@ -130,7 +131,12 @@ def _inject_missing(
     supporting_facts: list[str],
     last_ts: datetime | None,
 ) -> tuple[list[str], int]:
-    """Append synthetic lines for any supporting_fact not yet represented."""
+    """Append synthetic lines for fact pieces not yet represented.
+
+    supporting_facts are full turn contents; ingest splits >3000-char turns
+    into multiple chunks (Episodes). To match how chunks_text is composed,
+    inject one synthetic line per _split_chunks() piece of each fact.
+    """
     present = set()
     for line in fact_lines:
         c, _ = _parse_line(line)
@@ -140,12 +146,13 @@ def _inject_missing(
     out_lines = list(fact_lines)
     n_injected = 0
     for fact in supporting_facts:
-        if _norm(fact) in present:
-            continue
-        n_injected += 1
-        base_ts = base_ts + timedelta(seconds=1)
-        out_lines.append(_synth_line(fact, base_ts))
-        present.add(_norm(fact))
+        for piece in _split_chunks(fact):
+            if _norm(piece) in present:
+                continue
+            n_injected += 1
+            base_ts = base_ts + timedelta(seconds=1)
+            out_lines.append(_synth_line(piece, base_ts))
+            present.add(_norm(piece))
     return out_lines, n_injected
 
 
@@ -240,7 +247,14 @@ def main() -> int:
 
     for row in rows:
         sf = list(row.get("supporting_facts") or [])
-        fact_norms = {_norm(f) for f in sf}
+        # Match at piece-level: a chunks_text line is a "fact line" iff its
+        # content equals any _split_chunks() piece of any supporting_fact.
+        # (Whole-fact match misses long facts that ingest split across chunks.)
+        sf_pieces: list[tuple[str, str]] = []  # (fact_index_label, piece)
+        for idx, fact in enumerate(sf):
+            for piece in _split_chunks(fact):
+                sf_pieces.append((f"{idx}", piece))
+        fact_norms = {_norm(p) for _, p in sf_pieces}
         fact_lines, other_lines, last_ts = _classify_lines(
             str(row.get("chunks_text", "")), fact_norms
         )
@@ -249,21 +263,19 @@ def main() -> int:
             if n_inj > 0:
                 total_injected += n_inj
                 rows_with_inject += 1
-        # Re-order fact_lines to match supporting_facts list order for determinism.
+        # Re-order fact_lines so pieces appear in (fact-index, piece-index) order.
         norm_to_line: dict[str, str] = {}
         for line in fact_lines:
             c, _ = _parse_line(line)
             if c is not None:
                 norm_to_line.setdefault(_norm(c), line)
-        ordered_fact_lines = [
-            norm_to_line[_norm(f)] for f in sf if _norm(f) in norm_to_line
-        ]
-        # Any fact_lines not matched (shouldn't happen post-inject) — keep at end.
-        leftover = [
-            line
-            for line in fact_lines
-            if line not in ordered_fact_lines
-        ]
+        ordered_fact_lines: list[str] = []
+        for _, piece in sf_pieces:
+            line = norm_to_line.get(_norm(piece))
+            if line is not None and line not in ordered_fact_lines:
+                ordered_fact_lines.append(line)
+        # Any leftover fact_lines (post-inject shouldn't exist) — keep at end.
+        leftover = [line for line in fact_lines if line not in ordered_fact_lines]
         ordered_fact_lines.extend(leftover)
         if sf and not ordered_fact_lines:
             rows_missing_facts += 1

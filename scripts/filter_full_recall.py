@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Keep retrieve rows where every supporting_fact is present in chunks_text.
 
-For each row in the input, parses chunks_text into per-line content
-(`json.loads()` of the segment after `<role>: `), normalizes whitespace,
-and checks that every `supporting_fact` (similarly normalized) appears in
-that set. Rows with empty supporting_facts are dropped (no signal). Matching
-is exact equality — the fact_hits substring + token-overlap heuristic is
-NOT used.
+Each supporting_fact is the full turn content from longmemeval. The ingest
+path splits long turns into ≤3000-char chunks via _split_chunks() — each
+chunk is a separate Episode, so chunks_text holds chunk-sized pieces, not
+whole turns. A fact is considered "present" iff every _split_chunks() piece
+of it appears (after whitespace normalization, exact match) as some line in
+chunks_text. The fact_hits substring + token-overlap heuristic is NOT used.
 
 Output rows are the same retrieve-shape JSONL the input had, suitable for
 `regen_answer.py --retrieve <out>`.
@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from evaluation.retrieval_agent.longmemeval_test import _split_chunks  # noqa: E402
 from scripts.stages._common import read_jsonl, write_jsonl  # noqa: E402
 
 _LINE_SEP = "] user: "
@@ -91,7 +92,14 @@ def main() -> int:
             skipped_empty_sf += 1
             continue
         sys_set = _system_contents(str(row.get("chunks_text", "")))
-        all_present = all(_norm(f) in sys_set for f in sf)
+        # A fact is present iff every _split_chunks() piece of it is in sys_set.
+        # Ingest splits >3000-char turns into multiple Episodes, so the whole
+        # fact string need not equal any single chunk.
+        all_present = all(
+            _norm(p) in sys_set
+            for f in sf
+            for p in _split_chunks(f)
+        )
         if all_present:
             kept.append(row)
         else:
