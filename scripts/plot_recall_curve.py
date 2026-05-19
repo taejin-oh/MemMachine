@@ -105,6 +105,10 @@ def _plot_curves(
 
     only_categories=None → all present categories (combined view).
     only_categories=[cat] → just that one (per-category view).
+
+    max_k comes from the JSON — recall_curve.py derives it from the row
+    chunk counts in chunks_text, so for a top-50 retrieve.jsonl the x axis
+    naturally ends at 50.
     """
     max_k = int(data["max_k"])
     xs = list(range(1, max_k + 1))
