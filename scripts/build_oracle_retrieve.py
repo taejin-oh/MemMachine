@@ -31,6 +31,11 @@ Usage:
     python scripts/build_oracle_retrieve.py \
         --include-categories temporal-reasoning,multi-session \
         --out results/oracle_subset/retrieve.jsonl
+
+    # Restrict to question_ids that appear in another retrieve.jsonl
+    python scripts/build_oracle_retrieve.py \
+        --include-qids-from results/subset_a/retrieve.jsonl \
+        --out results/subset_a_oracle_full/retrieve.jsonl
 """
 
 from __future__ import annotations
@@ -146,6 +151,15 @@ def main() -> int:
             "'temporal-reasoning,multi-session'). Default: keep all."
         ),
     )
+    p.add_argument(
+        "--include-qids-from",
+        default=None,
+        help=(
+            "Path to a JSONL whose .question_id values define the keep set. "
+            "Use this to restrict oracle output to a question subset "
+            "(e.g. the subset of failures with full supporting_facts recall)."
+        ),
+    )
     args = p.parse_args()
 
     oracle_path = Path(args.oracle).resolve()
@@ -161,6 +175,21 @@ def main() -> int:
         print(
             f"[build_oracle_retrieve] category filter "
             f"{sorted(keep)}: {before} -> {len(dataset)} samples"
+        )
+
+    if args.include_qids_from:
+        qids_path = Path(args.include_qids_from).resolve()
+        with open(qids_path) as f:
+            keep_qids = {
+                str(json.loads(line).get("question_id", ""))
+                for line in f
+                if line.strip()
+            }
+        before = len(dataset)
+        dataset = [s for s in dataset if str(s.get("question_id", "")) in keep_qids]
+        print(
+            f"[build_oracle_retrieve] qid filter from {qids_path.name} "
+            f"({len(keep_qids)} qids): {before} -> {len(dataset)} samples"
         )
 
     if args.limit is not None:
