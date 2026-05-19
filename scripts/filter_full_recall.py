@@ -4,9 +4,14 @@
 Each supporting_fact is the full turn content from longmemeval. The ingest
 path splits long turns into ≤3000-char chunks via _split_chunks() — each
 chunk is a separate Episode, so chunks_text holds chunk-sized pieces, not
-whole turns. A fact is considered "present" iff every _split_chunks() piece
-of it appears (after whitespace normalization, exact match) as some line in
-chunks_text. The fact_hits substring + token-overlap heuristic is NOT used.
+whole turns. A fact is considered "present" iff at least ONE _split_chunks()
+piece of it appears (after whitespace normalization, exact match) as some
+line in chunks_text. This matches Edwin's turn-level recall semantics: any
+segment of the gold turn → that turn is recalled.
+
+A row is kept iff every supporting_fact is present under that definition.
+
+The fact_hits substring + token-overlap heuristic is NOT used.
 
 Output rows are the same retrieve-shape JSONL the input had, suitable for
 `regen_answer.py --retrieve <out>`.
@@ -92,13 +97,12 @@ def main() -> int:
             skipped_empty_sf += 1
             continue
         sys_set = _system_contents(str(row.get("chunks_text", "")))
-        # A fact is present iff every _split_chunks() piece of it is in sys_set.
-        # Ingest splits >3000-char turns into multiple Episodes, so the whole
-        # fact string need not equal any single chunk.
+        # A fact is present iff ANY _split_chunks() piece of it appears in
+        # sys_set (turn-level recall, matching Edwin's "any segment hits the
+        # turn"). For short facts (1 piece) this collapses to plain equality.
         all_present = all(
-            _norm(p) in sys_set
+            any(_norm(p) in sys_set for p in _split_chunks(f))
             for f in sf
-            for p in _split_chunks(f)
         )
         if all_present:
             kept.append(row)

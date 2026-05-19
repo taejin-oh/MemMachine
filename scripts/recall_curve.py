@@ -76,22 +76,31 @@ def _ordered_chunk_norms(chunks_text: str) -> list[str]:
 def _per_row_curve(
     chunks_text: str, supporting_facts: list[str]
 ) -> list[float] | None:
-    """Return [recall@1, recall@2, ..., recall@N] for one row, or None to skip."""
-    gt_pieces: set[str] = set()
-    for fact in supporting_facts:
-        for piece in _split_chunks(fact):
-            gt_pieces.add(_norm(piece))
-    if not gt_pieces:
+    """Return [recall@1, recall@2, ..., recall@N] for one row, or None to skip.
+
+    Granularity is FACT-level (matches Edwin's turn-level recall): a fact is
+    "recalled" iff at least one of its _split_chunks() pieces appears in
+    chunks_text. A long fact split into multiple pieces still counts as 1
+    recall hit when any piece is found.
+    """
+    if not supporting_facts:
         return None  # abstention or empty supporting_facts -> skip
+    # piece -> fact_idx (first fact wins on duplicate piece strings)
+    piece_to_fact: dict[str, int] = {}
+    for idx, fact in enumerate(supporting_facts):
+        for piece in _split_chunks(fact):
+            piece_to_fact.setdefault(_norm(piece), idx)
+    if not piece_to_fact:
+        return None  # all facts blank
+    n_facts = len(supporting_facts)
     ordered = _ordered_chunk_norms(chunks_text)
-    seen: set[str] = set()
-    hits = 0
+    hit_facts: set[int] = set()
     curve: list[float] = []
     for chunk in ordered:
-        if chunk in gt_pieces and chunk not in seen:
-            hits += 1
-            seen.add(chunk)
-        curve.append(hits / len(gt_pieces))
+        idx = piece_to_fact.get(chunk)
+        if idx is not None:
+            hit_facts.add(idx)
+        curve.append(len(hit_facts) / n_facts)
     return curve
 
 

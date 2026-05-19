@@ -30,9 +30,12 @@ uv run python scripts/recall_curve.py \
 
 각 row 별로:
 - supporting_facts 의 각 fact 를 `_split_chunks` (3000 자 단위) 로 쪼개서
-  ground-truth piece 집합 만듦
+  piece → fact 인덱스 매핑 만듦
 - chunks_text 의 line 을 **앞에서부터 순서대로** 훑으며 piece 가 hit 될
-  때마다 cumulative recall 기록 (= recall@1, recall@2, ..., recall@N)
+  때 그 piece 가 속한 fact 를 "회수됨" 으로 표시
+- recall@k = (k 개 chunk 까지 봤을 때 회수된 fact 수) / (총 fact 수)
+- 한 긴 fact 가 여러 piece 로 split 됐다면 piece 하나만 잡혀도 그 fact
+  는 회수된 것으로 카운트 (Edwin 의 turn-level recall 과 동일 의미론).
 - N = 해당 row 의 chunk 수 (`num_episodes_retrieved` 와 동일)
 
 매칭은 `json.loads()` 한 본문에 대해 화이트스페이스 정규화 후 **정확

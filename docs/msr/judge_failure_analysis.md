@@ -58,8 +58,11 @@ uv run python scripts/filter_full_recall.py \
 각 row 의 chunks_text 를 라인 단위로 `json.loads()` 해서 본문을 정확
 일치로 supporting_facts 와 매칭. 모든 fact 가 들어있는 row 만 keep.
 
-> 매칭은 화이트스페이스 정규화 후 정확 일치. `fact_hits` 의 substring +
-> token-overlap heuristic 은 쓰지 않는다 (정확도 이슈).
+> "fact 가 들어있다" 의 정의 = 그 fact 의 `_split_chunks` piece 중 **최소
+> 한 개** 가 chunks_text 의 어떤 line 과 정확 일치 (whitespace 정규화
+> 후). Edwin 의 turn-level recall 과 동일 — 긴 turn 이 여러 segment 로
+> split 됐어도 segment 하나만 잡히면 그 turn 은 회수된 것으로 본다.
+> `fact_hits` 의 substring + token-overlap heuristic 은 쓰지 않는다.
 
 stdout 예:
 ```
