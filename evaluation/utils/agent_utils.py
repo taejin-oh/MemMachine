@@ -68,6 +68,7 @@ async def process_question(
     full_content: str | None = None,
     extra_attributes: dict[str, Any] | None = None,
     prompt_extra: dict[str, str] | None = None,
+    skip_answer_llm: bool = False,
 ):
     perf_metrics: dict[str, Any] = {}
     memory_start = 0
@@ -94,17 +95,20 @@ async def process_question(
     else:
         formatted_context = full_content
 
-    fmt_kwargs: dict[str, Any] = {
-        "memories": formatted_context,
-        "question": question,
-    }
-    if prompt_extra:
-        fmt_kwargs.update(prompt_extra)
-    prompt = answer_prompt.format(**fmt_kwargs)
+    rsp_text = ""
+    rsp_start = rsp_end = time.time()
+    if not skip_answer_llm:
+        fmt_kwargs: dict[str, Any] = {
+            "memories": formatted_context,
+            "question": question,
+        }
+        if prompt_extra:
+            fmt_kwargs.update(prompt_extra)
+        prompt = answer_prompt.format(**fmt_kwargs)
 
-    rsp_start = time.time()
-    rsp_text, _ = await answer_model.generate_response(user_prompt=prompt)
-    rsp_end = time.time()
+        rsp_start = time.time()
+        rsp_text, _ = await answer_model.generate_response(user_prompt=prompt)
+        rsp_end = time.time()
 
     mem_retrieval_time = perf_metrics.get("memory_retrieval_time", 0)
     if mem_retrieval_time == 0:
@@ -116,7 +120,11 @@ async def process_question(
         f"Memory search called: {perf_metrics.get('memory_search_called', 0)} times\n"
         f"Memory retrieval time: {mem_retrieval_time:.2f} seconds\n"
         f"LLM time for retrieval: {llm_time:.2f} seconds\n"
-        f"LLM answering time: {rsp_end - rsp_start:.2f} seconds\n"
+        + (
+            ""
+            if skip_answer_llm
+            else f"LLM answering time: {rsp_end - rsp_start:.2f} seconds\n"
+        )
     )
 
     res = {

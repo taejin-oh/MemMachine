@@ -174,6 +174,8 @@ async def _run_longmemeval_cell(
     config_path: str,
     session_id: str,
     params: dict[str, Any],
+    *,
+    skip_answer_llm: bool = False,
 ) -> list[tuple[str, dict[str, Any]]]:
     # Reuse the same supporting-fact / turn-content collectors as the upstream
     # longmemeval_search() so recall numbers stay comparable. These helpers are
@@ -276,6 +278,7 @@ async def _run_longmemeval_cell(
                 full_content=full_content if pure_llm else None,
                 extra_attributes={"question_id": sample.get("question_id", "")},
                 prompt_extra=prompt_extra,
+                skip_answer_llm=skip_answer_llm,
             )
         )
         if len(tasks) >= concurrency or sample is dataset[-1]:
@@ -334,7 +337,9 @@ def _split_response(
 # ---------------------------------------------------------------------------
 
 
-def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
+def run(
+    run_cfg: dict[str, Any], *, skip_answer_llm: bool = False
+) -> tuple[Path, Path]:
     out_dir = cm.results_dir_for(run_cfg)
     retrieve_path = out_dir / "retrieve.jsonl"
     generate_path = out_dir / "generate.jsonl"
@@ -354,6 +359,7 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
         f"[retrieve] benchmark={bench_name}  cells={len(sweep_cells)}  "
         f"config={config_path}  "
         f"longmemeval_answer_prompt={_resolve_answer_prompt_policy(run_cfg, config_path)}"
+        + ("  skip_answer_llm=True" if skip_answer_llm else "")
     )
 
     retrieve_rows: list[dict[str, Any]] = []
@@ -368,7 +374,13 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
         cell_dir.mkdir(parents=True, exist_ok=True)
 
         responses = asyncio.run(
-            _run_longmemeval_cell(run_cfg, config_path, session_id, params)
+            _run_longmemeval_cell(
+                run_cfg,
+                config_path,
+                session_id,
+                params,
+                skip_answer_llm=skip_answer_llm,
+            )
         )
 
         # Annotate fact_hits / fact_miss on each response in-place. process_question()
@@ -389,9 +401,17 @@ def run(run_cfg: dict[str, Any]) -> tuple[Path, Path]:
             generate_rows.append(g_row)
 
     cm.write_jsonl(retrieve_path, retrieve_rows)
-    cm.write_jsonl(generate_path, generate_rows)
+    if not skip_answer_llm:
+        cm.write_jsonl(generate_path, generate_rows)
     print(f"[retrieve] ok → {retrieve_path} ({len(retrieve_rows)} rows)")
-    print(
-        f"[generate] ok → {generate_path} ({len(generate_rows)} rows)  [emitted by retrieve loop]"
-    )
+    if skip_answer_llm:
+        print(
+            "[retrieve] skip_answer_llm=True → generate.jsonl not written. "
+            "Run scripts/regen_answer.py later to produce it."
+        )
+    else:
+        print(
+            f"[generate] ok → {generate_path} ({len(generate_rows)} rows)  "
+            "[emitted by retrieve loop]"
+        )
     return retrieve_path, generate_path

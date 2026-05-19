@@ -14,11 +14,26 @@ chunk 수) 까지 잘라가며 supporting_facts recall 을 측정하고 선형 �
 ## 0. 사전 준비
 
 - `uv sync` 가 끝나 있어 matplotlib 가 설치되어 있어야 한다 (`dev` 그룹).
-- 분석 대상 `retrieve.jsonl` 이 있어야 한다. 보통 두 가지 출처:
+- 분석 대상 `retrieve.jsonl` 이 있어야 한다. 보통 세 가지 출처:
   - 실제 시스템 풀 런 (`results/<baseline>/retrieve.jsonl`) — top-k = 그 런의
     search_limit (예: 50).
   - 오라클 데이터 (`scripts/build_oracle_retrieve.py` 출력) — top-k 가
     문항 별로 가변 (정답 세션 turn 수).
+  - **recall-only 풀 런** — answer LLM / judge 없이 retrieve.jsonl 만
+    뽑은 결과. 비용 절약 옵션:
+
+    ```bash
+    uv run python scripts/run_pipeline.py \
+        --config configs/runs/<name>.yaml \
+        --stage ingest,retrieve \
+        --skip-answer-llm
+    ```
+
+    `--skip-answer-llm` 이 retrieve 스테이지의 answer LLM 호출 + generate.jsonl
+    write 를 둘 다 건너뜀. `results/<name>/retrieve.jsonl` 만 생성됨. 그 후
+    바로 `recall_curve.py` 로 분석 가능. 정확도 분석도 필요해지면
+    `scripts/regen_answer.py --run <name>` 으로 나중에 generate.jsonl 만들면
+    됨.
 
 ## 1. recall_curve.py — JSON 추출
 

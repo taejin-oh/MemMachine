@@ -54,6 +54,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="analyze: emit token/accuracy Pareto curve (#12)",
     )
+    parser.add_argument(
+        "--skip-answer-llm",
+        action="store_true",
+        help=(
+            "retrieve: skip the answer-LLM call per question. Only retrieve.jsonl "
+            "is written (generate.jsonl is omitted). Use this for recall-only "
+            "experiments where the answer LLM + judge are not needed; run "
+            "scripts/regen_answer.py later if you change your mind."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -120,7 +130,7 @@ def main() -> int:
         if stage == "ingest":
             stage_ingest.run(run_cfg)
         elif stage == "retrieve":
-            stage_retrieve.run(run_cfg)
+            stage_retrieve.run(run_cfg, skip_answer_llm=args.skip_answer_llm)
         elif stage == "generate":
             stage_generate.run(run_cfg)
         elif stage == "judge":
