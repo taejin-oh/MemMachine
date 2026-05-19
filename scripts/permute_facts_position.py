@@ -210,11 +210,28 @@ def main() -> int:
         action="store_false",
         help="Only reorder facts already present; missing facts stay missing.",
     )
+    p.add_argument(
+        "--include-categories",
+        default=None,
+        help=(
+            "Comma-separated question_type values to keep (e.g. "
+            "'temporal-reasoning,multi-session'). Default: keep all."
+        ),
+    )
     args = p.parse_args()
 
     src_path = Path(args.retrieve).resolve()
     out_dir = Path(args.out_dir).resolve()
     rows = read_jsonl(src_path)
+
+    if args.include_categories:
+        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
+        before = len(rows)
+        rows = [r for r in rows if str(r.get("category", "")) in keep]
+        print(
+            f"[permute] category filter "
+            f"{sorted(keep)}: {before} -> {len(rows)} rows"
+        )
 
     variants: dict[str, list[dict[str, Any]]] = {"front": [], "middle": [], "end": []}
     total_injected = 0
