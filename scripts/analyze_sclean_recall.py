@@ -21,6 +21,12 @@ Usage:
         --retrieve results/sclean_full/retrieve.jsonl \
         --oracle evaluation/data/longmemeval_oracle.json \
         --out results/sclean_full/sclean_recall.json
+
+    # Filter to specific question types
+    python scripts/analyze_sclean_recall.py \
+        --retrieve results/sclean_full/retrieve.jsonl \
+        --include-categories temporal-reasoning,multi-session \
+        --out results/sclean_full/sclean_recall_temporal_ms.json
 """
 
 from __future__ import annotations
@@ -239,6 +245,14 @@ def main() -> int:
         default=None,
         help="JSON output path. Default: <retrieve dir>/sclean_recall.json",
     )
+    p.add_argument(
+        "--include-categories",
+        default=None,
+        help=(
+            "Comma-separated question_type values to keep (e.g. "
+            "'temporal-reasoning,multi-session'). Default: keep all."
+        ),
+    )
     args = p.parse_args()
 
     retrieve_path = Path(args.retrieve).resolve()
@@ -253,6 +267,15 @@ def main() -> int:
         oracle = json.load(f)
     oracle_index = {str(x.get("question_id", "")): x for x in oracle}
     rows = read_jsonl(retrieve_path)
+
+    if args.include_categories:
+        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
+        before = len(rows)
+        rows = [r for r in rows if str(r.get("category", "")) in keep]
+        print(
+            f"[analyze_sclean_recall] category filter "
+            f"{sorted(keep)}: {before} -> {len(rows)} rows"
+        )
 
     per_q = _per_question_recall(rows, oracle_index)
     agg = _aggregate(per_q)
