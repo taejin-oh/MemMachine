@@ -8,10 +8,24 @@ common.episode_store.episode_model.episodes_to_string(), with synthetic
 "now + N seconds" timestamps mirroring longmemeval_test._async_ingest()
 (producer_id is "user" for every turn, matching real ingest).
 
+Two modes:
+    (default) full       — all turns of every evidence session
+                            (has_answer True + False). Standard LongMemEval
+                            oracle: ~22 chunks per question.
+    --facts-only         — keep ONLY has_answer=True turns. Drops surrounding
+                            context. Use this to test the answer-LLM ceiling
+                            when fed just the gold supporting facts.
+
 Usage:
+    # Full oracle (evidence sessions intact)
     python scripts/build_oracle_retrieve.py \
         --oracle evaluation/data/longmemeval_oracle.json \
-        --out results/oracle_run/retrieve.jsonl
+        --out results/oracle_full/retrieve.jsonl
+
+    # has_answer=True only
+    python scripts/build_oracle_retrieve.py --facts-only \
+        --oracle evaluation/data/longmemeval_oracle.json \
+        --out results/oracle_facts/retrieve.jsonl
 """
 
 from __future__ import annotations
@@ -41,11 +55,15 @@ def _fmt_time(dt: datetime) -> str:
     return dt.strftime("%I:%M %p")
 
 
-def _build_chunks_text(sample: dict[str, Any], start_dt: datetime) -> tuple[str, int]:
+def _build_chunks_text(
+    sample: dict[str, Any], start_dt: datetime, facts_only: bool
+) -> tuple[str, int]:
     lines: list[str] = []
     n = 0
     for session in sample.get("haystack_sessions", []) or []:
         for turn in session or []:
+            if facts_only and not turn.get("has_answer"):
+                continue
             content = str(turn.get("content", "")).strip()
             if not content:
                 continue
@@ -59,8 +77,10 @@ def _build_chunks_text(sample: dict[str, Any], start_dt: datetime) -> tuple[str,
     return "".join(lines), n
 
 
-def _row_for_sample(sample: dict[str, Any], start_dt: datetime) -> dict[str, Any]:
-    chunks_text, n = _build_chunks_text(sample, start_dt)
+def _row_for_sample(
+    sample: dict[str, Any], start_dt: datetime, facts_only: bool
+) -> dict[str, Any]:
+    chunks_text, n = _build_chunks_text(sample, start_dt, facts_only)
     return {
         "question": str(sample.get("question", "")),
         "category": str(sample.get("question_type", "")),
@@ -70,8 +90,8 @@ def _row_for_sample(sample: dict[str, Any], start_dt: datetime) -> dict[str, Any
         "num_episodes_retrieved": n,
         "memory_retrieval_time": 0.0,
         "memory_search_called": 0,
-        "agent": "oracle",
-        "selected_tool": "oracle",
+        "agent": "oracle_facts" if facts_only else "oracle",
+        "selected_tool": "oracle_facts" if facts_only else "oracle",
         "supporting_facts": _collect_supporting_facts(sample),
         "input_token": 0,
         "output_token": 0,
@@ -104,6 +124,15 @@ def main() -> int:
         default=None,
         help="Process only the first N samples (smoke-test).",
     )
+    p.add_argument(
+        "--facts-only",
+        action="store_true",
+        help=(
+            "Keep only has_answer=True turns (drops surrounding context turns "
+            "of the evidence sessions). Use this to measure the answer-LLM "
+            "ceiling when fed only the gold supporting facts."
+        ),
+    )
     args = p.parse_args()
 
     oracle_path = Path(args.oracle).resolve()
@@ -120,11 +149,12 @@ def main() -> int:
     n_written = 0
     with open(out_path, "w") as f:
         for sample in dataset:
-            row = _row_for_sample(sample, start_dt)
+            row = _row_for_sample(sample, start_dt, args.facts_only)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
             n_written += 1
 
-    print(f"[build_oracle_retrieve] wrote {n_written} rows -> {out_path}")
+    mode = "facts_only" if args.facts_only else "full"
+    print(f"[build_oracle_retrieve] mode={mode} wrote {n_written} rows -> {out_path}")
     return 0
 
 
