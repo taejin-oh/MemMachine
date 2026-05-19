@@ -26,6 +26,11 @@ Usage:
     python scripts/build_oracle_retrieve.py --facts-only \
         --oracle evaluation/data/longmemeval_oracle.json \
         --out results/oracle_facts/retrieve.jsonl
+
+    # Filter to specific question types (comma-separated)
+    python scripts/build_oracle_retrieve.py \
+        --include-categories temporal-reasoning,multi-session \
+        --out results/oracle_subset/retrieve.jsonl
 """
 
 from __future__ import annotations
@@ -133,6 +138,14 @@ def main() -> int:
             "ceiling when fed only the gold supporting facts."
         ),
     )
+    p.add_argument(
+        "--include-categories",
+        default=None,
+        help=(
+            "Comma-separated question_type values to keep (e.g. "
+            "'temporal-reasoning,multi-session'). Default: keep all."
+        ),
+    )
     args = p.parse_args()
 
     oracle_path = Path(args.oracle).resolve()
@@ -140,6 +153,16 @@ def main() -> int:
 
     with open(oracle_path) as f:
         dataset = json.load(f)
+
+    if args.include_categories:
+        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
+        before = len(dataset)
+        dataset = [s for s in dataset if str(s.get("question_type", "")) in keep]
+        print(
+            f"[build_oracle_retrieve] category filter "
+            f"{sorted(keep)}: {before} -> {len(dataset)} samples"
+        )
+
     if args.limit is not None:
         dataset = dataset[: args.limit]
 
