@@ -18,8 +18,9 @@ LongMemEval 위에서 **6 조건** 의 정확도를 **2 subset** 에서 비교�
   answer LLM 한계" 가설을 테스트하는 데 쓰임.
 - **Subset B** — 500 문항 전부.
 
-각 subset 에서 6 조건 × answer LLM 호출 → judge → summarize → 비교. 총
-12 셀. compare_runs.py 가 N-run 한 표로 묶어줌.
+각 subset 에서 6 조건 × answer LLM 호출 → judge → summarize → 비교. 결과
+표는 12 셀 (= 6 × 2). 새 LLM 호출은 11 회 — B_normal 슬롯은 베이스라인
+런을 그대로 재활용. compare_runs.py 가 N-run 한 표로 묶어줌.
 
 ---
 
@@ -99,11 +100,12 @@ cp results/subset_a/retrieve.jsonl results/A_normal/retrieve.jsonl
 # 4-6: front / middle / end
 uv run python scripts/permute_facts_position.py \
     --retrieve results/subset_a/retrieve.jsonl \
-    --out-dir  /tmp/A_pos
+    --out-dir  results/_A_pos_tmp
 for pos in front middle end; do
     mkdir -p results/A_pos_$pos
-    cp /tmp/A_pos/$pos/retrieve.jsonl results/A_pos_$pos/retrieve.jsonl
+    mv results/_A_pos_tmp/$pos/retrieve.jsonl results/A_pos_$pos/retrieve.jsonl
 done
+rm -rf results/_A_pos_tmp
 ```
 
 ---
@@ -123,18 +125,19 @@ uv run python scripts/build_oracle_retrieve.py --facts-only \
 # 4-6: front / middle / end (전체 500 에 대해)
 uv run python scripts/permute_facts_position.py \
     --retrieve results/<baseline>/retrieve.jsonl \
-    --out-dir  /tmp/B_pos
+    --out-dir  results/_B_pos_tmp
 for pos in front middle end; do
     mkdir -p results/B_pos_$pos
-    cp /tmp/B_pos/$pos/retrieve.jsonl results/B_pos_$pos/retrieve.jsonl
+    mv results/_B_pos_tmp/$pos/retrieve.jsonl results/B_pos_$pos/retrieve.jsonl
 done
+rm -rf results/_B_pos_tmp
 ```
 
 ---
 
 ## 4. 각 조건마다 generate → judge
 
-12 셀 모두 동일 패턴. 모델/프롬프트 정책은 베이스라인과 똑같이.
+11 셀 (B_normal 제외) 동일 패턴. 모델/프롬프트 정책은 베이스라인과 똑같이.
 
 ```bash
 # 조건별 run config 한 번씩 생성
@@ -261,7 +264,7 @@ uv run python scripts/summarize_run.py \
 | 디렉토리 | 내용 |
 |---|---|
 | `results/<baseline>/` | 베이스라인 전체 — `retrieve,generate,judge.jsonl`, `analyze.json`, `retrieve.failed.jsonl` |
-| `results/subset_a/` | Subset A 정의 (= retrieve.gen_failed.jsonl moved here) |
+| `results/subset_a/` | Subset A 정의 (= filter_full_recall 출력) |
 | `results/A_<cond>/` | A 의 6 조건 결과 |
 | `results/B_<cond>/` | B 의 5 조건 결과 (B_normal 은 `<baseline>` 그대로) |
 | `results/A_compare.json` / `B_compare.json` | 12 셀 비교 결과 |
