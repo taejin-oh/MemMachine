@@ -23,6 +23,7 @@ LongMemEval 위에서 **answer LLM의 한계 (= "100점")** 와 **supporting_fac
 | `scripts/analyze_sclean_recall.py` | 시스템 retrieve.jsonl ↔ 오라클 회수율 |
 | `scripts/permute_facts_position.py` | supporting_facts 위치 재배치 (front/middle/end) |
 | `scripts/compare_runs.py` | N 개 런 정확도 + 청크 통계 비교 |
+| `scripts/plot_results.py` | compare_runs.json / sclean_recall.json → PNG 그래프 |
 
 ## 0. 사전 준비
 
@@ -200,6 +201,26 @@ uv run python scripts/compare_runs.py \
 
 **해석**: 같은 fact 집합을 가지는데 위치만 다른 세 변종의 정확도 차이 = 위치
 효과. front 가 가장 높으면 lost-in-the-middle (또는 end-bias 부재) 진단.
+
+## 시각화 — `plot_results.py`
+
+`compare_runs.py` 와 `analyze_sclean_recall.py` 의 JSON 출력을 PNG 막대
+그래프로 그린다. 한 파일에 두 모드만 있어 직접 색/레이아웃 수정이 쉽다 —
+파일 상단 `PLOT_CONFIG` dict 만 만지면 된다.
+
+```bash
+# 워크플로 A/C 비교 → 카테고리별 정확도 막대
+uv run python scripts/plot_results.py --type compare \
+    --input results/oracle_ceiling_compare.json \
+    --out results/oracle_ceiling.png
+
+# 워크플로 B 회수율 → A (전체) / B (has_answer=True) 막대
+uv run python scripts/plot_results.py --type recall \
+    --input results/<my_run>/sclean_recall.json \
+    --out results/<my_run>/recall.png
+```
+
+matplotlib 은 `dev` 그룹에 포함됨 — `uv sync` 한 번 돌리면 됨.
 
 ## 트러블슈팅
 
