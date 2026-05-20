@@ -13,7 +13,6 @@ Helpers:
   - build_memory_and_agent      EpisodicMemory + MemMachineAgent per session
   - get_answer_llm / get_judge_llm  LanguageModel from RM
   - set_safe_embedder_limits    embedder request-size cap
-  - split_chunks                ≤3000-char chunking
   - collect_supporting_facts    has_answer=True turn contents
   - parse_session_dt            longmemeval session_date parser
 
@@ -25,7 +24,6 @@ Upstream-aligned prompts (verbatim from xiaowu0162/LongMemEval):
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -145,29 +143,6 @@ def set_safe_embedder_limits(memory: EpisodicMemory) -> None:
         return
     if hasattr(embedder, "max_total_input_length_per_request"):
         embedder.max_total_input_length_per_request = 30000
-
-
-def split_chunks(text: str, max_chars: int = 3000) -> list[str]:
-    """Split text into ≤max_chars pieces at word boundaries when feasible."""
-    if not text:
-        return []
-    normalized = re.sub(r"\s+", " ", text).strip()
-    if not normalized:
-        return []
-    chunks: list[str] = []
-    start = 0
-    text_len = len(normalized)
-    while start < text_len:
-        end = min(start + max_chars, text_len)
-        if end < text_len:
-            split_at = normalized.rfind(" ", start, end)
-            if split_at > start + (max_chars // 2):
-                end = split_at
-        chunk = normalized[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        start = end
-    return chunks
 
 
 def collect_supporting_facts(sample: dict[str, Any]) -> list[str]:

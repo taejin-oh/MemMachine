@@ -42,7 +42,6 @@ ingest → retrieve → generate → judge 네 단계가 모두 본 디렉토리
 | `build_memory_and_agent` | agent_utils.init_memmachine_params (MemMachineAgent 분기만) |
 | `get_answer_llm` / `get_judge_llm` | retrieval_agent.llm_model / .judge_llm_model 에서 LM 획득 |
 | `set_safe_embedder_limits` | longmemeval_test._set_safe_embedder_request_limits |
-| `split_chunks` | longmemeval_test._split_chunks |
 | `collect_supporting_facts` | longmemeval_test._collect_supporting_facts |
 | `parse_session_dt` | longmemeval session_date 파서 |
 | `ANSWER_PROMPTS` | **upstream verbatim** — `src/generation/run_generation.py:54-57` |
@@ -93,6 +92,18 @@ uv run python -m evaluation.longmemeval.judge \
 retrieve 전용:
 - `--top-k K` — 회수 chunk 수 (default 50)
 
+## Ingest 단위 — turn (upstream 정렬)
+
+**1 turn = 1 Episode** (upstream `run_retrieval.py --granularity turn` 과
+동일). turn 길이와 무관하게 추가 split 안 함. 긴 turn 이 embedder 의
+`max_input_length` (bge-base = 512 token ≈ 2000자) 를 넘으면 임베딩 단계에서
+silently truncate — upstream 도 동일한 거동.
+
+이전엔 `_split_chunks(max_chars=3000)` 로 긴 turn 을 piece 로 쪼개서
+별도 Episode 로 적재했지만 (= chunking unit 이 upstream 과 다름), upstream
+재현을 위해 제거. 짧은 turn (96%) 은 어차피 1 chunk = 1 turn 이라 결과
+변동 거의 없음. 긴 turn 3.8% 만 회수 방식이 바뀜 (여러 piece → 1 turn).
+
 ## 호출 패턴 (수정 불필요 — 검증됨)
 
 ingest 측:
@@ -126,3 +137,30 @@ agent_utils.init_memmachine_params 의 MemMachineAgent 분기만 그대로 옮�
   `docker compose down -v` 로 전체 초기화.
 - **격리 효과**: 단일 session (`scripts/run_pipeline.py`) 의 ~246k turn 검색
   공간 → 질문 별 ~500 turn (~500 배 축소) → recall 50%→95% 의 핵심 원인.
+
+## upstream 점수와 "동일한" 결과를 원하면
+
+알고리즘 단위는 이제 정렬됨 (turn = corpus item = Episode). 그러나
+**완전 동일 (bit-for-bit) recall 재현** 은 backend 차이로 어려움. 다음 3가지를
+추가 정렬해야 진짜 동일에 가까워짐:
+
+1. **Reranker 제거** — upstream 의 flat retrieval 은 reranker 없음.
+   현재 우리는 `rrf-hybrid([bm25, identity])`. 동일 재현 원하면 model
+   profile 의 `rerankers` 를 `identity` 단일로 바꾸거나, 별도
+   `configs/profiles/models/upstream_aligned.yaml` 만들어 사용.
+
+2. **같은 embedder** — upstream 은 contriever / stella / gte / bm25 등.
+   같은 모델 ID 로 main.yaml 의 `embedder` 만 swap. 우리 default 인
+   `BAAI/bge-base-en-v1.5` 와 upstream 의 default 가 다르면 임베딩이
+   다르므로 top-K 가 달라짐.
+
+3. **Exact cosine search 강제** — Neo4j 의 HNSW ANN 은 근사. upstream 의
+   in-memory 는 exact. ANN 의 recall 은 99%+ 이라 영향 작지만 0 은 아님.
+   완전 동일 원하면 Neo4j vector index 의 ANN 옵션 끄거나, 후보 부족 시
+   `_exact_similarity_search_fallback_threshold` 의 fallback 항상 타도록
+   유도.
+
+→ 위 3 가지 추가 정렬 없이도 algorithmic flow 와 단위는 upstream 과 일치.
+**시스템 평가 용도라면 현재 setup OK**, **upstream 점수표 직접 재현 용도면**
+1+2+3 추가 정렬 권장. 우리 evaluation/longmemeval/ 의 코드만 보면 더
+이상 손댈 게 없음 (profile / db 차원의 문제).

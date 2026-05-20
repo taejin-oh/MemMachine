@@ -40,13 +40,18 @@ from evaluation.longmemeval._common import (  # noqa: E402
     load_eval_config,
     parse_session_dt,
     set_safe_embedder_limits,
-    split_chunks,
 )
 
 
 def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
-    """entry 의 haystack 을 Episode 리스트로 변환. role 보존,
-    session_date+turn_idx 초 timestamp, >3000자 turn 은 split_chunks 로 자름.
+    """entry 의 haystack 을 Episode 리스트로 변환.
+
+    **1 turn = 1 Episode** (upstream `run_retrieval.py --granularity turn`
+    과 동일 단위). turn 길이 무관 — 긴 turn 도 자르지 않음. embedder 의
+    max_input_length (e.g., bge-base = 512 token ≈ 2000자) 를 넘으면
+    임베딩 단계에서 silently truncate 되는 건 upstream 도 동일.
+
+    role 보존 (User/Assistant), session_date + turn_idx 초 timestamp.
     """
     episodes: list[Episode] = []
     for _sid, sess, sdate in zip(
@@ -65,17 +70,16 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
                 continue
             role = str(turn.get("role", "user"))
             ts = base_dt + timedelta(seconds=i)
-            for chunk in split_chunks(content):
-                episodes.append(
-                    Episode(
-                        uid=str(uuid4()),
-                        content=chunk,
-                        session_key=session_id,
-                        created_at=ts,
-                        producer_id="Assistant" if role == "assistant" else "User",
-                        producer_role=role,
-                    )
+            episodes.append(
+                Episode(
+                    uid=str(uuid4()),
+                    content=content,
+                    session_key=session_id,
+                    created_at=ts,
+                    producer_id="Assistant" if role == "assistant" else "User",
+                    producer_role=role,
                 )
+            )
     return episodes
 
 
