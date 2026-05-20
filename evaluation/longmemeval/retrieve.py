@@ -1,136 +1,162 @@
 #!/usr/bin/env python3
-"""LongMemEval — per-question isolated retrieval, upstream-style.
+"""LongMemEval retrieve — per-question session_id isolation (MemMachine backend).
 
-Mirrors xiaowu0162/LongMemEval `src/retrieval/run_retrieval.py`: each
-question gets a fresh in-memory corpus built only from its own
-`haystack_sessions`, indexed and queried in isolation. No persistent DB,
-no cross-question contamination — same setup the upstream benchmark and
-its leaderboard numbers are computed under.
+Pairs with evaluation/longmemeval/ingest.py. For each question, opens a
+MemMachine memory scoped to `<prefix>_<question_id>`, runs the retrieval
+agent, and emits one retrieve.jsonl row in this branch's pipeline schema.
+The retrieve.jsonl is consumed by every existing analysis tool
+(scripts/recall_curve.py, scripts/plot_recall_curve.py, etc.) unchanged.
 
-Outputs retrieve.jsonl in this branch's pipeline schema so the existing
-analysis tools (scripts/recall_curve.py, scripts/plot_recall_curve.py,
-scripts/filter_full_recall.py, etc.) consume it as-is.
-
-Retriever: dense (sentence-transformers / HuggingFace AutoModel-backed).
-Corpus granularity: 'turn' (each user/assistant message is a corpus item) —
-matches our piece-level recall measurement.
+No answer-LLM call, no judge — pure retrieval. Run scripts/regen_answer.py
+later if you want accuracy on top.
 
 Usage:
     uv run python -m evaluation.longmemeval.retrieve \\
         --data-path evaluation/data/longmemeval_s_cleaned.json \\
-        --model BAAI/bge-base-en-v1.5 \\
+        --config-path configs/generated/<run>_configuration.yml \\
         --top-k 50 \\
-        --out results/lme_iso_bge/retrieve.jsonl
-
-    # match upstream's flat-contriever / flat-stella / flat-gte by swapping
-    # --model to facebook/contriever, Alibaba-NLP/gte-Qwen2-7B-instruct, etc.
+        --session-prefix lme_iso \\
+        --out results/lme_iso/retrieve.jsonl
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 import time
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
-
-import numpy as np
-from sentence_transformers import SentenceTransformer
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-_DATE_FMT = "%A, %B %d, %Y"
-_TIME_FMT = "%I:%M %p"
+from memmachine_server.common.episode_store.episode_model import (  # noqa: E402
+    episodes_to_string,
+)
+from memmachine_server.retrieval_agent.common.agent_api import (  # noqa: E402
+    QueryParam,
+    QueryPolicy,
+)
+
+from evaluation.retrieval_agent.longmemeval_test import (  # noqa: E402
+    _collect_supporting_facts,
+    _set_safe_embedder_request_limits,
+)
+from evaluation.utils import agent_utils  # noqa: E402
 
 
-def _format_line(role: str, content: str, ts: datetime) -> str:
-    return (
-        f"[{ts.strftime(_DATE_FMT)} at {ts.strftime(_TIME_FMT)}] "
-        f"{role}: {json.dumps(content)}\n"
-    )
-
-
-def _parse_session_dt(ts: str) -> datetime:
-    return datetime.strptime(ts, "%Y/%m/%d (%a) %H:%M").replace(tzinfo=UTC)
-
-
-def _collect_supporting_facts(sample: dict) -> list[str]:
-    facts: list[str] = []
-    for session in sample.get("haystack_sessions", []) or []:
-        for turn in session or []:
-            if turn.get("has_answer"):
-                content = str(turn.get("content", "")).strip()
-                if content:
-                    facts.append(content)
-    return facts
-
-
-def _build_corpus(sample: dict) -> list[dict]:
-    """Per-question corpus, granularity='turn'.
-
-    Each turn is one corpus item. Timestamp = session_date + (turn_idx
-    seconds), the same convention as main's evaluation/episodic_memory/
-    longmemeval_models.py uses.
-    """
-    items: list[dict] = []
-    for sid, sess, sdate in zip(
-        sample.get("haystack_session_ids", []) or [],
-        sample.get("haystack_sessions", []) or [],
-        sample.get("haystack_dates", []) or [],
-        strict=False,
-    ):
-        try:
-            base_dt = _parse_session_dt(sdate)
-        except (TypeError, ValueError):
-            base_dt = datetime.now(UTC)
-        for i, turn in enumerate(sess or []):
-            content = str(turn.get("content", "")).strip()
-            if not content:
-                continue
-            items.append(
-                {
-                    "text": content,
-                    "role": str(turn.get("role", "user")),
-                    "ts": base_dt + timedelta(seconds=i),
-                    "session_id": sid,
-                    "turn_idx": i,
-                    "has_answer": bool(turn.get("has_answer")),
-                }
-            )
-    return items
-
-
-def _retrieve_one(
-    model: SentenceTransformer,
-    query: str,
-    corpus: list[dict],
+async def _retrieve_one(
+    rm,
+    sample: dict,
+    session_prefix: str,
     top_k: int,
-    batch_size: int,
-) -> tuple[list[dict], float]:
-    if not corpus:
-        return [], 0.0
-    texts = [it["text"] for it in corpus]
-    t0 = time.time()
-    corpus_vecs = model.encode(
-        texts,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-        convert_to_numpy=True,
-        batch_size=batch_size,
+) -> dict[str, Any]:
+    qid = str(sample.get("question_id", ""))
+    session_id = f"{session_prefix}_{qid}"
+    memory, _, query_agent = await agent_utils.init_memmachine_params(
+        resource_manager=rm,
+        session_id=session_id,
+        agent_name="MemMachineAgent",
     )
-    query_vec = model.encode(
-        [query],
-        normalize_embeddings=True,
-        show_progress_bar=False,
-        convert_to_numpy=True,
-    )[0]
-    scores = corpus_vecs @ query_vec  # cosine similarity (both normalized)
-    top_idx = np.argsort(-scores)[:top_k]
-    latency = time.time() - t0
-    return [corpus[int(i)] for i in top_idx], latency
+    _set_safe_embedder_request_limits(memory)
+
+    question = str(sample.get("question", "")).strip()
+    t0 = time.perf_counter()
+    chunks, perf_metrics = await query_agent.do_query(
+        QueryPolicy(
+            token_cost=10,
+            time_cost=10,
+            accuracy_score=10,
+            confidence_score=10,
+            max_attempts=3,
+            max_return_len=10000,
+        ),
+        QueryParam(query=question, limit=top_k, memory=memory),
+    )
+    latency = time.perf_counter() - t0
+
+    chunks_text = episodes_to_string(chunks)
+    row = {
+        "question": question,
+        "question_id": qid,
+        "category": str(sample.get("question_type", "")),
+        "sweep": {},
+        "cell_idx": 0,
+        "chunks_text": chunks_text,
+        "num_episodes_retrieved": len(chunks),
+        "memory_retrieval_time": perf_metrics.get(
+            "memory_retrieval_time", latency
+        ),
+        "memory_search_called": perf_metrics.get("memory_search_called", 1),
+        "agent": perf_metrics.get("agent", "lme_iso"),
+        "selected_tool": perf_metrics.get("selected_tool", "lme_iso"),
+        "supporting_facts": _collect_supporting_facts(sample),
+        "input_token": perf_metrics.get("input_token", 0),
+        "output_token": perf_metrics.get("output_token", 0),
+        "tool_select_input_token": perf_metrics.get(
+            "tool_select_input_token", 0
+        ),
+        "tool_select_output_token": perf_metrics.get(
+            "tool_select_output_token", 0
+        ),
+        "fact_hits": [],
+        "fact_miss": [],
+    }
+    return row
+
+
+async def _retrieve_all(
+    data_path: str,
+    config_path: str,
+    session_prefix: str,
+    top_k: int,
+    out_path: Path,
+    limit: int | None,
+    include_categories: str | None,
+    concurrency: int,
+) -> None:
+    with open(data_path) as f:
+        dataset = json.load(f)
+    if include_categories:
+        keep = {c.strip() for c in include_categories.split(",") if c.strip()}
+        before = len(dataset)
+        dataset = [s for s in dataset if str(s.get("question_type", "")) in keep]
+        print(
+            f"[lme-retrieve] category filter {sorted(keep)}: "
+            f"{before} -> {len(dataset)}"
+        )
+    if limit is not None:
+        dataset = dataset[:limit]
+
+    rm = agent_utils.load_eval_config(config_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sem = asyncio.Semaphore(concurrency)
+    rows: list[dict[str, Any]] = [None] * len(dataset)  # preserve dataset order
+
+    async def _one(sample, idx: int) -> None:
+        async with sem:
+            row = await _retrieve_one(rm, sample, session_prefix, top_k)
+            rows[idx] = row
+            print(
+                f"[lme-retrieve] {idx + 1}/{len(dataset)}  "
+                f"qid={sample.get('question_id', '')}  "
+                f"chunks={row['num_episodes_retrieved']}  "
+                f"t={row['memory_retrieval_time']:.2f}s"
+            )
+
+    await asyncio.gather(
+        *[_one(sample, i) for i, sample in enumerate(dataset)]
+    )
+
+    with open(out_path, "w") as f:
+        for row in rows:
+            if row is not None:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    print(f"[lme-retrieve] wrote {sum(r is not None for r in rows)} rows -> {out_path}")
 
 
 def main() -> int:
@@ -138,111 +164,41 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument("--data-path", required=True, help="longmemeval_*.json path")
     p.add_argument(
-        "--data-path",
+        "--config-path",
         required=True,
-        help="Path to longmemeval_*.json (e.g. evaluation/data/longmemeval_s_cleaned.json)",
+        help="Working configuration.yml (from scripts/generate_config.py)",
     )
     p.add_argument(
-        "--model",
-        default="BAAI/bge-base-en-v1.5",
-        help="HuggingFace model id for dense retrieval (default: BAAI/bge-base-en-v1.5)",
+        "--session-prefix",
+        default="lme_iso",
+        help="Must match the prefix used at ingest. Default: lme_iso",
     )
+    p.add_argument("--top-k", type=int, default=50)
+    p.add_argument("--out", required=True, help="Output retrieve.jsonl path")
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--include-categories", default=None)
     p.add_argument(
-        "--top-k",
+        "--concurrency",
         type=int,
-        default=50,
-        help="Retrieved turns per question (default: 50)",
-    )
-    p.add_argument(
-        "--out",
-        required=True,
-        help="Output retrieve.jsonl path (this-branch schema)",
-    )
-    p.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Process only the first N questions (smoke-test).",
-    )
-    p.add_argument(
-        "--include-categories",
-        default=None,
-        help="Comma-separated question_type filter. Default: keep all.",
-    )
-    p.add_argument(
-        "--batch-size",
-        type=int,
-        default=64,
-        help="Encoding batch size (default: 64).",
+        default=4,
+        help="Max in-flight question queries (default: 4).",
     )
     args = p.parse_args()
 
-    out_path = Path(args.out).resolve()
-    with open(args.data_path) as f:
-        dataset = json.load(f)
-
-    if args.include_categories:
-        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
-        before = len(dataset)
-        dataset = [s for s in dataset if str(s.get("question_type", "")) in keep]
-        print(
-            f"[lme] category filter {sorted(keep)}: "
-            f"{before} -> {len(dataset)} samples"
+    asyncio.run(
+        _retrieve_all(
+            data_path=args.data_path,
+            config_path=args.config_path,
+            session_prefix=args.session_prefix,
+            top_k=args.top_k,
+            out_path=Path(args.out).resolve(),
+            limit=args.limit,
+            include_categories=args.include_categories,
+            concurrency=args.concurrency,
         )
-    if args.limit is not None:
-        dataset = dataset[: args.limit]
-
-    print(f"[lme] loading model {args.model}...")
-    model = SentenceTransformer(args.model)
-    print(
-        f"[lme] loaded; dim={model.get_sentence_embedding_dimension()}  "
-        f"n_questions={len(dataset)}  top_k={args.top_k}"
     )
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    n_written = 0
-    with open(out_path, "w") as f:
-        for sample in dataset:
-            qid = str(sample.get("question_id", ""))
-            question = str(sample.get("question", "")).strip()
-            if not question:
-                continue
-            corpus = _build_corpus(sample)
-            top, latency = _retrieve_one(
-                model, question, corpus, args.top_k, args.batch_size
-            )
-            chunks_text = "".join(
-                _format_line(it["role"], it["text"], it["ts"]) for it in top
-            )
-            row = {
-                "question": question,
-                "question_id": qid,
-                "category": str(sample.get("question_type", "")),
-                "sweep": {},
-                "cell_idx": 0,
-                "chunks_text": chunks_text,
-                "num_episodes_retrieved": len(top),
-                "memory_retrieval_time": latency,
-                "memory_search_called": 1,
-                "agent": "lme_upstream",
-                "selected_tool": "lme_upstream",
-                "supporting_facts": _collect_supporting_facts(sample),
-                "input_token": 0,
-                "output_token": 0,
-                "tool_select_input_token": 0,
-                "tool_select_output_token": 0,
-                "fact_hits": [],
-                "fact_miss": [],
-            }
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            n_written += 1
-            print(
-                f"[lme] {n_written}/{len(dataset)}  qid={qid}  "
-                f"corpus={len(corpus)}  ret={len(top)}  t={latency:.2f}s"
-            )
-
-    print(f"[lme] wrote {n_written} rows -> {out_path}")
     return 0
 
 
