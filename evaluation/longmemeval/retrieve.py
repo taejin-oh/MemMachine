@@ -80,6 +80,8 @@ async def _retrieve_one(
         "question": question,
         "question_id": qid,
         "category": str(entry.get("question_type", "")),
+        "question_date": str(entry.get("question_date", "")),
+        "golden_answer": str(entry.get("answer", "")),
         "sweep": {},
         "cell_idx": 0,
         "chunks_text": episodes_to_string(chunks),

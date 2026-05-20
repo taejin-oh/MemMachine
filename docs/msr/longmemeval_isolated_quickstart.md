@@ -24,12 +24,13 @@ main `evaluation/episodic_memory/` 와 동일한 의미론.
 | 4. `generate_config.py` (워킹 yml 생성) | ❌ | ✅ |
 | 5a. ingest | ✅ | ❌ |
 | 5b. retrieve | ✅ | ❌ |
-| 6. regen_answer (답변 LLM) | ❌ | ✅ |
-| 7. judge | ❌ | ✅ |
-| 8. summarize | ❌ | ✅ |
+| 6. generate (답변 LLM) | ✅ | ❌ |
+| 7. judge + 요약 | ✅ | ❌ |
 
-→ step 5 만 보면 완전 독립. step 4 의 워킹 yml 은 손으로 작성해도 무방.
-답변/judge 까지 가려면 현 단계에선 `scripts/` 가 필요.
+→ step 4 (config 생성) 외엔 전부 본 디렉토리 안에서 완결. `evaluation/` 의
+다른 디렉토리 (`retrieval_agent/`, `utils/`, `episodic_memory/` …) 와
+`scripts/{regen_answer,run_pipeline}` 은 import 하지 않음 — 통째로
+main 브랜치 상태로 되돌려도 본 평가 흐름은 정상 동작.
 
 ## 0. 코드 받기 + 의존성
 
@@ -131,40 +132,46 @@ stdout 에 `[lme-retrieve] 1/1  qid=...  chunks=...  t=...s` 가 보이면 OK.
 ## 6. 답변 LLM 호출 → generate.jsonl
 
 ```bash
-uv run python scripts/regen_answer.py --run lme_iso
+uv run python -m evaluation.longmemeval.generate \
+    --retrieve results/lme_iso/retrieve.jsonl \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/generate.jsonl \
+    --limit 1
 ```
 
-`results/lme_iso/retrieve.jsonl` 읽어 answer LLM 호출 후
-`results/lme_iso/generate.jsonl` 작성. 기존 generate.jsonl 있으면
-`.bak` 으로 백업.
+upstream `src/generation/run_generation.py` 의 `LME_origin_prompt` 를
+verbatim 으로 사용. CoT 변종이 필요하면
+`--answer-prompt LME_origin_cot_prompt`. answer LLM 은
+`retrieval_agent.llm_model` (configuration.yml) 그대로.
 
 > 답변 LLM 호출이 비싸/길어서 일단 skip 하고 recall 만 보려면 step 8 의
 > "Recall-only 흐름" 참고.
 
-## 7. Judge → judge.jsonl
+## 7. Judge → judge.jsonl (+ 카테고리별 정확도 요약)
 
 ```bash
-uv run python scripts/run_pipeline.py \
-    --config configs/runs/lme_iso.yaml \
-    --stage judge
+uv run python -m evaluation.longmemeval.judge \
+    --generate results/lme_iso/generate.jsonl \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/judge.jsonl \
+    --limit 1
 ```
 
-`results/lme_iso/judge.jsonl` 작성. 각 row 에 `llm_score` (1=correct, 0=wrong)
-+ judge raw response.
+upstream `src/evaluation/evaluate_qa.py` 의 `get_anscheck_prompt` 와
+yes/no lenient 파서 verbatim. 5종 task-별 prompt + abstention 별도 처리.
+judge LLM 은 `retrieval_agent.judge_llm_model` 우선, 없으면 답변 LLM 재사용.
 
-## 8. 결과 요약
+각 row 에 `llm_score` (1=correct, 0=wrong) + `judge_raw_response` +
+`judge_parsed_label`. 마지막에 overall + 카테고리별 정확도 표 stdout 출력.
 
-```bash
-uv run python scripts/summarize_run.py \
-    --judge results/lme_iso/judge.jsonl \
-    --out   results/lme_iso/summary.json
-```
+## 8. (선택) 추가 분석
 
-stdout 에 overall + 카테고리별 정확도 표. JSON 도 같이 저장.
-
-비교용으로 recall@k 곡선도:
+step 7 의 stdout 에서 이미 overall + 카테고리별 정확도 표가 나오니 별도
+요약 명령은 불필요. 더 깊이 보려면 `scripts/` 의 분석 도구도 같은
+retrieve.jsonl / judge.jsonl 그대로 소비 가능:
 
 ```bash
+# recall@k 곡선
 uv run python scripts/recall_curve.py \
     --retrieve results/lme_iso/retrieve.jsonl \
     --out      results/lme_iso/recall_curve.json
@@ -173,7 +180,14 @@ uv run python scripts/plot_recall_curve.py \
     --input results/lme_iso/recall_curve.json \
     --out   results/lme_iso/recall_curve.png \
     --per-category
+
+# judge 요약 (judge.py stdout 의 표와 동일 내용, JSON 으로 저장)
+uv run python scripts/summarize_run.py \
+    --judge results/lme_iso/judge.jsonl \
+    --out   results/lme_iso/summary.json
 ```
+
+(이 step 만 `scripts/` 사용 — step 1~7 은 본 디렉토리만으로 완결.)
 
 ## Recall-only 흐름 (답변 LLM / judge 비용 0)
 
@@ -190,32 +204,40 @@ upstream / Edwin 의 ~95% 수치와 직접 비교 가능.
 
 ## 풀 500 문항 실행
 
-step 5a / 5b 에서 `--limit 1` 만 빼면 됨:
+step 5~7 에서 `--limit 1` 만 빼면 됨:
 
 ```bash
-# ingest 풀 500
+# 5a. ingest 풀 500
 uv run python -m evaluation.longmemeval.ingest \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
     --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso \
-    --concurrency 4
+    --session-prefix lme_iso --concurrency 4
 
-# retrieve 풀 500
+# 5b. retrieve 풀 500
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
     --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso \
-    --top-k 50 \
-    --out results/lme_iso/retrieve.jsonl \
-    --concurrency 4
+    --session-prefix lme_iso --top-k 50 \
+    --out results/lme_iso/retrieve.jsonl --concurrency 4
+
+# 6. generate 풀 500
+uv run python -m evaluation.longmemeval.generate \
+    --retrieve results/lme_iso/retrieve.jsonl \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/generate.jsonl --concurrency 4
+
+# 7. judge 풀 500 + 카테고리별 정확도 요약
+uv run python -m evaluation.longmemeval.judge \
+    --generate results/lme_iso/generate.jsonl \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/judge.jsonl --concurrency 4
 ```
 
-- `--concurrency` 높이면 빠르지만 Neo4j 부하 ↑. CPU 환경 4~8, GPU 환경
-  8~16 정도가 무난.
-- 같은 `--session-prefix` 로 재실행하면 자동 cleanup → 결과 동일 (idempotent).
+- `--concurrency` 높이면 빠르지만 Neo4j (5a/5b) / LLM API rate (6/7) 부하 ↑.
+- 같은 `--session-prefix` 로 ingest 재실행하면 자동 cleanup (idempotent).
 - top-K 만 바꿔 retrieve 만 다시 돌리려면 5b 만 다시 실행 (ingest 스킵).
-
-이후 step 6~8 동일.
+- 답변 prompt 만 바꿔 generate 만 다시 돌리려면 6 만 다시 실행
+  (`--answer-prompt LME_origin_cot_prompt` 등).
 
 ## 다른 실험과 병행
 
@@ -267,8 +289,11 @@ Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 �
 
 | 항목 | 경로 |
 |---|---|
-| Ingest 스크립트 | `evaluation/longmemeval/ingest.py` |
-| Retrieve 스크립트 | `evaluation/longmemeval/retrieve.py` |
+| Ingest | `evaluation/longmemeval/ingest.py` |
+| Retrieve | `evaluation/longmemeval/retrieve.py` |
+| Generate (answer LLM) | `evaluation/longmemeval/generate.py` |
+| Judge | `evaluation/longmemeval/judge.py` |
+| 공용 헬퍼 + upstream prompts | `evaluation/longmemeval/_common.py` |
 | 디렉토리 README | `evaluation/longmemeval/README.md` |
 | Run config | `configs/runs/<run_name>.yaml` |
 | Working configuration.yml | `configs/generated/<run_name>_configuration.yml` |

@@ -13,31 +13,41 @@ graph store + Postgres, configuration.yml 의 embedder + reranker) 위에서
 
 | 파일 | 역할 |
 |---|---|
-| `_common.py` | MemMachine 부트스트랩 + helper (standalone, evaluation/ 외부 의존 0) |
+| `_common.py` | MemMachine 부트스트랩 + upstream prompt + helper (standalone) |
 | `ingest.py` | per-question delete + `add_memory_episodes` (idempotent) |
 | `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl |
+| `generate.py` | retrieve.jsonl → answer LLM (upstream prompt) → generate.jsonl |
+| `judge.py` | generate.jsonl → judge LLM (upstream `get_anscheck_prompt`) → judge.jsonl + 요약 |
 
-`ingest` 와 `retrieve` 가 분리되어 있어 같은 데이터로 `--top-k` 만 바꿔
-retrieve 만 여러 번 돌릴 수 있다 (재-ingest 비용 0). 답변 LLM / judge 호출
-없음 — 정확도까지 보려면 다음에 `scripts/regen_answer.py` +
-`scripts/run_pipeline.py --stage judge`.
+ingest → retrieve → generate → judge 네 단계가 모두 본 디렉토리 안에서
+완결. 같은 데이터로 `--top-k` / `--answer-prompt` 만 바꿔 generate 만 다시
+돌리는 식으로 단계 별 재실행 가능.
 
 ## 독립성
 
 본 디렉토리는 `evaluation/longmemeval/_common.py` + `memmachine_server.*`
 (워크스페이스 패키지) **만** 의존. `evaluation/retrieval_agent/`,
-`evaluation/utils/agent_utils.py`, `scripts/` 어느 것도 import 안 함.
+`evaluation/utils/`, `scripts/{regen_answer,run_pipeline,stages/*}` 어느
+것도 import 안 함.
 
-→ `evaluation/retrieval_agent/` 를 main 브랜치 상태로 되돌리거나 삭제해도
-이 디렉토리는 그대로 동작.
+→ `evaluation/` 의 다른 디렉토리를 main 브랜치 상태로 되돌리거나 통째로
+삭제해도 본 디렉토리만으로 ingest → retrieve → generate → judge 모두
+실행 가능. 외부 의존은 `scripts/generate_config.py` (워킹 yml 생성) 한 곳.
 
-`_common.py` 가 inline 한 것:
-- `load_eval_config` (← agent_utils.load_eval_config)
-- `build_memory_and_agent` (← agent_utils.init_memmachine_params, MemMachineAgent 만)
-- `set_safe_embedder_limits` (← longmemeval_test._set_safe_embedder_request_limits)
-- `split_chunks` (← longmemeval_test._split_chunks)
-- `collect_supporting_facts` (← longmemeval_test._collect_supporting_facts)
-- `parse_session_dt` (longmemeval session_date 파서)
+`_common.py` 의 inline 내용:
+
+| 헬퍼 | 원본 |
+|---|---|
+| `load_eval_config` | agent_utils.load_eval_config |
+| `build_memory_and_agent` | agent_utils.init_memmachine_params (MemMachineAgent 분기만) |
+| `get_answer_llm` / `get_judge_llm` | retrieval_agent.llm_model / .judge_llm_model 에서 LM 획득 |
+| `set_safe_embedder_limits` | longmemeval_test._set_safe_embedder_request_limits |
+| `split_chunks` | longmemeval_test._split_chunks |
+| `collect_supporting_facts` | longmemeval_test._collect_supporting_facts |
+| `parse_session_dt` | longmemeval session_date 파서 |
+| `ANSWER_PROMPTS` | **upstream verbatim** — `src/generation/run_generation.py:54-57` |
+| `get_anscheck_prompt` | **upstream verbatim** — `src/evaluation/evaluate_qa.py:24-43` |
+| `parse_yes_no_lenient` | upstream `'yes' in eval_response.lower()` |
 
 ## 사용
 
@@ -48,7 +58,7 @@ uv run python -m evaluation.longmemeval.ingest \
     --config-path configs/generated/lme_iso_configuration.yml \
     --session-prefix lme_iso
 
-# 2) retrieve
+# 2) retrieve → retrieve.jsonl (question_date / golden_answer 도 포함)
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
     --config-path configs/generated/lme_iso_configuration.yml \
@@ -56,10 +66,17 @@ uv run python -m evaluation.longmemeval.retrieve \
     --top-k 50 \
     --out results/lme_iso/retrieve.jsonl
 
-# 3) 분석 (우리 도구 그대로)
-uv run python scripts/recall_curve.py \
+# 3) generate → generate.jsonl (upstream LME_origin_prompt 기본, --answer-prompt 로 변경)
+uv run python -m evaluation.longmemeval.generate \
     --retrieve results/lme_iso/retrieve.jsonl \
-    --out      results/lme_iso/recall_curve.json
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/generate.jsonl
+
+# 4) judge → judge.jsonl + 카테고리별 정확도 요약 출력
+uv run python -m evaluation.longmemeval.judge \
+    --generate results/lme_iso/generate.jsonl \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --out results/lme_iso/judge.jsonl
 ```
 
 `--session-prefix` 는 ingest 와 retrieve 가 **같은 값** 이어야 함. 다른 prefix
