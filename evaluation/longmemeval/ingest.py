@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""LongMemEval ingest — per-question session_id isolation (MemMachine 백엔드).
+"""LongMemEval ingest — per-question session_id 격리 (MemMachine 백엔드).
 
 각 질문의 haystack 을 `session_id = <prefix>_<question_id>` 에 격리 적재.
 ingest 후엔 같은 prefix 로 `retrieve.py` 를 부르면 그 session 안에서만 검색.
 
-이 단계는 retrieve 와 완전히 분리되어 있어서, ingest 한 번 해두면 같은
-데이터로 top-K 만 바꿔 retrieve 를 여러 번 돌릴 수 있다. 매 질문 시작 시
-`delete_session_episodes()` 가 먼저 도니까 같은 prefix 로 재실행해도
-중복 적재 없이 idempotent.
+매 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 prefix 로
+재실행해도 중복 적재 없이 idempotent.
 
-호출 패턴은 `evaluation/retrieval_agent/longmemeval_test._async_ingest` 와
-동일 — `init_memmachine_params(session_id=...)` + `add_memory_episodes(...)`.
-유일한 차이는 session_id 정책 (per-question).
+본 모듈은 `evaluation/longmemeval/_common.py` 와 `memmachine_server.*` 만
+import — `evaluation/retrieval_agent/`, `evaluation/utils/` 의존 없음.
 
 Usage:
     uv run python -m evaluation.longmemeval.ingest \\
@@ -38,20 +35,18 @@ if str(REPO_ROOT) not in sys.path:
 
 from memmachine_server.common.episode_store import Episode  # noqa: E402
 
-from evaluation.retrieval_agent.longmemeval_test import (  # noqa: E402
-    _set_safe_embedder_request_limits,
-    _split_chunks,
+from evaluation.longmemeval._common import (  # noqa: E402
+    build_memory_and_agent,
+    load_eval_config,
+    parse_session_dt,
+    set_safe_embedder_limits,
+    split_chunks,
 )
-from evaluation.utils import agent_utils  # noqa: E402
-
-
-def _parse_session_dt(ts: str) -> datetime:
-    return datetime.strptime(ts, "%Y/%m/%d (%a) %H:%M").replace(tzinfo=UTC)
 
 
 def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
-    """entry 의 haystack 전체를 Episode 리스트로 변환. >3000 자 turn 은
-    `_split_chunks` 로 자름. role 보존, session_date+turn_idx 초 timestamp.
+    """entry 의 haystack 을 Episode 리스트로 변환. role 보존,
+    session_date+turn_idx 초 timestamp, >3000자 turn 은 split_chunks 로 자름.
     """
     episodes: list[Episode] = []
     for _sid, sess, sdate in zip(
@@ -61,7 +56,7 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
         strict=False,
     ):
         try:
-            base_dt = _parse_session_dt(sdate)
+            base_dt = parse_session_dt(sdate)
         except (TypeError, ValueError):
             base_dt = datetime.now(UTC)
         for i, turn in enumerate(sess or []):
@@ -70,7 +65,7 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
                 continue
             role = str(turn.get("role", "user"))
             ts = base_dt + timedelta(seconds=i)
-            for chunk in _split_chunks(content):
+            for chunk in split_chunks(content):
                 episodes.append(
                     Episode(
                         uid=str(uuid4()),
@@ -87,12 +82,8 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
 async def _ingest_one(rm: Any, entry: dict, session_prefix: str) -> int:
     qid = str(entry.get("question_id", ""))
     session_id = f"{session_prefix}_{qid}"
-    memory, _, _ = await agent_utils.init_memmachine_params(
-        resource_manager=rm,
-        session_id=session_id,
-        agent_name="MemMachineAgent",
-    )
-    _set_safe_embedder_request_limits(memory)
+    memory, _query_agent = await build_memory_and_agent(rm, session_id)
+    set_safe_embedder_limits(memory)
 
     await memory.delete_session_episodes()
     episodes = _build_episodes(entry, session_id)
@@ -117,7 +108,7 @@ async def _run(args: argparse.Namespace) -> None:
     if args.limit is not None:
         entry_list = entry_list[: args.limit]
 
-    rm = agent_utils.load_eval_config(args.config_path)
+    rm = load_eval_config(args.config_path)
     sem = asyncio.Semaphore(args.concurrency)
 
     async def _one(entry: dict, idx: int) -> None:

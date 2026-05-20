@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""LongMemEval retrieve — per-question session_id 검색 (MemMachine 백엔드).
+"""LongMemEval retrieve — per-question session 검색 (MemMachine 백엔드).
 
 `evaluation/longmemeval/ingest.py` 가 먼저 돌아 `<prefix>_<question_id>`
 session 에 데이터가 적재된 상태에서, 각 질문 별로 그 session 안에서 top-K
 검색 → retrieve.jsonl (이 브랜치 schema) 출력.
 
-ingest 와 분리되어 있어서 같은 데이터로 `--top-k` / `--session-prefix` 만
-바꿔 여러 번 돌릴 수 있다 (재-ingest 비용 0). 답변 LLM / judge 호출 없음.
+ingest 와 분리되어 있어서 같은 데이터로 `--top-k` 만 바꿔 여러 번 돌릴 수
+있다 (재-ingest 비용 0). 답변 LLM / judge 호출 없음.
 
-호출 패턴은 `evaluation/retrieval_agent/longmemeval_test._async_search`
-와 동일 — `init_memmachine_params(session_id=...)` +
-`query_agent.do_query(QueryPolicy(...), QueryParam(query, limit, memory))`.
+본 모듈은 `evaluation/longmemeval/_common.py` 와 `memmachine_server.*` 만
+import — `evaluation/retrieval_agent/`, `evaluation/utils/` 의존 없음.
 
 Usage:
     uv run python -m evaluation.longmemeval.retrieve \\
@@ -43,11 +42,12 @@ from memmachine_server.retrieval_agent.common.agent_api import (  # noqa: E402
     QueryPolicy,
 )
 
-from evaluation.retrieval_agent.longmemeval_test import (  # noqa: E402
-    _collect_supporting_facts,
-    _set_safe_embedder_request_limits,
+from evaluation.longmemeval._common import (  # noqa: E402
+    build_memory_and_agent,
+    collect_supporting_facts,
+    load_eval_config,
+    set_safe_embedder_limits,
 )
-from evaluation.utils import agent_utils  # noqa: E402
 
 
 async def _retrieve_one(
@@ -58,12 +58,8 @@ async def _retrieve_one(
 ) -> dict[str, Any]:
     qid = str(entry.get("question_id", ""))
     session_id = f"{session_prefix}_{qid}"
-    memory, _, query_agent = await agent_utils.init_memmachine_params(
-        resource_manager=rm,
-        session_id=session_id,
-        agent_name="MemMachineAgent",
-    )
-    _set_safe_embedder_request_limits(memory)
+    memory, query_agent = await build_memory_and_agent(rm, session_id)
+    set_safe_embedder_limits(memory)
 
     question = str(entry.get("question", "")).strip()
     t0 = time.perf_counter()
@@ -92,7 +88,7 @@ async def _retrieve_one(
         "memory_search_called": perf.get("memory_search_called", 1),
         "agent": perf.get("agent", "lme_iso"),
         "selected_tool": perf.get("selected_tool", "lme_iso"),
-        "supporting_facts": _collect_supporting_facts(entry),
+        "supporting_facts": collect_supporting_facts(entry),
         "input_token": perf.get("input_token", 0),
         "output_token": perf.get("output_token", 0),
         "tool_select_input_token": perf.get("tool_select_input_token", 0),
@@ -118,7 +114,7 @@ async def _run(args: argparse.Namespace) -> None:
     if args.limit is not None:
         entry_list = entry_list[: args.limit]
 
-    rm = agent_utils.load_eval_config(args.config_path)
+    rm = load_eval_config(args.config_path)
     out_path = args.out_path  # resolved in main() before asyncio.run
 
     sem = asyncio.Semaphore(args.concurrency)

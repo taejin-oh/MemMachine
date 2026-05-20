@@ -13,6 +13,7 @@ graph store + Postgres, configuration.yml 의 embedder + reranker) 위에서
 
 | 파일 | 역할 |
 |---|---|
+| `_common.py` | MemMachine 부트스트랩 + helper (standalone, evaluation/ 외부 의존 0) |
 | `ingest.py` | per-question delete + `add_memory_episodes` (idempotent) |
 | `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl |
 
@@ -20,6 +21,23 @@ graph store + Postgres, configuration.yml 의 embedder + reranker) 위에서
 retrieve 만 여러 번 돌릴 수 있다 (재-ingest 비용 0). 답변 LLM / judge 호출
 없음 — 정확도까지 보려면 다음에 `scripts/regen_answer.py` +
 `scripts/run_pipeline.py --stage judge`.
+
+## 독립성
+
+본 디렉토리는 `evaluation/longmemeval/_common.py` + `memmachine_server.*`
+(워크스페이스 패키지) **만** 의존. `evaluation/retrieval_agent/`,
+`evaluation/utils/agent_utils.py`, `scripts/` 어느 것도 import 안 함.
+
+→ `evaluation/retrieval_agent/` 를 main 브랜치 상태로 되돌리거나 삭제해도
+이 디렉토리는 그대로 동작.
+
+`_common.py` 가 inline 한 것:
+- `load_eval_config` (← agent_utils.load_eval_config)
+- `build_memory_and_agent` (← agent_utils.init_memmachine_params, MemMachineAgent 만)
+- `set_safe_embedder_limits` (← longmemeval_test._set_safe_embedder_request_limits)
+- `split_chunks` (← longmemeval_test._split_chunks)
+- `collect_supporting_facts` (← longmemeval_test._collect_supporting_facts)
+- `parse_session_dt` (longmemeval session_date 파서)
 
 ## 사용
 
@@ -62,17 +80,15 @@ retrieve 전용:
 
 ingest 측:
 ```python
-memory, _, _ = await agent_utils.init_memmachine_params(
-    rm, session_id=session_id, agent_name="MemMachineAgent")
-_set_safe_embedder_request_limits(memory)
+memory, _query_agent = await build_memory_and_agent(rm, session_id)
+set_safe_embedder_limits(memory)
 await memory.delete_session_episodes()             # idempotent re-run
 await memory.add_memory_episodes(episodes=episodes)
 ```
 
 retrieve 측:
 ```python
-memory, _, query_agent = await agent_utils.init_memmachine_params(
-    rm, session_id=session_id, agent_name="MemMachineAgent")
+memory, query_agent = await build_memory_and_agent(rm, session_id)
 chunks, perf = await query_agent.do_query(
     QueryPolicy(token_cost=10, time_cost=10, accuracy_score=10,
                 confidence_score=10, max_attempts=3, max_return_len=10000),
@@ -80,8 +96,9 @@ chunks, perf = await query_agent.do_query(
 )
 ```
 
-→ `evaluation/retrieval_agent/longmemeval_test._async_ingest` /
-`_async_search` 의 호출 패턴과 동일. session_id 만 per-question.
+`build_memory_and_agent` 가 ResourceManager → embedder/reranker/vector_graph_store
+획득 + LongTermMemory + EpisodicMemory + MemMachineAgent 까지 한 번에 만듦.
+agent_utils.init_memmachine_params 의 MemMachineAgent 분기만 그대로 옮긴 것.
 
 ## 정리 메모
 
