@@ -32,6 +32,21 @@ main `evaluation/episodic_memory/` 와 동일한 의미론.
 `scripts/{regen_answer,run_pipeline}` 은 import 하지 않음 — 통째로
 main 브랜치 상태로 되돌려도 본 평가 흐름은 정상 동작.
 
+### upstream / lme_updated 정렬 상태
+
+| 항목 | upstream | lme_updated | 우리 |
+|---|---|---|---|
+| 격리 단위 | per-question in-memory corpus | per-question Qdrant collection | per-question Neo4j session_id |
+| Ingest 단위 | 1 turn = 1 corpus item | 1 turn = 1 Event (segmenter 500자) | **1 turn = 1 Episode** (ff174d6 이후) |
+| Recall 의미론 | turn-level binary | turn-level binary (segment 하나라도 hit → 1) | turn-level binary (fact piece 하나라도 hit → 1) |
+| Answer prompt | LME_origin / LME_origin_cot | mastra-augmented (KNOWLEDGE UPDATES 등) | **upstream verbatim** |
+| Judge prompt | `get_anscheck_prompt` (5종 + abstention) | 동일 (`evaluate_qa.py` verbatim 복사) | 동일 (`_common.py` verbatim 복사) |
+| Yes/no parser | `'yes' in lower(raw)` | 동일 | 동일 |
+
+알고리즘 단위 + 의미론은 정렬. 절대 점수 동일은 embedder/reranker/exact-cosine
+3 가지가 추가로 정렬돼야 가능 — 자세히는 `evaluation/longmemeval/README.md`
+의 "upstream 점수와 동일한 결과를 원하면" 섹션 참고.
+
 ## 0. 코드 받기 + 의존성
 
 ```bash
@@ -76,186 +91,176 @@ shutil.copy2(src, 'evaluation/data/longmemeval_s_cleaned.json')
 
 500 문항. `.gitignore` 대상.
 
-## 4. Run config + working configuration.yml 생성
+## 4. 실험 이름 (`PREFIX`) + 워킹 config 생성
+
+본 가이드는 두 개의 shell 변수만 갈아끼면 **1 개 스모크 → 500 개 풀 런 →
+다른 실험 병행** 까지 같은 명령으로 처리할 수 있게 구성돼 있음:
+
+```bash
+PREFIX=lme_iso          # 실험 이름 = --session-prefix = --run-name = 결과 디렉토리
+LIMIT_ARG="--limit 1"   # 스모크 시 1 문항만; 풀 런 시 ""  (빈 문자열)
+```
+
+실험 이름이 바뀌면 (`PREFIX=lme_iso_v2` 같이) Neo4j 안에서 별개 session
+집합으로 공존, 결과도 별개 디렉토리.
+
+### 워킹 config 1 회 생성
 
 ```bash
 uv run python scripts/generate_config.py \
     --problem 0 \
-    --run-name lme_iso \
+    --run-name $PREFIX \
     --model-profile main --db-profile main \
     --longmemeval-answer-prompt LME_origin_prompt
 ```
 
 산출:
-- `configs/runs/lme_iso.yaml` — run config
-- `configs/generated/lme_iso_configuration.yml` — working configuration.yml
+- `configs/runs/${PREFIX}.yaml`
+- `configs/generated/${PREFIX}_configuration.yml`
 
-다른 실험으로 분리하고 싶으면 `--run-name lme_iso_v2` 식으로 별 이름 사용.
+CoT 답변 prompt 를 쓰려면 `--longmemeval-answer-prompt LME_origin_cot_prompt`.
+이 단계만 외부 (`scripts/`) 의존, 그 후 5~7 은 `evaluation/longmemeval/` 만.
 
 ## 5a. Ingest
 
 ```bash
 uv run python -m evaluation.longmemeval.ingest \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso \
-    --limit 1
+    --config-path configs/generated/${PREFIX}_configuration.yml \
+    --session-prefix $PREFIX \
+    $LIMIT_ARG
 ```
 
-각 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 prefix 로
-재실행해도 중복 적재 없음 (idempotent).
+각 질문이 `session_id = ${PREFIX}_<question_id>` 로 Neo4j 에 격리 적재.
+**1 turn = 1 Episode** (upstream `--granularity turn` 정렬).
 
-stdout 에 `[lme-ingest] 1/1  qid=...  episodes=...  t=...s` 가 보이면 OK.
+각 질문 시작 시 `delete_session_episodes()` 가 먼저 돌아서 같은 PREFIX 로
+재실행 시 idempotent. stdout: `[lme-ingest] N/N  qid=...  episodes=...`.
 
 ## 5b. Retrieve → retrieve.jsonl
 
 ```bash
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso \
+    --config-path configs/generated/${PREFIX}_configuration.yml \
+    --session-prefix $PREFIX \
     --top-k 50 \
-    --out results/lme_iso/retrieve.jsonl \
-    --limit 1
+    --out results/${PREFIX}/retrieve.jsonl \
+    $LIMIT_ARG
 ```
 
-→ `results/lme_iso/retrieve.jsonl` (1 row).
+→ `results/${PREFIX}/retrieve.jsonl`. stdout: `[lme-retrieve] N/N  qid=...  chunks=...`.
 
-stdout 에 `[lme-retrieve] 1/1  qid=...  chunks=...  t=...s` 가 보이면 OK.
-
-`--session-prefix` 는 ingest 와 retrieve 가 **같은 값** 이어야 함. `--top-k`
-만 바꿔 retrieve 만 여러 번 돌릴 수 있음 (재-ingest 비용 0).
-
-`--limit` 빼면 500 문항 전부. CPU 환경에선 시간 걸림 (concurrency 4 기본,
-질문 당 수 초~수십 초).
+`--top-k` 만 바꿔 retrieve 만 다시 돌릴 수 있음 (재-ingest 불필요). 같은
+PREFIX 면 Neo4j 의 적재된 데이터 그대로 활용.
 
 ## 6. 답변 LLM 호출 → generate.jsonl
 
 ```bash
 uv run python -m evaluation.longmemeval.generate \
-    --retrieve results/lme_iso/retrieve.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/generate.jsonl \
-    --limit 1
+    --retrieve results/${PREFIX}/retrieve.jsonl \
+    --config-path configs/generated/${PREFIX}_configuration.yml \
+    --out results/${PREFIX}/generate.jsonl \
+    $LIMIT_ARG
 ```
 
 upstream `src/generation/run_generation.py` 의 `LME_origin_prompt` 를
-verbatim 으로 사용. CoT 변종이 필요하면
-`--answer-prompt LME_origin_cot_prompt`. answer LLM 은
-`retrieval_agent.llm_model` (configuration.yml) 그대로.
+verbatim 으로 사용. CoT 원하면 `--answer-prompt LME_origin_cot_prompt`.
+answer LLM 은 working YAML 의 `retrieval_agent.llm_model`.
 
-> 답변 LLM 호출이 비싸/길어서 일단 skip 하고 recall 만 보려면 step 8 의
-> "Recall-only 흐름" 참고.
+> 답변 LLM 비용/시간 부담 크면 **step 6~7 스킵하고 recall 만** 보는 변종은
+> 아래 "Recall-only 변종" 섹션.
 
-## 7. Judge → judge.jsonl (+ 카테고리별 정확도 요약)
+## 7. Judge → judge.jsonl (+ 정확도 요약)
 
 ```bash
 uv run python -m evaluation.longmemeval.judge \
-    --generate results/lme_iso/generate.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/judge.jsonl \
-    --limit 1
+    --generate results/${PREFIX}/generate.jsonl \
+    --config-path configs/generated/${PREFIX}_configuration.yml \
+    --out results/${PREFIX}/judge.jsonl \
+    $LIMIT_ARG
 ```
 
-upstream `src/evaluation/evaluate_qa.py` 의 `get_anscheck_prompt` 와
-yes/no lenient 파서 verbatim. 5종 task-별 prompt + abstention 별도 처리.
-judge LLM 은 `retrieval_agent.judge_llm_model` 우선, 없으면 답변 LLM 재사용.
+upstream `src/evaluation/evaluate_qa.py` 의 `get_anscheck_prompt` (5 task
++ abstention) 와 lenient yes/no parser **verbatim**. judge LLM 은
+`retrieval_agent.judge_llm_model` 우선, 없으면 answer LLM 재사용.
 
-각 row 에 `llm_score` (1=correct, 0=wrong) + `judge_raw_response` +
-`judge_parsed_label`. 마지막에 overall + 카테고리별 정확도 표 stdout 출력.
+각 row: `llm_score` (1/0) + `judge_raw_response` + `judge_parsed_label`.
+끝나면 stdout 에 overall + 카테고리별 정확도 표 자동 출력.
 
-## 8. (선택) 추가 분석
+## 스모크 OK → 풀 500 문항
 
-step 7 의 stdout 에서 이미 overall + 카테고리별 정확도 표가 나오니 별도
-요약 명령은 불필요. 더 깊이 보려면 `scripts/` 의 분석 도구도 같은
-retrieve.jsonl / judge.jsonl 그대로 소비 가능:
+step 5a 가 잘 됐고 step 7 의 1 문항 표가 자연스럽게 나오면, 같은 shell 에서
+**LIMIT_ARG 만 비우고 step 5a~7 그대로 재실행**:
 
 ```bash
-# recall@k 곡선
-uv run python scripts/recall_curve.py \
-    --retrieve results/lme_iso/retrieve.jsonl \
-    --out      results/lme_iso/recall_curve.json
-
-uv run python scripts/plot_recall_curve.py \
-    --input results/lme_iso/recall_curve.json \
-    --out   results/lme_iso/recall_curve.png \
-    --per-category
-
-# judge 요약 (judge.py stdout 의 표와 동일 내용, JSON 으로 저장)
-uv run python scripts/summarize_run.py \
-    --judge results/lme_iso/judge.jsonl \
-    --out   results/lme_iso/summary.json
+LIMIT_ARG=""
+# concurrency 도 같이 올리고 싶으면 각 명령 끝에 --concurrency 8 식으로 추가
 ```
 
-(이 step 만 `scripts/` 사용 — step 1~7 은 본 디렉토리만으로 완결.)
+같은 PREFIX 라면 Neo4j 의 1 문항 데이터는 ingest 가 자동 cleanup 후
+재적재 → 결과 OK. retrieve.jsonl / generate.jsonl / judge.jsonl 도 새로
+덮어씀.
 
-## Recall-only 흐름 (답변 LLM / judge 비용 0)
-
-step 6~7 스킵하고 step 5 의 retrieve.jsonl 만 가지고:
-
-```bash
-uv run python scripts/recall_curve.py \
-    --retrieve results/lme_iso/retrieve.jsonl \
-    --out      results/lme_iso/recall_curve.json
-```
-
-순수 retrieval 측정. 500 문항 풀로 돌리면 카테고리별 recall@k 곡선이
-upstream / Edwin 의 ~95% 수치와 직접 비교 가능.
-
-## 풀 500 문항 실행
-
-step 5~7 에서 `--limit 1` 만 빼면 됨:
-
-```bash
-# 5a. ingest 풀 500
-uv run python -m evaluation.longmemeval.ingest \
-    --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso --concurrency 4
-
-# 5b. retrieve 풀 500
-uv run python -m evaluation.longmemeval.retrieve \
-    --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso --top-k 50 \
-    --out results/lme_iso/retrieve.jsonl --concurrency 4
-
-# 6. generate 풀 500
-uv run python -m evaluation.longmemeval.generate \
-    --retrieve results/lme_iso/retrieve.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/generate.jsonl --concurrency 4
-
-# 7. judge 풀 500 + 카테고리별 정확도 요약
-uv run python -m evaluation.longmemeval.judge \
-    --generate results/lme_iso/generate.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/judge.jsonl --concurrency 4
-```
-
-- `--concurrency` 높이면 빠르지만 Neo4j (5a/5b) / LLM API rate (6/7) 부하 ↑.
-- 같은 `--session-prefix` 로 ingest 재실행하면 자동 cleanup (idempotent).
-- top-K 만 바꿔 retrieve 만 다시 돌리려면 5b 만 다시 실행 (ingest 스킵).
-- 답변 prompt 만 바꿔 generate 만 다시 돌리려면 6 만 다시 실행
-  (`--answer-prompt LME_origin_cot_prompt` 등).
+- `--concurrency N`: Neo4j (5a/5b) / LLM API rate (6/7) 부하 ↑. 무난한 값:
+  CPU 환경 4~8, GPU 환경 8~16. Gemini free-tier 는 15 RPM 이라 6~7 단계엔
+  concurrency 너무 높이면 rate-limited.
+- top-K 만 바꿔 retrieve 재실행: 5b 만 다시 (ingest 스킵).
+- 답변 prompt 만 바꿔 비교: 6 만 `--answer-prompt LME_origin_cot_prompt` 로
+  다시 실행 → judge 만 새로 돌리면 됨.
 
 ## 다른 실험과 병행
 
-`--session-prefix` 만 다르게 주면 같은 Neo4j 안에 여러 실험이 공존:
+`PREFIX` 만 바꿔서 같은 Neo4j 안에 여러 실험을 공존시킬 수 있음. Neo4j
+session_id 가 prefix 별로 격리되니까 retrieve 결과 절대 안 섞임.
 
 ```bash
-# experiment v1
-uv run python -m evaluation.longmemeval.ingest   ... --session-prefix lme_iso
-uv run python -m evaluation.longmemeval.retrieve ... --session-prefix lme_iso --out results/lme_iso/retrieve.jsonl
+# 첫 실험
+PREFIX=lme_iso
+LIMIT_ARG=""
+# step 4 → step 5a → ... → step 7 (한 묶음)
 
-# experiment v2 (다른 chunking 등)
-uv run python -m evaluation.longmemeval.ingest   ... --session-prefix lme_iso_v2
-uv run python -m evaluation.longmemeval.retrieve ... --session-prefix lme_iso_v2 --out results/lme_iso_v2/retrieve.jsonl
+# 두 번째 실험 (다른 prompt, 다른 top-K, 다른 chunking 등)
+PREFIX=lme_iso_v2
+LIMIT_ARG=""
+# step 4 → step 5a → ... → step 7  다시 같은 흐름
 ```
 
-Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 공존.
-하나 정리하려면 그 prefix 의 session 만 골라 delete (현재 별도 cleanup
-스크립트 없음 — 필요하면 Cypher 직접).
+Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 namespace 로 공존.
+하나만 정리하려면 그 prefix 의 session 만 골라 delete (별도 cleanup 스크립트
+없음 — Neo4j Cypher 직접 또는 `docker compose down -v` 로 전체 초기화).
+
+## Recall-only 변종 (step 6~7 스킵)
+
+답변 LLM / judge 호출 안 하고 retrieval recall 만 볼 때:
+
+```bash
+# step 5a/5b 까지만 수행 후
+uv run python scripts/recall_curve.py \
+    --retrieve results/${PREFIX}/retrieve.jsonl \
+    --out      results/${PREFIX}/recall_curve.json
+
+uv run python scripts/plot_recall_curve.py \
+    --input results/${PREFIX}/recall_curve.json \
+    --out   results/${PREFIX}/recall_curve.png \
+    --per-category
+```
+
+`scripts/recall_curve.py` 의 매칭은 fact-level binary recall (= lme_updated
+의 turn-level recall 과 동등 의미론). turn 단위 회수 측정. LLM 호출 0.
+
+## (선택) 추가 분석
+
+step 7 stdout 의 정확도 표를 JSON 으로도 저장하고 싶으면:
+
+```bash
+uv run python scripts/summarize_run.py \
+    --judge results/${PREFIX}/judge.jsonl \
+    --out   results/${PREFIX}/summary.json
+```
+
+이 명령들만 `scripts/` 의존 — step 4~7 본체 흐름은 `evaluation/longmemeval/`
+디렉토리만으로 완결.
 
 ## 비교 (기존 단일 session 경로 vs 격리)
 
