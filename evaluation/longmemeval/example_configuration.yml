@@ -1,0 +1,106 @@
+# Example working configuration.yml for evaluation/longmemeval/.
+#
+# 사용법:
+#   1. 이 파일을 evaluation/longmemeval/configuration.yml 로 복사 (또는 임의
+#      경로) — 4 개의 placeholder 만 채우면 됨:
+#        <GEMINI_API_KEY>   — Gemini API 키 (또는 OpenAI 호환 endpoint 키)
+#        <NEO4J_PASSWORD>   — Neo4j 비밀번호
+#        <POSTGRES_PASSWORD> — Postgres 비밀번호
+#   2. Neo4j + Postgres 띄우기 (다른 README 의 docker compose 참조)
+#   3. evaluation/longmemeval/{ingest,retrieve,generate,judge}.py 에
+#      `--config-path <이 파일 경로>` 로 전달
+#
+# 모델 / 임베더 / reranker 를 다른 걸 쓰고 싶으면 resources.* 블록을 그대로
+# 바꾸면 됨. 우리 코드는 `episodic_memory.long_term_memory.{embedder,reranker,
+# vector_graph_store}` + `retrieval_agent.{llm_model,reranker,judge_llm_model}`
+# 만 참조하므로 ID 만 일관성 있게.
+
+episode_store:
+  database: postgres_main
+  with_count_cache: true
+
+episodic_memory:
+  enabled: true
+  long_term_memory_enabled: true
+  long_term_memory:
+    embedder: st_bge_base_en
+    reranker: rrf_hybrid_main
+    vector_graph_store: neo4j_main
+    message_sentence_chunking: false
+  # short_term_memory 블록은 evaluation/longmemeval 코드가 짧은-기억을
+  # `short_term_memory=None` 으로 끄기 때문에 사용 안 됨. 필요한 운영 환경
+  # 통일성 위해 설정만 두지만 런타임 영향 0. 완전 빼고 싶으면 아래 줄들 삭제.
+  short_term_memory_enabled: false
+
+retrieval_agent:
+  llm_model: gemini_25_flash
+  reranker: rrf_hybrid_main
+  # judge_llm_model 미지정 → 답변 LLM (llm_model) 재사용 (self-judge).
+  # 별도 모델 쓰려면 resources.language_models 에 새 ID 등록 후 여기 명시.
+  # 단 main 브랜치 RetrievalAgentConf 에는 이 필드가 없어서 Pydantic 이
+  # 무시. _common.get_judge_llm 의 getattr fallback 으로 답변 LLM 으로 감.
+  # 별도 judge 모델 정말 쓰려면 retrieval_config.py 에 judge_llm_model 필드
+  # 추가 패치 필요 — eval_optimize 의 동일 필드 참고.
+
+semantic_memory:
+  enabled: false
+
+logging:
+  level: INFO
+
+session_manager:
+  database: postgres_main
+
+resources:
+  databases:
+    neo4j_main:
+      provider: neo4j
+      config:
+        uri: bolt://localhost:7687
+        user: neo4j
+        password: "<NEO4J_PASSWORD>"
+    postgres_main:
+      provider: postgres
+      config:
+        dialect: postgresql
+        driver: asyncpg
+        host: localhost
+        port: 5432
+        user: memmachine
+        password: "<POSTGRES_PASSWORD>"
+        db_name: memmachine
+
+  embedders:
+    st_bge_base_en:
+      provider: sentence-transformer
+      config:
+        model: BAAI/bge-base-en-v1.5
+        max_input_length: 512
+
+  language_models:
+    gemini_25_flash:
+      provider: openai-chat-completions
+      config:
+        api_key: "<GEMINI_API_KEY>"
+        base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+        model: gemini-2.5-flash
+
+  rerankers:
+    bm25_main:
+      provider: bm25
+      config:
+        k1: 1.5
+        b: 0.75
+        epsilon: 0.25
+        language: english
+        tokenizer: default
+    identity_main:
+      provider: identity
+      config: {}
+    rrf_hybrid_main:
+      provider: rrf-hybrid
+      config:
+        reranker_ids:
+          - bm25_main
+          - identity_main
+        k: 60

@@ -4,6 +4,10 @@ config.yml
 cfg.yml
 sqlitetest.db
 
+# evaluation/longmemeval/ — large datasets + per-experiment results
+evaluation/data/longmemeval_*.json
+results/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
