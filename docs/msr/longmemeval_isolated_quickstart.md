@@ -70,10 +70,25 @@ uv run python scripts/generate_config.py \
 
 다른 실험으로 분리하고 싶으면 `--run-name lme_iso_v2` 식으로 별 이름 사용.
 
-## 5. Ingest + Retrieve (한 명령으로 둘 다)
+## 5a. Ingest
 
 ```bash
-uv run python -m evaluation.longmemeval.run_retrieval \
+uv run python -m evaluation.longmemeval.ingest \
+    --in-file evaluation/data/longmemeval_s_cleaned.json \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --session-prefix lme_iso \
+    --limit 1
+```
+
+각 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 prefix 로
+재실행해도 중복 적재 없음 (idempotent).
+
+stdout 에 `[lme-ingest] 1/1  qid=...  episodes=...  t=...s` 가 보이면 OK.
+
+## 5b. Retrieve → retrieve.jsonl
+
+```bash
+uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
     --config-path configs/generated/lme_iso_configuration.yml \
     --session-prefix lme_iso \
@@ -84,13 +99,10 @@ uv run python -m evaluation.longmemeval.run_retrieval \
 
 → `results/lme_iso/retrieve.jsonl` (1 row).
 
-각 질문 단위로:
-1. `delete_session_episodes()` (이전 실행분 정리 — idempotent)
-2. 그 질문의 haystack 을 Episode 로 만들어 `add_memory_episodes()` 적재
-3. `query_agent.do_query()` 로 top-K 검색
-4. retrieve.jsonl row 작성
+stdout 에 `[lme-retrieve] 1/1  qid=...  chunks=...  t=...s` 가 보이면 OK.
 
-stdout 에 `[lme] 1/1  qid=...  t=...s` 가 보이면 OK.
+`--session-prefix` 는 ingest 와 retrieve 가 **같은 값** 이어야 함. `--top-k`
+만 바꿔 retrieve 만 여러 번 돌릴 수 있음 (재-ingest 비용 0).
 
 `--limit` 빼면 500 문항 전부. CPU 환경에선 시간 걸림 (concurrency 4 기본,
 질문 당 수 초~수십 초).
@@ -157,10 +169,18 @@ upstream / Edwin 의 ~95% 수치와 직접 비교 가능.
 
 ## 풀 500 문항 실행
 
-step 5 에서 `--limit 1` 만 빼면 됨:
+step 5a / 5b 에서 `--limit 1` 만 빼면 됨:
 
 ```bash
-uv run python -m evaluation.longmemeval.run_retrieval \
+# ingest 풀 500
+uv run python -m evaluation.longmemeval.ingest \
+    --in-file evaluation/data/longmemeval_s_cleaned.json \
+    --config-path configs/generated/lme_iso_configuration.yml \
+    --session-prefix lme_iso \
+    --concurrency 4
+
+# retrieve 풀 500
+uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
     --config-path configs/generated/lme_iso_configuration.yml \
     --session-prefix lme_iso \
@@ -172,6 +192,7 @@ uv run python -m evaluation.longmemeval.run_retrieval \
 - `--concurrency` 높이면 빠르지만 Neo4j 부하 ↑. CPU 환경 4~8, GPU 환경
   8~16 정도가 무난.
 - 같은 `--session-prefix` 로 재실행하면 자동 cleanup → 결과 동일 (idempotent).
+- top-K 만 바꿔 retrieve 만 다시 돌리려면 5b 만 다시 실행 (ingest 스킵).
 
 이후 step 6~8 동일.
 
@@ -181,10 +202,12 @@ uv run python -m evaluation.longmemeval.run_retrieval \
 
 ```bash
 # experiment v1
-uv run python -m evaluation.longmemeval.run_retrieval ... --session-prefix lme_iso ...
+uv run python -m evaluation.longmemeval.ingest   ... --session-prefix lme_iso
+uv run python -m evaluation.longmemeval.retrieve ... --session-prefix lme_iso --out results/lme_iso/retrieve.jsonl
 
-# experiment v2 (다른 top-k, 다른 모델 등)
-uv run python -m evaluation.longmemeval.run_retrieval ... --session-prefix lme_iso_v2 ...
+# experiment v2 (다른 chunking 등)
+uv run python -m evaluation.longmemeval.ingest   ... --session-prefix lme_iso_v2
+uv run python -m evaluation.longmemeval.retrieve ... --session-prefix lme_iso_v2 --out results/lme_iso_v2/retrieve.jsonl
 ```
 
 Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 공존.
@@ -223,7 +246,8 @@ Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 �
 
 | 항목 | 경로 |
 |---|---|
-| 본 가이드 스크립트 | `evaluation/longmemeval/run_retrieval.py` |
+| Ingest 스크립트 | `evaluation/longmemeval/ingest.py` |
+| Retrieve 스크립트 | `evaluation/longmemeval/retrieve.py` |
 | 디렉토리 README | `evaluation/longmemeval/README.md` |
 | Run config | `configs/runs/<run_name>.yaml` |
 | Working configuration.yml | `configs/generated/<run_name>_configuration.yml` |
