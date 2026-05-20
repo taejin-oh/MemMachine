@@ -1,14 +1,35 @@
 # LongMemEval — per-question 격리 평가 (MemMachine 백엔드) 가이드
 
-`evaluation/longmemeval/run_retrieval.py` 사용. upstream `run_retrieval.py`
-의 per-question 격리 패턴을 우리 MemMachine 스택 (Neo4j vector graph
-store + Postgres, configuration.yml 의 embedder + reranker) 위에서
-재현. 단일 session 적재 (`scripts/run_pipeline.py`) 경로의 recall ~50%
-문제를 해결한다.
+`evaluation/longmemeval/` 의 `ingest.py` + `retrieve.py` 사용. upstream
+LongMemEval `src/retrieval/run_retrieval.py` 의 per-question 격리 패턴을
+우리 MemMachine 스택 (Neo4j vector graph store + Postgres,
+configuration.yml 의 embedder + reranker) 위에서 재현. 단일 session 적재
+(`scripts/run_pipeline.py`) 경로의 recall ~50% 문제를 해결한다.
 
 각 질문이 `session_id = <prefix>_<question_id>` 에 격리 적재되어 검색
 공간이 ~246k turn → ~500 turn 으로 축소 (~500 배). upstream / Edwin /
 main `evaluation/episodic_memory/` 와 동일한 의미론.
+
+### 독립성
+
+`evaluation/longmemeval/` 는 `memmachine_server.*` (워크스페이스 패키지)
+외엔 어떤 evaluation/ 트리도 import 안 함. `evaluation/retrieval_agent/` /
+`evaluation/utils/agent_utils.py` / `scripts/stages/` 를 main 브랜치 상태로
+되돌리거나 삭제해도 step 5a / 5b 는 그대로 동작.
+
+단계별 의존성:
+
+| 단계 | evaluation/longmemeval/ 만으로 가능? | scripts/ 필요? |
+|---|---|---|
+| 4. `generate_config.py` (워킹 yml 생성) | ❌ | ✅ |
+| 5a. ingest | ✅ | ❌ |
+| 5b. retrieve | ✅ | ❌ |
+| 6. regen_answer (답변 LLM) | ❌ | ✅ |
+| 7. judge | ❌ | ✅ |
+| 8. summarize | ❌ | ✅ |
+
+→ step 5 만 보면 완전 독립. step 4 의 워킹 yml 은 손으로 작성해도 무방.
+답변/judge 까지 가려면 현 단계에선 `scripts/` 가 필요.
 
 ## 0. 코드 받기 + 의존성
 
@@ -221,7 +242,7 @@ Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 �
 | 경로 | 적재 | 검색 공간 | 관측 recall |
 |---|---|---|---|
 | `scripts/run_pipeline.py --stage ingest,retrieve` (= `evaluation/retrieval_agent/`) | 모든 질문이 단일 session | ~246k turn | ~50% |
-| `evaluation/longmemeval/run_retrieval.py` (본 가이드) | 질문 별 session | ~500 turn | ~95% 예상 |
+| `evaluation/longmemeval/{ingest,retrieve}.py` (본 가이드) | 질문 별 session | ~500 turn | ~95% 예상 |
 
 격리 한 가지가 ~45 포인트 차이의 핵심 원인.
 
@@ -236,7 +257,7 @@ Neo4j 에는 `lme_iso_<qid>*` 와 `lme_iso_v2_<qid>*` 가 별개 세션으로 �
   유료 키로 교체.
 - **`regen_answer.py` "retrieve.jsonl missing"**: step 5 의 `--out` 이 정확히
   `results/<run_name>/retrieve.jsonl` 인지 확인 (`<run_name>` = `--run-name`).
-- **재실행 시 데이터 잔존 의심**: `run_retrieval.py` 가 매 질문 시작 시
+- **재실행 시 데이터 잔존 의심**: `ingest.py` 가 매 질문 시작 시
   `delete_session_episodes()` 호출하므로 중복 적재 걱정 없음. 그래도 모든
   데이터 날리고 재시작 하려면 `docker compose down -v` 후 step 1 부터.
 - **풀 500 문항이 너무 느림**: GPU 가능하면 embedder 가 자동 활용. concurrency
