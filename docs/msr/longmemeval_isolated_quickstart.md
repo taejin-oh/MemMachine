@@ -53,9 +53,10 @@ docker compose ps     # neo4j + postgres = Up (healthy)
 
 ## 2. 인증 정보
 
-step 4 에서 working configuration.yml 안에 직접 채움 (`<GEMINI_API_KEY>`,
-`<NEO4J_PASSWORD>`, `<POSTGRES_PASSWORD>`). Gemini 키 발급:
-https://aistudio.google.com/apikey
+step 4 에서 working configuration.yml 안에 직접 채움 (`<NEO4J_PASSWORD>`,
+`<POSTGRES_PASSWORD>` 2 개). embedder / LLM 의 api_key 는 default `"empty"` —
+내부 OpenAI-호환 endpoint 가정. 외부 OpenAI / Gemini 등 쓰면 실제 키로
+교체 (step 4 에서 안내).
 
 ## 3. 데이터셋 (이미 있으면 skip)
 
@@ -90,7 +91,7 @@ LIMIT_ARG="--limit 1"   # 스모크 시 1 문항만; 풀 런 시 ""  (빈 문자
 ### Working configuration.yml 1 회 작성
 
 `evaluation/longmemeval/example_configuration.yml` 을 복사해서 placeholder
-4 개만 채우면 됨:
+2 개만 채우면 됨 (DB 비번):
 
 ```bash
 cp evaluation/longmemeval/example_configuration.yml \
@@ -98,11 +99,39 @@ cp evaluation/longmemeval/example_configuration.yml \
 ```
 
 편집기로 열어:
-- `<GEMINI_API_KEY>` → 실제 키 (https://aistudio.google.com/apikey)
 - `<NEO4J_PASSWORD>` → `neo4j_password` (또는 자기 DB 패스워드)
 - `<POSTGRES_PASSWORD>` → `memmachine_password` (또는 자기 DB 패스워드)
 
-모델/임베더/reranker 변경 원하면 `resources.*` 블록을 그대로 교체.
+**default 설정 — 내부 OpenAI-호환 endpoint**:
+- Embedder: `Qwen/Qwen3-Embedding-4B` @ `http://10.78.59.136:8001/v1` (dim 2560)
+- LLM (answer + judge): `nvidia/Qwen3.5-397B-A17B-NVFP4` @ `http://10.78.58.25:8026/v1`
+- api_key 는 `"empty"` (내부 endpoint 가정)
+
+다른 endpoint 쓰려면 `resources.embedders` / `resources.language_models`
+의 `config` 블록 (provider / api_key / base_url / model) 통째로 교체:
+
+```yaml
+# 예: OpenAI 공식 사용
+resources:
+  embedders:
+    openai_3_small:
+      provider: openai
+      config:
+        api_key: "<OPENAI_API_KEY>"
+        base_url: https://api.openai.com/v1
+        model: text-embedding-3-small
+        dimensions: 1536
+  language_models:
+    openai_4o:
+      provider: openai-chat-completions
+      config:
+        api_key: "<OPENAI_API_KEY>"
+        base_url: https://api.openai.com/v1
+        model: gpt-4o
+```
+
+ID 도 같이 `episodic_memory.long_term_memory.embedder` / `retrieval_agent.llm_model` /
+`retrieval_agent.judge_llm_model` 에 맞춰 변경.
 
 > 답변 prompt 의 plain/CoT 는 yml 이 아니라 step 5의 `--answer-prompt` CLI
 > 플래그로 선택 (default `LME_origin_prompt`, CoT 는 `LME_origin_cot_prompt`).

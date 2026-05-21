@@ -1,19 +1,26 @@
 # Example working configuration.yml for evaluation/longmemeval/.
 #
-# 사용법:
-#   1. 이 파일을 evaluation/longmemeval/configuration.yml 로 복사 (또는 임의
-#      경로) — 4 개의 placeholder 만 채우면 됨:
-#        <GEMINI_API_KEY>   — Gemini API 키 (또는 OpenAI 호환 endpoint 키)
-#        <NEO4J_PASSWORD>   — Neo4j 비밀번호
-#        <POSTGRES_PASSWORD> — Postgres 비밀번호
-#   2. Neo4j + Postgres 띄우기 (다른 README 의 docker compose 참조)
-#   3. evaluation/longmemeval/{ingest,retrieve,generate,judge}.py 에
-#      `--config-path <이 파일 경로>` 로 전달
+# 기본값: 내부 OpenAI-호환 endpoint 사용 (Qwen3 embedding + Qwen3.5 LLM).
+# 외부 서비스를 쓰려면 resources.embedders / resources.language_models 의
+# config 만 자기 endpoint 로 바꾸면 됨 (예: OpenAI 공식 API, Gemini, Anthropic
+# 호환 endpoint 등).
 #
-# 모델 / 임베더 / reranker 를 다른 걸 쓰고 싶으면 resources.* 블록을 그대로
-# 바꾸면 됨. 우리 코드는 `episodic_memory.long_term_memory.{embedder,reranker,
-# vector_graph_store}` + `retrieval_agent.{llm_model,reranker,judge_llm_model}`
-# 만 참조하므로 ID 만 일관성 있게.
+# 사용법:
+#   1. 이 파일을 evaluation/longmemeval/configuration.yml 로 복사 후
+#      두 개 placeholder 만 채우면 됨:
+#        <NEO4J_PASSWORD>    — Neo4j 비밀번호
+#        <POSTGRES_PASSWORD> — Postgres 비밀번호
+#      (embedder / LLM 의 api_key 는 default "empty" — 내부 endpoint 가정.
+#       외부 OpenAI 등 쓰려면 실제 키로 교체.)
+#   2. Neo4j + Postgres 띄우기 (docker compose 등)
+#   3. evaluation/longmemeval/{ingest,retrieve,generate,judge}.py 에
+#      `--config-path evaluation/longmemeval/configuration.yml` 전달
+#
+# 우리 코드가 읽는 필드 (그 외 블록은 서버 운영 호환을 위해 둠):
+#   episodic_memory.long_term_memory.{embedder, reranker, vector_graph_store,
+#                                      message_sentence_chunking}
+#   retrieval_agent.{llm_model, reranker, judge_llm_model}
+#   resources.* (위 ID 들을 해결할 때 참조)
 
 episode_store:
   database: postgres_main
@@ -23,24 +30,22 @@ episodic_memory:
   enabled: true
   long_term_memory_enabled: true
   long_term_memory:
-    embedder: st_bge_base_en
+    embedder: qwen3_embed_4b
     reranker: rrf_hybrid_main
     vector_graph_store: neo4j_main
     message_sentence_chunking: false
-  # short_term_memory 블록은 evaluation/longmemeval 코드가 짧은-기억을
-  # `short_term_memory=None` 으로 끄기 때문에 사용 안 됨. 필요한 운영 환경
-  # 통일성 위해 설정만 두지만 런타임 영향 0. 완전 빼고 싶으면 아래 줄들 삭제.
+  # short_term_memory 는 evaluation/longmemeval 코드가
+  # short_term_memory=None 으로 끄기 때문에 사용 안 됨. 런타임 영향 0.
   short_term_memory_enabled: false
 
 retrieval_agent:
-  llm_model: gemini_25_flash
+  llm_model: qwen35_397b
   reranker: rrf_hybrid_main
-  # judge_llm_model 미지정 → 답변 LLM (llm_model) 재사용 (self-judge).
-  # 별도 모델 쓰려면 resources.language_models 에 새 ID 등록 후 여기 명시.
-  # 단 main 브랜치 RetrievalAgentConf 에는 이 필드가 없어서 Pydantic 이
-  # 무시. _common.get_judge_llm 의 getattr fallback 으로 답변 LLM 으로 감.
-  # 별도 judge 모델 정말 쓰려면 retrieval_config.py 에 judge_llm_model 필드
-  # 추가 패치 필요 — eval_optimize 의 동일 필드 참고.
+  # judge_llm_model — main 브랜치 RetrievalAgentConf 에는 이 필드가 없어서
+  # Pydantic 이 무시. _common.get_judge_llm 의 getattr fallback 으로 답변
+  # LLM (llm_model) 재사용. 별도 judge 모델 정말 쓰려면 retrieval_config.py
+  # 에 judge_llm_model 필드 추가 패치 필요 (eval_optimize 의 동일 필드 참고).
+  judge_llm_model: qwen35_397b
 
 semantic_memory:
   enabled: false
@@ -71,19 +76,21 @@ resources:
         db_name: memmachine
 
   embedders:
-    st_bge_base_en:
-      provider: sentence-transformer
+    qwen3_embed_4b:
+      provider: openai
       config:
-        model: BAAI/bge-base-en-v1.5
-        max_input_length: 512
+        api_key: "empty"
+        base_url: http://10.78.59.136:8001/v1
+        model: Qwen/Qwen3-Embedding-4B
+        dimensions: 2560
 
   language_models:
-    gemini_25_flash:
+    qwen35_397b:
       provider: openai-chat-completions
       config:
-        api_key: "<GEMINI_API_KEY>"
-        base_url: https://generativelanguage.googleapis.com/v1beta/openai/
-        model: gemini-2.5-flash
+        api_key: "empty"
+        base_url: http://10.78.58.25:8026/v1
+        model: nvidia/Qwen3.5-397B-A17B-NVFP4
 
   rerankers:
     bm25_main:

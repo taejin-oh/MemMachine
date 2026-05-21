@@ -49,15 +49,19 @@ LIMIT_ARG="--limit 1"   # 스모크 1 문항. 풀 500 시 LIMIT_ARG=""
 
 ### 1. 워킹 configuration.yml 작성
 
-`example_configuration.yml` 복사 후 4 개 placeholder 만 채움:
+`example_configuration.yml` 복사 후 2 개 placeholder 만 채움 (DB 비번):
 
 ```bash
 cp evaluation/longmemeval/example_configuration.yml \
    evaluation/longmemeval/configuration.yml
-# 편집기로 열어 <GEMINI_API_KEY> / <NEO4J_PASSWORD> / <POSTGRES_PASSWORD> 채우기
+# 편집기로 열어 <NEO4J_PASSWORD> / <POSTGRES_PASSWORD> 채우기
 ```
 
-(모델/임베더/reranker 변경 원하면 `resources.*` 블록 자체를 교체.)
+embedder + LLM 은 default 로 **내부 OpenAI-호환 endpoint** (Qwen3-Embedding-4B
++ nvidia/Qwen3.5-397B-A17B-NVFP4) 를 가리킴. api_key 는 `"empty"` 로 두고
+`base_url` 만 자기 환경의 endpoint 로 바꾸면 됨. 외부 OpenAI / Gemini 등을
+쓰려면 `resources.embedders` / `resources.language_models` 의 `config` 블록
+교체 (provider / api_key / base_url / model 한 묶음으로).
 
 ### 2. Ingest
 
