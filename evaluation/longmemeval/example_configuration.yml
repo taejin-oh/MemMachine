@@ -118,3 +118,198 @@ resources:
           - bm25_main
           - identity_main
         k: 60
+
+# ============================================================================
+# 옵션 예시 모음 — 활성 설정 (위) 대신 / 추가로 쓸 수 있는 변종들.
+# 필요한 블록을 위쪽 active 영역에 복붙해서 ID 만 일관성 있게 바꾸면 됨.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 1. Chunk on/off — episodic_memory.long_term_memory.message_sentence_chunking
+# ----------------------------------------------------------------------------
+#
+# default: false (1 turn = 1 Episode, upstream `--granularity turn` 정렬)
+# true 면 LongTermMemory 가 turn 을 문장 단위로 추가 분할 → 1 turn 이 여러
+# Episode 로 흩어짐. 검색 단위가 더 미세해지지만 upstream 의 turn-단위와
+# 멀어짐. LongMemEval 정렬 평가에선 false 권장.
+#
+# episodic_memory:
+#   long_term_memory:
+#     message_sentence_chunking: true   # 문장 단위 분할 (실험용)
+
+# ----------------------------------------------------------------------------
+# 2. LLM 변종 — resources.language_models
+# ----------------------------------------------------------------------------
+
+# 2a. OpenAI Chat Completions (cloud)
+# resources:
+#   language_models:
+#     openai_4o:
+#       provider: openai-chat-completions
+#       config:
+#         api_key: "<OPENAI_API_KEY>"
+#         base_url: https://api.openai.com/v1
+#         model: gpt-4o
+#     openai_4o_mini:
+#       provider: openai-chat-completions
+#       config:
+#         api_key: "<OPENAI_API_KEY>"
+#         base_url: https://api.openai.com/v1
+#         model: gpt-4o-mini
+
+# 2b. OpenAI Responses API (gpt-5 계열)
+# resources:
+#   language_models:
+#     openai_gpt5_mini:
+#       provider: openai-responses
+#       config:
+#         api_key: "<OPENAI_API_KEY>"
+#         model: gpt-5-mini
+
+# 2c. LiteLLM (multi-provider: Anthropic / Gemini / Mistral / etc.)
+# resources:
+#   language_models:
+#     claude_sonnet_4:
+#       provider: litellm
+#       config:
+#         api_key: "<ANTHROPIC_API_KEY>"
+#         model: anthropic/claude-sonnet-4
+#     gemini_25_flash:
+#       provider: litellm
+#       config:
+#         api_key: "<GEMINI_API_KEY>"
+#         model: gemini/gemini-2.5-flash
+
+# 2d. Amazon Bedrock (Claude / Llama / Titan 등 via AWS)
+# resources:
+#   language_models:
+#     bedrock_claude_4:
+#       provider: amazon-bedrock
+#       config:
+#         aws_access_key_id: "<AWS_KEY>"
+#         aws_secret_access_key: "<AWS_SECRET>"
+#         region: us-west-2
+#         model_id: anthropic.claude-sonnet-4-20250514-v1:0
+
+# 2e. Ollama (로컬 OpenAI-호환 endpoint)
+# resources:
+#   language_models:
+#     ollama_llama3_3:
+#       provider: openai-chat-completions
+#       config:
+#         api_key: "empty"
+#         base_url: http://host.docker.internal:11434/v1   # docker → host
+#         model: llama3.3:70b
+
+# ----------------------------------------------------------------------------
+# 3. Embedder 변종 — resources.embedders
+# ----------------------------------------------------------------------------
+
+# 3a. Sentence-transformer (로컬 HF 모델, GPU 또는 CPU)
+# resources:
+#   embedders:
+#     st_bge_base:
+#       provider: sentence-transformer
+#       config:
+#         model: BAAI/bge-base-en-v1.5
+#         max_input_length: 512
+
+# 3b. OpenAI cloud embedding
+# resources:
+#   embedders:
+#     openai_3_small:
+#       provider: openai
+#       config:
+#         api_key: "<OPENAI_API_KEY>"
+#         base_url: https://api.openai.com/v1
+#         model: text-embedding-3-small
+#         dimensions: 1536
+#     openai_3_large:
+#       provider: openai
+#       config:
+#         api_key: "<OPENAI_API_KEY>"
+#         base_url: https://api.openai.com/v1
+#         model: text-embedding-3-large
+#         dimensions: 3072
+
+# 3c. Amazon Bedrock (Titan / Cohere)
+# resources:
+#   embedders:
+#     bedrock_titan:
+#       provider: amazon-bedrock
+#       config:
+#         aws_access_key_id: "<AWS_KEY>"
+#         aws_secret_access_key: "<AWS_SECRET>"
+#         region: us-west-2
+#         model_id: amazon.titan-embed-text-v2:0
+#         dimensions: 1024
+
+# ----------------------------------------------------------------------------
+# 4. Reranker 변종 — resources.rerankers
+# ----------------------------------------------------------------------------
+
+# 4a. Identity 단일 (upstream LongMemEval 처럼 flat retrieval, no rerank)
+# resources:
+#   rerankers:
+#     identity_only:
+#       provider: identity
+#       config: {}
+# retrieval_agent:
+#   reranker: identity_only
+
+# 4b. Cohere Rerank (Cohere API 직접)
+# resources:
+#   rerankers:
+#     cohere_v3:
+#       provider: cohere
+#       config:
+#         api_key: "<COHERE_API_KEY>"
+#         model: rerank-v3.5
+
+# 4c. Cohere Rerank via Amazon Bedrock
+# resources:
+#   rerankers:
+#     bedrock_cohere_v3:
+#       provider: amazon-bedrock
+#       config:
+#         aws_access_key_id: "<AWS_KEY>"
+#         aws_secret_access_key: "<AWS_SECRET>"
+#         region: us-west-2
+#         model_id: cohere.rerank-v3-5:0
+
+# 4d. Cross-encoder (HuggingFace ms-marco-MiniLM 등, 로컬)
+# resources:
+#   rerankers:
+#     cross_enc:
+#       provider: cross-encoder
+#       config:
+#         model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+# 4e. Embedder reranker (embedder 자체로 재점수)
+# resources:
+#   rerankers:
+#     embedder_rerank:
+#       provider: embedder
+#       config:
+#         embedder_id: qwen3_embed_4b
+
+# ----------------------------------------------------------------------------
+# 5. LLM 모델 분리 — answer / judge 를 서로 다른 모델로
+# ----------------------------------------------------------------------------
+#
+# default 는 셋 다 같은 qwen35_397b. 답변은 가벼운 모델, judge 는 강한 모델
+# 같이 분리하려면:
+#
+# resources:
+#   language_models:
+#     answer_gpt5_mini:
+#       provider: openai-responses
+#       config: { api_key: "<KEY>", model: gpt-5-mini }
+#     judge_gpt4o:
+#       provider: openai-chat-completions
+#       config: { api_key: "<KEY>", base_url: https://api.openai.com/v1, model: gpt-4o }
+#
+# retrieval_agent:
+#   llm_model: answer_gpt5_mini       # planning / fallback
+#   answer_llm_model: answer_gpt5_mini
+#   judge_llm_model: judge_gpt4o       # judge 만 강한 모델
