@@ -39,8 +39,8 @@ from memmachine_server.episodic_memory.episodic_memory import (
     EpisodicMemoryParams,
 )
 from memmachine_server.episodic_memory.long_term_memory import (
+    DeclarativeBackendParams,
     LongTermMemory,
-    LongTermMemoryParams,
 )
 from memmachine_server.retrieval_agent.agents import MemMachineAgent
 from memmachine_server.retrieval_agent.common.agent_api import (
@@ -100,7 +100,7 @@ async def build_memory_and_agent(
     chunking = getattr(ltm_conf, "message_sentence_chunking", None) or False
 
     long_term_memory = LongTermMemory(
-        LongTermMemoryParams(
+        DeclarativeBackendParams(
             session_id=session_id,
             vector_graph_store=vector_graph_store,
             embedder=embedder,
