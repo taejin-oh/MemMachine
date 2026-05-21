@@ -1,166 +1,211 @@
-# `evaluation/longmemeval/` — per-question 격리 평가 (MemMachine 백엔드, 단계 분리)
+# `evaluation/longmemeval/` — LongMemEval, MemMachine 백엔드, per-question 격리
 
-LongMemEval 표준 격리 패턴 (xiaowu0162/LongMemEval `src/retrieval/run_retrieval.py`,
-main `evaluation/episodic_memory/`) 을 우리 MemMachine 스택 (Neo4j vector
-graph store + Postgres, configuration.yml 의 embedder + reranker) 위에서
-재현. 각 질문이 `session_id = <prefix>_<question_id>` 에 격리 적재됨.
-
-`evaluation/retrieval_agent/` 의 단일 session 적재 (recall ~50%) 와 유일한
-차이는 session_id 정책. 검색 공간이 ~246k → ~500 turn (질문 별) 으로
-축소되어 recall ~95% 수준 도달.
+upstream LongMemEval (xiaowu0162/LongMemEval) 의 평가 방식을 MemMachine
+스택 (Neo4j vector graph store + Postgres + 워크스페이스 패키지의
+embedder/reranker) 위에서 재현. 각 질문이 자기 session_id 안에 격리되어
+적재/검색되므로 cross-question contamination 없음 — upstream 의 매-entry
+in-memory corpus 와 등가 의미론.
 
 ## 파일
 
 | 파일 | 역할 |
 |---|---|
-| `_common.py` | MemMachine 부트스트랩 + upstream prompt + helper (standalone) |
-| `ingest.py` | per-question delete + `add_memory_episodes` (idempotent) |
-| `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl |
-| `generate.py` | retrieve.jsonl → answer LLM (upstream prompt) → generate.jsonl |
-| `judge.py` | generate.jsonl → judge LLM (upstream `get_anscheck_prompt`) → judge.jsonl + 요약 |
+| `_common.py` | MemMachine 부트스트랩 + upstream prompts (verbatim) |
+| `ingest.py` | per-question delete + `add_memory_episodes` (idempotent). turn 마다 Episode.metadata 에 `lme_session_id` + `lme_turn_idx` 저장. |
+| `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl (chunks_text + retrieved_turn_ids + gold_turn_ids) |
+| `generate.py` | retrieve.jsonl → answer LLM → generate.jsonl |
+| `judge.py` | generate.jsonl → judge LLM → judge.jsonl + 카테고리별 정확도 요약 |
+| `recall_id.py` | retrieve.jsonl → ID-기반 recall (= upstream `answer_turn_indices` 정렬) + recall@k 곡선 (`--curve`) |
+| `example_configuration.yml` | 워킹 configuration.yml 템플릿 (placeholder 만 채우면 됨) |
 
-ingest → retrieve → generate → judge 네 단계가 모두 본 디렉토리 안에서
-완결. 같은 데이터로 `--top-k` / `--answer-prompt` 만 바꿔 generate 만 다시
-돌리는 식으로 단계 별 재실행 가능.
+ingest → retrieve → generate → judge 네 단계가 본 디렉토리만으로 완결.
+recall 측정은 generate 단계 없이 retrieve.jsonl 만 있으면 `recall_id.py` 로 즉시 가능.
+
+## ID-기반 recall
+
+ingest 가 매 turn 의 Episode.metadata 에 `{"lme_session_id": <원본
+haystack_session_id>, "lme_turn_idx": <enumerate index>}` 를 저장. retrieve
+시 회수된 episode 마다 이 metadata 를 round-trip 받아 `<session_id>:<idx>`
+형식 ID 로 직렬화해서 row 의 `retrieved_turn_ids` 에 기록.
+
+oracle 의 has_answer=True turn 들을 같은 형식 (`f"{sid}:{idx}"`) 으로
+모은 게 `gold_turn_ids`. retrieve 호출 시 `--oracle evaluation/data/longmemeval_oracle.json`
+을 함께 주면 row 별 `gold_turn_ids` 가 채워짐. (`s_cleaned`/`m_cleaned`
+에는 has_answer 가 없어 oracle 없으면 gold 가 비어 recall 계산 불가.)
+
+`recall_id.py` 가 `|pred ∩ gold| / |gold|` 를 계산:
+```bash
+uv run python -m evaluation.longmemeval.recall_id \
+    --retrieve results/lme_iso/retrieve.jsonl
+# overall + 카테고리별 평균 recall, 그리고 --curve 면 recall@k 곡선
+```
+
+이 ID 기반 정의는 `evaluation/episodic_memory/longmemeval_models.py:91` 의
+`answer_turn_indices = [f"{sid}:{idx}"]` 와 byte-equal 형식 — upstream
+패턴과 정렬.
 
 ## 독립성
 
-본 디렉토리는 `evaluation/longmemeval/_common.py` + `memmachine_server.*`
-(워크스페이스 패키지) **만** 의존. `evaluation/retrieval_agent/`,
-`evaluation/utils/`, `scripts/{regen_answer,run_pipeline,stages/*}` 어느
-것도 import 안 함.
+본 디렉토리는 `evaluation/longmemeval/` 자기 자신 + `memmachine_server.*`
+(워크스페이스 패키지) **만** 의존:
 
-→ `evaluation/` 의 다른 디렉토리를 main 브랜치 상태로 되돌리거나 통째로
-삭제해도 본 디렉토리만으로 ingest → retrieve → generate → judge 모두
-실행 가능. 외부 의존은 `scripts/generate_config.py` (워킹 yml 생성) 한 곳.
+```
+$ grep -rE "^from evaluation\." evaluation/longmemeval/*.py | grep -v _common
+(아무것도 안 나옴)
+```
 
-`_common.py` 의 inline 내용:
+`evaluation/retrieval_agent/`, `evaluation/utils/`, `evaluation/episodic_memory/`,
+`scripts/` 어느 것도 import 안 함. 외부 의존은 **워킹 configuration.yml 한 개**
+(`example_configuration.yml` 베이스로 직접 작성).
 
-| 헬퍼 | 원본 |
-|---|---|
-| `load_eval_config` | agent_utils.load_eval_config |
-| `build_memory_and_agent` | agent_utils.init_memmachine_params (MemMachineAgent 분기만) |
-| `get_answer_llm` / `get_judge_llm` | retrieval_agent.llm_model / .judge_llm_model 에서 LM 획득 |
-| `set_safe_embedder_limits` | longmemeval_test._set_safe_embedder_request_limits |
-| `collect_supporting_facts` | longmemeval_test._collect_supporting_facts |
-| `parse_session_dt` | longmemeval session_date 파서 |
-| `ANSWER_PROMPTS` | **upstream verbatim** — `src/generation/run_generation.py:54-57` |
-| `get_anscheck_prompt` | **upstream verbatim** — `src/evaluation/evaluate_qa.py:24-43` |
-| `parse_yes_no_lenient` | upstream `'yes' in eval_response.lower()` |
-
-## 사용
+## 사용 흐름
 
 ```bash
-# 1) ingest
+PREFIX=lme_iso          # 실험 이름 = --session-prefix = 결과 디렉토리
+LIMIT_ARG="--limit 1"   # 스모크 1 문항. 풀 500 시 LIMIT_ARG=""
+```
+
+### 0. 사전 준비
+
+- Python 3.12+, `uv sync` (워크스페이스 의존성 설치)
+- Neo4j + Postgres docker 실행 (별도 도커 컴포즈 사용)
+- LongMemEval 데이터셋 (`evaluation/data/longmemeval_s_cleaned.json`) —
+  HuggingFace `xiaowu0162/longmemeval-cleaned` 에서 다운로드
+
+### 1. 워킹 configuration.yml 작성
+
+`example_configuration.yml` 복사 후 2 개 placeholder 만 채움 (DB 비번):
+
+```bash
+cp evaluation/longmemeval/example_configuration.yml \
+   evaluation/longmemeval/configuration.yml
+# 편집기로 열어 <NEO4J_PASSWORD> / <POSTGRES_PASSWORD> 채우기
+```
+
+embedder + LLM 은 default 로 **내부 OpenAI-호환 endpoint** (Qwen3-Embedding-4B
++ nvidia/Qwen3.5-397B-A17B-NVFP4) 를 가리킴. api_key 는 `"empty"` 로 두고
+`base_url` 만 자기 환경의 endpoint 로 바꾸면 됨. 외부 OpenAI / Gemini 등을
+쓰려면 `resources.embedders` / `resources.language_models` 의 `config` 블록
+교체 (provider / api_key / base_url / model 한 묶음으로).
+
+### 2. Ingest
+
+```bash
 uv run python -m evaluation.longmemeval.ingest \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso
+    --config-path evaluation/longmemeval/configuration.yml \
+    --session-prefix $PREFIX \
+    $LIMIT_ARG
+```
 
-# 2) retrieve → retrieve.jsonl (question_date / golden_answer 도 포함)
+매 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 PREFIX 로
+재실행해도 중복 적재 없음 (idempotent). 1 turn = 1 Episode.
+
+### 3. Retrieve → retrieve.jsonl
+
+```bash
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --session-prefix lme_iso \
+    --oracle  evaluation/data/longmemeval_oracle.json \
+    --config-path evaluation/longmemeval/configuration.yml \
+    --session-prefix $PREFIX \
     --top-k 50 \
-    --out results/lme_iso/retrieve.jsonl
+    --out results/$PREFIX/retrieve.jsonl \
+    $LIMIT_ARG
+```
 
-# 3) generate → generate.jsonl (upstream LME_origin_prompt 기본, --answer-prompt 로 변경)
+`--top-k` 만 바꿔 retrieve 만 다시 돌릴 수 있음 (재-ingest 불필요).
+`--oracle` 은 ID-기반 recall 측정용 gold_turn_ids 채우기 위함 — `s_cleaned` /
+`m_cleaned` 에는 has_answer 가 없어 oracle 없으면 gold 가 빔. 생략 시
+chunks_text + retrieved_turn_ids 는 정상이고 recall 계산 단계만 못 함.
+
+### 3-A. (선택) ID 기반 recall
+
+```bash
+uv run python -m evaluation.longmemeval.recall_id \
+    --retrieve results/$PREFIX/retrieve.jsonl
+```
+
+`gold_turn_ids` ∩ `retrieved_turn_ids` 기반 overall + 카테고리별 평균 recall.
+`--curve` 로 recall@k 곡선 (k=1..50). 자세한 정의는 위 "ID-기반 recall" 절.
+
+### 4. Generate → generate.jsonl
+
+```bash
 uv run python -m evaluation.longmemeval.generate \
-    --retrieve results/lme_iso/retrieve.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/generate.jsonl
+    --retrieve results/$PREFIX/retrieve.jsonl \
+    --config-path evaluation/longmemeval/configuration.yml \
+    --out results/$PREFIX/generate.jsonl \
+    $LIMIT_ARG
+```
 
-# 4) judge → judge.jsonl + 카테고리별 정확도 요약 출력
+upstream `src/generation/run_generation.py` 의 `LME_origin_prompt` 를 verbatim
+으로 사용. CoT 원하면 `--answer-prompt LME_origin_cot_prompt`.
+
+### 5. Judge → judge.jsonl + 정확도 요약
+
+```bash
 uv run python -m evaluation.longmemeval.judge \
-    --generate results/lme_iso/generate.jsonl \
-    --config-path configs/generated/lme_iso_configuration.yml \
-    --out results/lme_iso/judge.jsonl
+    --generate results/$PREFIX/generate.jsonl \
+    --config-path evaluation/longmemeval/configuration.yml \
+    --out results/$PREFIX/judge.jsonl \
+    $LIMIT_ARG
 ```
 
-`--session-prefix` 는 ingest 와 retrieve 가 **같은 값** 이어야 함. 다른 prefix
-로 ingest 해두면 같은 Neo4j 안에서 별개 실험 (lme_iso_*, lme_v2_* …) 으로
-공존 가능.
+upstream `src/evaluation/evaluate_qa.py` 의 `get_anscheck_prompt` (5 task +
+abstention) + lenient yes/no parser **verbatim**. 끝나면 overall + 카테고리별
+정확도 표 stdout 자동 출력.
 
-## 옵션
+### 스모크 → 풀 런
 
-공통:
-- `--limit N` — 처음 N 개 질문 (스모크)
-- `--include-categories <list>` — comma-separated 카테고리 필터
-- `--concurrency N` — 병렬 처리 (default 4)
+step 2~5 가 `--limit 1` 로 통과하면 `LIMIT_ARG=""` 로 같은 명령 재실행 →
+500 문항 풀. `--concurrency N` 으로 가속 가능 (Neo4j / LLM API rate 부하 ↑).
 
-retrieve 전용:
-- `--top-k K` — 회수 chunk 수 (default 50)
+### 다른 실험 병행
 
-## Ingest 단위 — turn (upstream 정렬)
+`PREFIX` 만 바꿔서 같은 Neo4j 안에서 별개 실험 공존. session_id 가 prefix
+별로 격리되어 cross-experiment contamination 0.
 
-**1 turn = 1 Episode** (upstream `run_retrieval.py --granularity turn` 과
-동일). turn 길이와 무관하게 추가 split 안 함. 긴 turn 이 embedder 의
-`max_input_length` (bge-base = 512 token ≈ 2000자) 를 넘으면 임베딩 단계에서
-silently truncate — upstream 도 동일한 거동.
+## upstream / lme_updated 정렬 상태
 
-이전엔 `_split_chunks(max_chars=3000)` 로 긴 turn 을 piece 로 쪼개서
-별도 Episode 로 적재했지만 (= chunking unit 이 upstream 과 다름), upstream
-재현을 위해 제거. 짧은 turn (96%) 은 어차피 1 chunk = 1 turn 이라 결과
-변동 거의 없음. 긴 turn 3.8% 만 회수 방식이 바뀜 (여러 piece → 1 turn).
+| 항목 | upstream | lme_updated | 우리 |
+|---|---|---|---|
+| 격리 단위 | per-question in-memory corpus | per-question Qdrant collection | per-question Neo4j session_id |
+| Ingest 단위 | 1 turn = 1 corpus item | 1 turn = 1 Event → segmenter(500자) | 1 turn = 1 Episode |
+| Recall 의미론 | turn-level binary | turn-level binary | turn-level binary (fact-piece hit = turn recalled) |
+| Answer prompt | LME_origin / LME_origin_cot | mastra-augmented | **upstream verbatim** |
+| Judge prompt + yes/no parser | `get_anscheck_prompt` + lenient | 동일 (verbatim) | 동일 (verbatim) |
 
-## 호출 패턴 (수정 불필요 — 검증됨)
-
-ingest 측:
-```python
-memory, _query_agent = await build_memory_and_agent(rm, session_id)
-set_safe_embedder_limits(memory)
-await memory.delete_session_episodes()             # idempotent re-run
-await memory.add_memory_episodes(episodes=episodes)
-```
-
-retrieve 측:
-```python
-memory, query_agent = await build_memory_and_agent(rm, session_id)
-chunks, perf = await query_agent.do_query(
-    QueryPolicy(token_cost=10, time_cost=10, accuracy_score=10,
-                confidence_score=10, max_attempts=3, max_return_len=10000),
-    QueryParam(query=question, limit=top_k, memory=memory),
-)
-```
-
-`build_memory_and_agent` 가 ResourceManager → embedder/reranker/vector_graph_store
-획득 + LongTermMemory + EpisodicMemory + MemMachineAgent 까지 한 번에 만듦.
-agent_utils.init_memmachine_params 의 MemMachineAgent 분기만 그대로 옮긴 것.
+algorithmic 단위 + 의미론 정렬됨. recall 절대값까지 동일 재현 원하면
+embedder / reranker / exact-cosine 추가 정렬 필요 — `_common.py` 위 doc 의
+"upstream 점수와 동일한 결과를 원하면" 섹션 참고.
 
 ## 정리 메모
 
 - **idempotent re-run**: 같은 prefix 로 ingest 재실행 시 매 질문 시작 시
-  `delete_session_episodes()` 가 먼저 도니까 중복 적재 없음.
-- **상위 디렉토리 정리**: 다른 prefix 로 옮기거나 모든 lme_iso_* 를 한 번에
-  지우는 별도 cleanup 스크립트는 현재 없음. 필요하면 Neo4j Cypher 직접 또는
+  `delete_session_episodes()` 가 먼저 돌아 중복 적재 없음.
+- **상위 디렉토리 정리**: 다른 prefix 로 옮기거나 모든 lme_iso_* 한 번에
+  지우는 cleanup 스크립트는 없음. 필요하면 Neo4j Cypher 직접 또는
   `docker compose down -v` 로 전체 초기화.
-- **격리 효과**: 단일 session (`scripts/run_pipeline.py`) 의 ~246k turn 검색
-  공간 → 질문 별 ~500 turn (~500 배 축소) → recall 50%→95% 의 핵심 원인.
+- **LLM 모델 분리 (3 필드)**: upstream RetrievalAgentConf 는 세 필드 지원
+  — `llm_model` (retrieval / planning default), `answer_llm_model` (답변 전용),
+  `judge_llm_model` (judge 전용). 우리 `_common.get_answer_llm` 은
+  `answer_llm_model` → `llm_model`, `get_judge_llm` 은 `judge_llm_model` →
+  답변 LLM 순으로 fallback. 셋 다 같은 모델이면 `llm_model` 만 두면 됨.
 
-## upstream 점수와 "동일한" 결과를 원하면
+## upstream 점수와 동일한 결과를 원하면
 
-알고리즘 단위는 이제 정렬됨 (turn = corpus item = Episode). 그러나
-**완전 동일 (bit-for-bit) recall 재현** 은 backend 차이로 어려움. 다음 3가지를
-추가 정렬해야 진짜 동일에 가까워짐:
+algorithmic 단위는 이미 정렬. **완전 동일 (bit-for-bit)** 까지 가려면
+profile / DB 차원 3 가지 추가 정렬:
 
-1. **Reranker 제거** — upstream 의 flat retrieval 은 reranker 없음.
-   현재 우리는 `rrf-hybrid([bm25, identity])`. 동일 재현 원하면 model
-   profile 의 `rerankers` 를 `identity` 단일로 바꾸거나, 별도
-   `configs/profiles/models/upstream_aligned.yaml` 만들어 사용.
+1. **Reranker 제거** — upstream 은 flat retrieval. 현재 default 는
+   `rrf-hybrid([bm25, identity])`. configuration.yml 에서 reranker 를
+   `identity` 단일로.
+2. **같은 embedder** — upstream 은 contriever / stella / gte. configuration.yml
+   의 embedder 만 swap (resources.embedders 에 ID 추가 후 long_term_memory.embedder
+   가 그걸 가리키게).
+3. **Exact cosine search** — Neo4j 의 HNSW ANN 은 근사. 정확 일치 원하면
+   ANN 인덱스 끄거나 fallback 조건 강화.
 
-2. **같은 embedder** — upstream 은 contriever / stella / gte / bm25 등.
-   같은 모델 ID 로 main.yaml 의 `embedder` 만 swap. 우리 default 인
-   `BAAI/bge-base-en-v1.5` 와 upstream 의 default 가 다르면 임베딩이
-   다르므로 top-K 가 달라짐.
-
-3. **Exact cosine search 강제** — Neo4j 의 HNSW ANN 은 근사. upstream 의
-   in-memory 는 exact. ANN 의 recall 은 99%+ 이라 영향 작지만 0 은 아님.
-   완전 동일 원하면 Neo4j vector index 의 ANN 옵션 끄거나, 후보 부족 시
-   `_exact_similarity_search_fallback_threshold` 의 fallback 항상 타도록
-   유도.
-
-→ 위 3 가지 추가 정렬 없이도 algorithmic flow 와 단위는 upstream 과 일치.
-**시스템 평가 용도라면 현재 setup OK**, **upstream 점수표 직접 재현 용도면**
-1+2+3 추가 정렬 권장. 우리 evaluation/longmemeval/ 의 코드만 보면 더
-이상 손댈 게 없음 (profile / db 차원의 문제).
+위 셋 없이도 alignment 충분. **시스템 평가**가 목적이면 default OK,
+**upstream 점수표 재현**이 목적이면 추가 정렬 권장.

@@ -38,10 +38,23 @@ from memmachine_server.episodic_memory.episodic_memory import (
     EpisodicMemory,
     EpisodicMemoryParams,
 )
-from memmachine_server.episodic_memory.long_term_memory import (
-    LongTermMemory,
-    LongTermMemoryParams,
-)
+from memmachine_server.episodic_memory.long_term_memory import LongTermMemory
+
+# upstream/main 50+ 커밋 위에선 LongTermMemoryParams 가 discriminated-union
+# 의 type alias (= 인스턴스화 불가) 가 되고, declarative 백엔드는 별도
+# DeclarativeBackendParams 로 분리됨 (PR #1395). origin/main 에선 여전히 flat
+# instantiable 클래스. 두 브랜치 모두에서 작동하도록 shim — `_DeclarativeParams`
+# 가 어느 쪽이든 같은 필드 (session_id / vector_graph_store / embedder /
+# reranker / message_sentence_chunking) 로 인스턴스화 가능.
+try:
+    from memmachine_server.episodic_memory.long_term_memory import (
+        DeclarativeBackendParams as _DeclarativeParams,
+    )
+except ImportError:  # origin/main
+    from memmachine_server.episodic_memory.long_term_memory import (
+        LongTermMemoryParams as _DeclarativeParams,
+    )
+
 from memmachine_server.retrieval_agent.agents import MemMachineAgent
 from memmachine_server.retrieval_agent.common.agent_api import (
     AgentToolBase,
@@ -100,7 +113,7 @@ async def build_memory_and_agent(
     chunking = getattr(ltm_conf, "message_sentence_chunking", None) or False
 
     long_term_memory = LongTermMemory(
-        LongTermMemoryParams(
+        _DeclarativeParams(
             session_id=session_id,
             vector_graph_store=vector_graph_store,
             embedder=embedder,
@@ -157,6 +170,41 @@ def collect_supporting_facts(sample: dict[str, Any]) -> list[str]:
     return facts
 
 
+def collect_gold_turn_ids(sample: dict[str, Any]) -> set[str]:
+    """Return gold turn-ID set `{"<haystack_session_id>:<turn_idx>", ...}`.
+
+    Format = `evaluation/episodic_memory/longmemeval_models.py:91` 의
+    `answer_turn_indices` 와 동일. has_answer=True turn 들의 `(session_id,
+    turn_idx)` 페어. has_answer 가 없는 longmemeval_s_cleaned / m_cleaned
+    entry 면 빈 set — 그땐 oracle 파일로 cross-reference 필요.
+    """
+    gold: set[str] = set()
+    sids = sample.get("haystack_session_ids", []) or []
+    sessions = sample.get("haystack_sessions", []) or []
+    for sid, sess in zip(sids, sessions, strict=False):
+        for i, turn in enumerate(sess or []):
+            if turn.get("has_answer"):
+                gold.add(f"{sid}:{i}")
+    return gold
+
+
+def retrieved_turn_ids(chunks: list[Any]) -> list[str]:
+    """Extract `<lme_session_id>:<lme_turn_idx>` IDs from retrieved Episodes.
+
+    `evaluation/longmemeval/ingest.py` 가 매 turn 의 Episode.metadata 에
+    이 두 키를 넣음. metadata 가 빠진 chunk 는 skip (e.g., 다른 ingest
+    경로로 적재된 데이터). 순서는 retrieve 순서 보존 (recall@k 곡선 계산용).
+    """
+    out: list[str] = []
+    for ep in chunks:
+        md = getattr(ep, "metadata", None) or {}
+        sid = md.get("lme_session_id")
+        idx = md.get("lme_turn_idx")
+        if sid is not None and idx is not None:
+            out.append(f"{sid}:{idx}")
+    return out
+
+
 def parse_session_dt(ts: str) -> datetime:
     """Parse a longmemeval session_date string ('2023/04/10 (Mon) 23:07')."""
     return datetime.strptime(ts, "%Y/%m/%d (%a) %H:%M").replace(tzinfo=UTC)
@@ -166,11 +214,18 @@ def parse_session_dt(ts: str) -> datetime:
 # Language-model helpers (answer + judge)
 # ---------------------------------------------------------------------------
 async def get_answer_llm(rm: ResourceManagerImpl) -> LanguageModel:
-    """LanguageModel for the answer step (retrieval_agent.llm_model)."""
-    model_id = rm.config.retrieval_agent.llm_model
+    """LanguageModel for the answer step.
+
+    Prefers `retrieval_agent.answer_llm_model` (upstream's dedicated answer
+    field) if set, falls back to `retrieval_agent.llm_model`. `getattr` 로
+    필드 부재 (origin/main) 도 무해.
+    """
+    rac = rm.config.retrieval_agent
+    model_id = getattr(rac, "answer_llm_model", None) or rac.llm_model
     if not model_id:
         raise ValueError(
-            "retrieval_agent.llm_model is not set in configuration.yml"
+            "Neither retrieval_agent.answer_llm_model nor "
+            "retrieval_agent.llm_model is set in configuration.yml"
         )
     return await rm.get_language_model(model_id)
 
@@ -179,8 +234,7 @@ async def get_judge_llm(rm: ResourceManagerImpl) -> LanguageModel:
     """LanguageModel for the judge step.
 
     Prefers `retrieval_agent.judge_llm_model` if set, falls back to the
-    answer LLM (`retrieval_agent.llm_model`) — same policy as our
-    scripts/stages/judge.py.
+    answer LLM (answer_llm_model → llm_model).
     """
     judge_id = getattr(rm.config.retrieval_agent, "judge_llm_model", None)
     if judge_id:
