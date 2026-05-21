@@ -38,10 +38,23 @@ from memmachine_server.episodic_memory.episodic_memory import (
     EpisodicMemory,
     EpisodicMemoryParams,
 )
-from memmachine_server.episodic_memory.long_term_memory import (
-    DeclarativeBackendParams,
-    LongTermMemory,
-)
+from memmachine_server.episodic_memory.long_term_memory import LongTermMemory
+
+# upstream/main 50+ 커밋 위에선 LongTermMemoryParams 가 discriminated-union
+# 의 type alias (= 인스턴스화 불가) 가 되고, declarative 백엔드는 별도
+# DeclarativeBackendParams 로 분리됨 (PR #1395). origin/main 에선 여전히 flat
+# instantiable 클래스. 두 브랜치 모두에서 작동하도록 shim — `_DeclarativeParams`
+# 가 어느 쪽이든 같은 필드 (session_id / vector_graph_store / embedder /
+# reranker / message_sentence_chunking) 로 인스턴스화 가능.
+try:
+    from memmachine_server.episodic_memory.long_term_memory import (
+        DeclarativeBackendParams as _DeclarativeParams,
+    )
+except ImportError:  # origin/main
+    from memmachine_server.episodic_memory.long_term_memory import (
+        LongTermMemoryParams as _DeclarativeParams,
+    )
+
 from memmachine_server.retrieval_agent.agents import MemMachineAgent
 from memmachine_server.retrieval_agent.common.agent_api import (
     AgentToolBase,
@@ -100,7 +113,7 @@ async def build_memory_and_agent(
     chunking = getattr(ltm_conf, "message_sentence_chunking", None) or False
 
     long_term_memory = LongTermMemory(
-        DeclarativeBackendParams(
+        _DeclarativeParams(
             session_id=session_id,
             vector_graph_store=vector_graph_store,
             embedder=embedder,
@@ -204,7 +217,8 @@ async def get_answer_llm(rm: ResourceManagerImpl) -> LanguageModel:
     """LanguageModel for the answer step.
 
     Prefers `retrieval_agent.answer_llm_model` (upstream's dedicated answer
-    field) if set, falls back to `retrieval_agent.llm_model`.
+    field) if set, falls back to `retrieval_agent.llm_model`. `getattr` 로
+    필드 부재 (origin/main) 도 무해.
     """
     rac = rm.config.retrieval_agent
     model_id = getattr(rac, "answer_llm_model", None) or rac.llm_model
