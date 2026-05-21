@@ -52,9 +52,16 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
     임베딩 단계에서 silently truncate 되는 건 upstream 도 동일.
 
     role 보존 (User/Assistant), session_date + turn_idx 초 timestamp.
+
+    Episode.metadata 에 `lme_session_id` (haystack_session_ids 의 원본 ID,
+    `session_key` 와 다름) + `lme_turn_idx` (그 session 안의 enumerate
+    index) 를 저장. retrieve 가 이 둘을 묶어 `{sid}:{idx}` turn-ID 로
+    내보내, oracle 의 has_answer=True turn 과 ID 교집합 기반 recall 계산
+    가능. (`evaluation/episodic_memory/longmemeval_models.py:91` 의
+    `answer_turn_indices = [f"{session_id}:{turn.index}"]` 와 같은 의미.)
     """
     episodes: list[Episode] = []
-    for _sid, sess, sdate in zip(
+    for sid, sess, sdate in zip(
         entry.get("haystack_session_ids", []) or [],
         entry.get("haystack_sessions", []) or [],
         entry.get("haystack_dates", []) or [],
@@ -78,6 +85,10 @@ def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
                     created_at=ts,
                     producer_id="Assistant" if role == "assistant" else "User",
                     producer_role=role,
+                    metadata={
+                        "lme_session_id": sid,
+                        "lme_turn_idx": i,
+                    },
                 )
             )
     return episodes

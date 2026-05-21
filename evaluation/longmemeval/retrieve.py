@@ -44,8 +44,10 @@ from memmachine_server.retrieval_agent.common.agent_api import (  # noqa: E402
 
 from evaluation.longmemeval._common import (  # noqa: E402
     build_memory_and_agent,
+    collect_gold_turn_ids,
     collect_supporting_facts,
     load_eval_config,
+    retrieved_turn_ids,
     set_safe_embedder_limits,
 )
 
@@ -53,6 +55,7 @@ from evaluation.longmemeval._common import (  # noqa: E402
 async def _retrieve_one(
     rm: Any,
     entry: dict,
+    oracle_index: dict[str, dict],
     session_prefix: str,
     top_k: int,
 ) -> dict[str, Any]:
@@ -76,6 +79,10 @@ async def _retrieve_one(
     )
     latency = time.perf_counter() - t0
 
+    oracle_sample = oracle_index.get(qid) or entry
+    gold_ids = collect_gold_turn_ids(oracle_sample)
+    pred_ids = retrieved_turn_ids(chunks)
+
     return {
         "question": question,
         "question_id": qid,
@@ -86,11 +93,13 @@ async def _retrieve_one(
         "cell_idx": 0,
         "chunks_text": episodes_to_string(chunks),
         "num_episodes_retrieved": len(chunks),
+        "retrieved_turn_ids": pred_ids,
+        "gold_turn_ids": sorted(gold_ids),
         "memory_retrieval_time": perf.get("memory_retrieval_time", latency),
         "memory_search_called": perf.get("memory_search_called", 1),
         "agent": perf.get("agent", "lme_iso"),
         "selected_tool": perf.get("selected_tool", "lme_iso"),
-        "supporting_facts": collect_supporting_facts(entry),
+        "supporting_facts": collect_supporting_facts(oracle_sample),
         "input_token": perf.get("input_token", 0),
         "output_token": perf.get("output_token", 0),
         "tool_select_input_token": perf.get("tool_select_input_token", 0),
@@ -103,6 +112,17 @@ async def _retrieve_one(
 async def _run(args: argparse.Namespace) -> None:
     with open(args.in_file) as f:
         entry_list = json.load(f)
+
+    # has_answer 표시는 oracle 파일에만 있고 s_cleaned / m_cleaned 에는 없음.
+    # gold turn-ID 계산은 oracle 의 같은 question_id entry 를 lookup 해야 함.
+    oracle_index: dict[str, dict] = {}
+    if args.oracle:
+        with open(args.oracle) as f:
+            for e in json.load(f):
+                qid = str(e.get("question_id", ""))
+                if qid:
+                    oracle_index[qid] = e
+
     if args.include_categories:
         keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
         before = len(entry_list)
@@ -126,7 +146,7 @@ async def _run(args: argparse.Namespace) -> None:
         async with sem:
             t0 = time.perf_counter()
             rows[idx] = await _retrieve_one(
-                rm, entry, args.session_prefix, args.top_k
+                rm, entry, oracle_index, args.session_prefix, args.top_k
             )
             dt = time.perf_counter() - t0
             print(
@@ -154,6 +174,17 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--in-file", required=True, help="longmemeval_*.json")
+    p.add_argument(
+        "--oracle",
+        default=None,
+        help=(
+            "longmemeval_oracle.json (선택). 주면 같은 question_id 의 oracle "
+            "entry 에서 has_answer=True turn 들을 gold turn-ID 로 추출 → "
+            "row 의 gold_turn_ids / supporting_facts 가 정확해짐. 안 주면 "
+            "--in-file 의 entry 자체를 fallback 으로 씀 (s_cleaned 엔 "
+            "has_answer 가 없어서 gold 가 비게 됨)."
+        ),
+    )
     p.add_argument(
         "--config-path",
         required=True,

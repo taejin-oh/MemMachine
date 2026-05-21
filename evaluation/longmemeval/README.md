@@ -11,13 +11,38 @@ in-memory corpus 와 등가 의미론.
 | 파일 | 역할 |
 |---|---|
 | `_common.py` | MemMachine 부트스트랩 + upstream prompts (verbatim) |
-| `ingest.py` | per-question delete + `add_memory_episodes` (idempotent) |
-| `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl |
+| `ingest.py` | per-question delete + `add_memory_episodes` (idempotent). turn 마다 Episode.metadata 에 `lme_session_id` + `lme_turn_idx` 저장. |
+| `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl (chunks_text + retrieved_turn_ids + gold_turn_ids) |
 | `generate.py` | retrieve.jsonl → answer LLM → generate.jsonl |
 | `judge.py` | generate.jsonl → judge LLM → judge.jsonl + 카테고리별 정확도 요약 |
+| `recall_id.py` | retrieve.jsonl → ID-기반 recall (= upstream `answer_turn_indices` 정렬) + recall@k 곡선 (`--curve`) |
 | `example_configuration.yml` | 워킹 configuration.yml 템플릿 (placeholder 만 채우면 됨) |
 
 ingest → retrieve → generate → judge 네 단계가 본 디렉토리만으로 완결.
+recall 측정은 generate 단계 없이 retrieve.jsonl 만 있으면 `recall_id.py` 로 즉시 가능.
+
+## ID-기반 recall
+
+ingest 가 매 turn 의 Episode.metadata 에 `{"lme_session_id": <원본
+haystack_session_id>, "lme_turn_idx": <enumerate index>}` 를 저장. retrieve
+시 회수된 episode 마다 이 metadata 를 round-trip 받아 `<session_id>:<idx>`
+형식 ID 로 직렬화해서 row 의 `retrieved_turn_ids` 에 기록.
+
+oracle 의 has_answer=True turn 들을 같은 형식 (`f"{sid}:{idx}"`) 으로
+모은 게 `gold_turn_ids`. retrieve 호출 시 `--oracle evaluation/data/longmemeval_oracle.json`
+을 함께 주면 row 별 `gold_turn_ids` 가 채워짐. (`s_cleaned`/`m_cleaned`
+에는 has_answer 가 없어 oracle 없으면 gold 가 비어 recall 계산 불가.)
+
+`recall_id.py` 가 `|pred ∩ gold| / |gold|` 를 계산:
+```bash
+uv run python -m evaluation.longmemeval.recall_id \
+    --retrieve results/lme_iso/retrieve.jsonl
+# overall + 카테고리별 평균 recall, 그리고 --curve 면 recall@k 곡선
+```
+
+이 ID 기반 정의는 `evaluation/episodic_memory/longmemeval_models.py:91` 의
+`answer_turn_indices = [f"{sid}:{idx}"]` 와 byte-equal 형식 — upstream
+패턴과 정렬.
 
 ## 독립성
 
@@ -81,6 +106,7 @@ uv run python -m evaluation.longmemeval.ingest \
 ```bash
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
+    --oracle  evaluation/data/longmemeval_oracle.json \
     --config-path evaluation/longmemeval/configuration.yml \
     --session-prefix $PREFIX \
     --top-k 50 \
@@ -89,6 +115,19 @@ uv run python -m evaluation.longmemeval.retrieve \
 ```
 
 `--top-k` 만 바꿔 retrieve 만 다시 돌릴 수 있음 (재-ingest 불필요).
+`--oracle` 은 ID-기반 recall 측정용 gold_turn_ids 채우기 위함 — `s_cleaned` /
+`m_cleaned` 에는 has_answer 가 없어 oracle 없으면 gold 가 빔. 생략 시
+chunks_text + retrieved_turn_ids 는 정상이고 recall 계산 단계만 못 함.
+
+### 3-A. (선택) ID 기반 recall
+
+```bash
+uv run python -m evaluation.longmemeval.recall_id \
+    --retrieve results/$PREFIX/retrieve.jsonl
+```
+
+`gold_turn_ids` ∩ `retrieved_turn_ids` 기반 overall + 카테고리별 평균 recall.
+`--curve` 로 recall@k 곡선 (k=1..50). 자세한 정의는 위 "ID-기반 recall" 절.
 
 ### 4. Generate → generate.jsonl
 

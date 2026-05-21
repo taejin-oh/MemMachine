@@ -157,6 +157,41 @@ def collect_supporting_facts(sample: dict[str, Any]) -> list[str]:
     return facts
 
 
+def collect_gold_turn_ids(sample: dict[str, Any]) -> set[str]:
+    """Return gold turn-ID set `{"<haystack_session_id>:<turn_idx>", ...}`.
+
+    Format = `evaluation/episodic_memory/longmemeval_models.py:91` 의
+    `answer_turn_indices` 와 동일. has_answer=True turn 들의 `(session_id,
+    turn_idx)` 페어. has_answer 가 없는 longmemeval_s_cleaned / m_cleaned
+    entry 면 빈 set — 그땐 oracle 파일로 cross-reference 필요.
+    """
+    gold: set[str] = set()
+    sids = sample.get("haystack_session_ids", []) or []
+    sessions = sample.get("haystack_sessions", []) or []
+    for sid, sess in zip(sids, sessions, strict=False):
+        for i, turn in enumerate(sess or []):
+            if turn.get("has_answer"):
+                gold.add(f"{sid}:{i}")
+    return gold
+
+
+def retrieved_turn_ids(chunks: list[Any]) -> list[str]:
+    """Extract `<lme_session_id>:<lme_turn_idx>` IDs from retrieved Episodes.
+
+    `evaluation/longmemeval/ingest.py` 가 매 turn 의 Episode.metadata 에
+    이 두 키를 넣음. metadata 가 빠진 chunk 는 skip (e.g., 다른 ingest
+    경로로 적재된 데이터). 순서는 retrieve 순서 보존 (recall@k 곡선 계산용).
+    """
+    out: list[str] = []
+    for ep in chunks:
+        md = getattr(ep, "metadata", None) or {}
+        sid = md.get("lme_session_id")
+        idx = md.get("lme_turn_idx")
+        if sid is not None and idx is not None:
+            out.append(f"{sid}:{idx}")
+    return out
+
+
 def parse_session_dt(ts: str) -> datetime:
     """Parse a longmemeval session_date string ('2023/04/10 (Mon) 23:07')."""
     return datetime.strptime(ts, "%Y/%m/%d (%a) %H:%M").replace(tzinfo=UTC)
