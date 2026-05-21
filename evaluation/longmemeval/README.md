@@ -28,10 +28,12 @@ haystack_session_id>, "lme_turn_idx": <enumerate index>}` 를 저장. retrieve
 시 회수된 episode 마다 이 metadata 를 round-trip 받아 `<session_id>:<idx>`
 형식 ID 로 직렬화해서 row 의 `retrieved_turn_ids` 에 기록.
 
-oracle 의 has_answer=True turn 들을 같은 형식 (`f"{sid}:{idx}"`) 으로
-모은 게 `gold_turn_ids`. retrieve 호출 시 `--oracle evaluation/data/longmemeval_oracle.json`
-을 함께 주면 row 별 `gold_turn_ids` 가 채워짐. (`s_cleaned`/`m_cleaned`
-에는 has_answer 가 없어 oracle 없으면 gold 가 비어 recall 계산 불가.)
+`gold_turn_ids` 는 같은 entry 의 has_answer=True turn 들을 동일 형식
+(`f"{sid}:{idx}"`) 으로 모은 set. `longmemeval_s_cleaned` /
+`longmemeval_m_cleaned` / `longmemeval_oracle` 셋 다 has_answer 플래그를
+turn 별로 가지고 있어서 entry 자체로 직접 추출 가능 (oracle cross-reference
+불필요). 세 데이터셋 모두 has_answer=True 개수가 896 으로 동일 — gold 셋이
+데이터셋 무관 byte-equal.
 
 `recall_id.py` 가 `|pred ∩ gold| / |gold|` 를 계산:
 ```bash
@@ -106,7 +108,6 @@ uv run python -m evaluation.longmemeval.ingest \
 ```bash
 uv run python -m evaluation.longmemeval.retrieve \
     --in-file evaluation/data/longmemeval_s_cleaned.json \
-    --oracle  evaluation/data/longmemeval_oracle.json \
     --config-path evaluation/longmemeval/configuration.yml \
     --session-prefix $PREFIX \
     --top-k 50 \
@@ -115,9 +116,8 @@ uv run python -m evaluation.longmemeval.retrieve \
 ```
 
 `--top-k` 만 바꿔 retrieve 만 다시 돌릴 수 있음 (재-ingest 불필요).
-`--oracle` 은 ID-기반 recall 측정용 gold_turn_ids 채우기 위함 — `s_cleaned` /
-`m_cleaned` 에는 has_answer 가 없어 oracle 없으면 gold 가 빔. 생략 시
-chunks_text + retrieved_turn_ids 는 정상이고 recall 계산 단계만 못 함.
+gold_turn_ids 는 `--in-file` 의 has_answer=True turn 들로 자동 채워짐
+(`s_cleaned` / `m_cleaned` / `oracle` 모두 has_answer 보유).
 
 ### 3-A. (선택) ID 기반 recall
 

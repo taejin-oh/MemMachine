@@ -175,8 +175,10 @@ def collect_gold_turn_ids(sample: dict[str, Any]) -> set[str]:
 
     Format = `evaluation/episodic_memory/longmemeval_models.py:91` 의
     `answer_turn_indices` 와 동일. has_answer=True turn 들의 `(session_id,
-    turn_idx)` 페어. has_answer 가 없는 longmemeval_s_cleaned / m_cleaned
-    entry 면 빈 set — 그땐 oracle 파일로 cross-reference 필요.
+    turn_idx)` 페어. longmemeval_s_cleaned / m_cleaned / oracle 모두
+    has_answer 플래그를 turn 별로 가지고 있어 entry 자체로 직접 추출 가능
+    (oracle cross-reference 불필요). dataset 별 has_answer=True 개수는
+    896 으로 동일 — gold 셋이 데이터셋 무관 byte-equal.
     """
     gold: set[str] = set()
     sids = sample.get("haystack_session_ids", []) or []
