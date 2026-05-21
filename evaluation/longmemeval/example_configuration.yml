@@ -49,6 +49,10 @@ retrieval_agent:
 
 semantic_memory:
   enabled: false
+  # config_database 는 Pydantic 필수 필드 — semantic_memory 가 disabled
+  # 라도 비워두면 validation 실패. postgres_main 가리키기만 하면 됨
+  # (semantic_memory 자체는 enabled: false 라 사용 안 됨).
+  config_database: postgres_main
 
 logging:
   level: INFO
