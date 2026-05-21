@@ -12,6 +12,7 @@ configs/runs/*.yaml
 
 # Benchmark datasets (large; download separately — see USAGE)
 evaluation/data/longmemeval_s_cleaned.json
+evaluation/data/longmemeval_m_cleaned.json
 evaluation/data/longmemeval_oracle.json
 
 # Byte-compiled / optimized / DLL files
