@@ -8,6 +8,9 @@ sqlitetest.db
 evaluation/data/longmemeval_*.json
 results/
 
+# evaluation/retrieval_agent/beam/ — BEAM dataset (HF download, ~805 MB)
+evaluation/retrieval_agent/beam/beam_data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
