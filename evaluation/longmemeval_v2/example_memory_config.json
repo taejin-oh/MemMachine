@@ -1,0 +1,12 @@
+{
+  "memory_type": "memmachine",
+  "memory_params": {
+    "configuration_path": "evaluation/longmemeval_v2/configuration.yml",
+    "session_prefix": "lmev2",
+    "top_k": 50,
+    "max_attempts": 3,
+    "max_return_len": 10000,
+    "include_thoughts": true,
+    "embedder_max_input_length": 30000
+  }
+}
