@@ -42,28 +42,106 @@ upstream [xiaowu0162/LongMemEval-V2](https://github.com/xiaowu0162/LongMemEval-V
 
 ## 데이터 준비
 
-LongMemEval-V2 데이터셋은 [HuggingFace](https://huggingface.co/datasets/xiaowu0162/longmemeval-v2)
-에서 받음 (V2 upstream README 참고):
+LongMemEval-V2 데이터셋은 우리 저장소에 포함되지 **않습니다** — 수백 MB
+(small) ~ 수 GB (medium + 스크린샷 archive) 규모 + HuggingFace license 동의
+필요. upstream V2 의 자체 다운로드 스크립트로 별도 준비:
+
+### 1. HuggingFace 인증 (license 동의)
+
+데이터셋 페이지 [xiaowu0162/longmemeval-v2](https://huggingface.co/datasets/xiaowu0162/longmemeval-v2)
+에서 "Agree and access repository" 한 번 클릭 후:
 
 ```bash
-# upstream V2 의 data/download_data.py 를 직접 사용 (이 저장소엔 vendor 안 함)
+pip install -U "huggingface_hub[cli]"
+huggingface-cli login          # HF access token 입력
+```
+
+(token 은 https://huggingface.co/settings/tokens 에서 `read` 권한으로 발급)
+
+### 2. upstream V2 저장소 클론 (다운로드/준비 스크립트 때문)
+
+```bash
 git clone https://github.com/xiaowu0162/LongMemEval-V2 /tmp/lmev2
-python /tmp/lmev2/data/download_data.py --data-root /tmp/lmev2-data
-python /tmp/lmev2/data/prepare_data.py --data-root /tmp/lmev2-data --mode symlink
-
-# 이후 우리 코드의 --data-root 에 /tmp/lmev2-data 를 전달
+cd /tmp/lmev2
 ```
 
-데이터 구조 (준비 후):
+데이터 다운로드 + 스크린샷 압축 해제 스크립트만 쓰는 거라 V2 의 무거운
+conda 환경 (PyTorch + vLLM) 까지 다 깔 필요는 없음. **필요한 최소 의존성**
+만 풀어서:
+
+```bash
+pip install "datasets>=4.0" "huggingface_hub[cli]>=0.24" tqdm pyyaml requests
 ```
-<data_root>/
+
+(V2 의 `requirements.txt` 전체를 따라가도 됨 — 위는 다운로드/준비 단계
+한정 최소 셋. 임베딩/추론은 우리 MemMachine 쪽에서 함.)
+
+### 3. 데이터 다운로드 + 준비 + 검증
+
+```bash
+export DATA_ROOT=/tmp/lmev2-data
+
+# 3a. raw HF 데이터 fetch (questions / trajectories / haystacks / 스크린샷 archive)
+python data/download_data.py --data-root "$DATA_ROOT"
+
+# 3b. 스크린샷 .tar.gz 풀고 symlink 정리
+#     --mode symlink: 원본 archive 보존하고 screenshots/ 만 link (디스크 절약)
+#     --mode copy:    물리 복사 (archive 지울 거면)
+python data/prepare_data.py --data-root "$DATA_ROOT" --mode symlink
+
+# 3c. (선택) 무결성 검증 — 누락된 트라젝토리/스크린샷 없는지
+python data/validate_data.py --data-root "$DATA_ROOT" --tier small
+python data/validate_data.py --data-root "$DATA_ROOT" --tier medium
+```
+
+크기 (대략):
+- `questions.jsonl`: ~1 MB (451 question)
+- `trajectories.jsonl`: ~수십 MB (1,870 trajectory, 텍스트만)
+- `screenshots/`: ~수 GB (멀티모달 평가 시 필요. 텍스트-only 회수만 쓸 거면
+  archive 만 받고 압축 해제 스킵해도 우리 어댑터는 동작 — Episode metadata
+  의 screenshot 경로가 깨질 뿐 검색 자체엔 영향 없음)
+
+### 4. 결과 디렉토리 구조
+
+```
+$DATA_ROOT/
   questions.jsonl              # {id, domain, category, question, answer, ...}
   trajectories.jsonl           # {id, goal, start_url, actions, states[]}
   haystacks/
     lme_v2_small.json          # question_id → [trajectory_id, ...]
     lme_v2_medium.json
-  screenshots/<traj_id>/<step>.png  # multimodal (현재 텍스트만 사용)
+  question_screenshots/        # 질문이 멀티모달일 때 참조 이미지
+  trajectory_screenshots/      # 다운받은 원본 .tar.gz (prepare 후 보존)
+  screenshots/                 # prepare 가 만든 trajectory step PNG (or symlink)
+    <traj_id>/
+      0000.png
+      0001.png
+      ...
 ```
+
+이후 우리 runner 에 `--data-root $DATA_ROOT` 만 전달:
+
+```bash
+uv run python -m evaluation.longmemeval_v2.run_eval \
+    --data-root $DATA_ROOT \
+    --domain web --tier small \
+    --memmachine-configuration-path evaluation/longmemeval_v2/configuration.yml \
+    --output-dir results/lmev2_smoke \
+    --limit 2
+```
+
+### 트러블슈팅 (데이터 다운로드)
+
+- **`401 Unauthorized` / `gated dataset`** → HF license 미동의. 위 1단계
+  웹 페이지 클릭 + `huggingface-cli login` 재확인.
+- **`No space left on device`** → `medium` tier + 스크린샷 풀면 수십 GB.
+  `--tier small` 만 쓸 거면 `prepare_data.py` 도 small 만 검증.
+- **`screenshots/.../0000.png` 없음** → `prepare_data.py` 미실행. 우리
+  어댑터는 metadata 경로만 저장하니 검색 자체엔 영향 없지만, upstream
+  multimodal baseline 과 비교하려면 풀어야 함.
+- **`download_data.py` 가 멈춤** → HF endpoint 네트워크 문제. `HF_HUB_ENABLE_HF_TRANSFER=1`
+  로 가속 또는 `huggingface-cli download xiaowu0162/longmemeval-v2 --repo-type dataset`
+  로 직접 받기.
 
 ## MemMachine 구성
 
