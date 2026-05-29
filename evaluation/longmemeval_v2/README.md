@@ -26,8 +26,80 @@ upstream [xiaowu0162/LongMemEval-V2](https://github.com/xiaowu0162/LongMemEval-V
 | `memory_modules/__init__.py` | base API re-export (registry 부트스트랩 트리거) |
 | `_common.py` | MemMachine 부트스트랩 + V2 도메인/카테고리/judge 프롬프트 |
 | `run_eval.py` | end-to-end 파이프라인 (ingest → retrieve → generate → judge) |
+| `download_dataset.py` | HuggingFace 에서 dataset 자체 다운로드 + tar 풀기 + 검증 |
 | `example_configuration.yml` | MemMachine working configuration.yml 템플릿 |
 | `example_memory_config.json` | V2 memory backend config (memmachine type) 예시 |
+
+## V2 데이터 schema (실측)
+
+HuggingFace [xiaowu0162/longmemeval-v2](https://huggingface.co/datasets/xiaowu0162/longmemeval-v2)
+직접 다운로드 후 verify 한 실제 필드명:
+
+**questions.jsonl** (451 question — web 240 / enterprise 211):
+```jsonc
+{
+  "id": "01307e07",
+  "domain": "enterprise",                           // web | enterprise
+  "environment": "workarena",
+  "question_type": "dynamic-environment",           // ← V1 호환 키 (category 가 아님!)
+  "question": "...\\boxed{} 안내 포함된 본문...",
+  "image": null,                                    // 멀티모달 질문이면 경로
+  "answer": "Incident Mobile, Incident Portal, ...",
+  "eval_function": "norm_phrase_set_match|lower=true|..."  // upstream 정확 평가 spec
+}
+```
+
+**question_type 분포** (전체 451):
+| question_type | n | 우리 정규화 (`_common.CATEGORY_MAP`) |
+|---|---:|---|
+| `static-environment` | 134 | `static` |
+| `dynamic-environment` | 86 | `dynamic` |
+| `procedure` | 74 | `procedure` |
+| `static-environment-abs` | 55 | `static-abs` |
+| `dynamic-environment-abs` | 41 | `dynamic-abs` |
+| `procedure-abs` | 32 | `procedure-abs` |
+| `errors-gotchas` | 29 | `gotchas` |
+
+**trajectories.jsonl** (1,870 trajectory — 텍스트만 1.2 GB):
+```jsonc
+{
+  "id": "00332982",
+  "domain": "enterprise",
+  "environment": "workarena",
+  "goal": "...task 본문...",
+  "outcome": "...",
+  "start_url": "https://...",
+  "states": [
+    {
+      "state_index": 0,
+      "step": 0,
+      "url": "https://...",
+      "action": null,                  // 첫 state 는 보통 null
+      "thought": "I will use ...",     // ← 단수형 (V1 의 'thoughts' 아님!)
+      "accessibility_tree": "...",     // ← 텍스트 본문 (rendered DOM, 1~13KB)
+      "screenshot": "screenshots/<traj_id>/0.png"
+    },
+    ...
+  ]
+}
+```
+
+**eval_function** (upstream V2 의 채점 함수, 상위 6 종):
+| eval_function | n |
+|---|---:|
+| `norm_phrase_set_match` | 200 |
+| `llm_abstention_checker` | 128 |
+| `mc_choice_match` | 68 |
+| `llm_gotchas_checker` | 28 |
+| `norm_phrase_set_match_ordered` | 26 |
+| `mc_choice_set_match` | 1 |
+
+> **우리 judge 단순화**: `run_eval.py` 의 judge stage 는 위 6종을 무시하고
+> **단일 LLM-as-judge yes/no** 만 사용 (`_common.build_judge_messages` —
+> default / abstention / gotchas 3 system prompt). upstream 점수표와의
+> bit-exact 비교가 목적이면 upstream `evaluation/qa_eval_metrics.py` 를
+> 직접 사용 (우리 `memmachine.py` 어댑터는 upstream `memory_modules/` 에
+> 그대로 떨어뜨릴 수 있음 — 본 README 끝 "drop-in 방법" 참고).
 
 ## 의존성
 

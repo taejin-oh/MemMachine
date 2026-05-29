@@ -124,10 +124,16 @@ def _run_async(coro: Any, timeout: float | None = None) -> Any:
 # Helpers
 # ---------------------------------------------------------------------------
 def _render_state_text(state: dict[str, Any]) -> str:
-    """Concatenate URL + action + thoughts + observation into Episode content.
+    """Concatenate URL + action + thought + accessibility_tree into Episode content.
 
-    Keeps a stable line-prefix format so the LLM reading retrieved context
-    can disambiguate fields. Skips empty fields rather than emitting blanks.
+    Field names match the actual V2 trajectory schema (verified against
+    xiaowu0162/longmemeval-v2 on HuggingFace):
+      - `accessibility_tree` (rendered DOM/AX dump, 1~13KB per state)
+      - `thought` (singular — the agent's reasoning for the step)
+      - `action`, `url`, `step`, `state_index`
+
+    Falls back to legacy keys (`text`, `thoughts`) if present, so the
+    adapter survives a future upstream rename without re-edit.
     """
     parts: list[str] = []
     url = state.get("url")
@@ -140,12 +146,12 @@ def _render_state_text(state: dict[str, Any]) -> str:
     action = state.get("action")
     if isinstance(action, str) and action.strip():
         parts.append(f"Action: {action.strip()}")
-    thoughts = state.get("thoughts")
-    if isinstance(thoughts, str) and thoughts.strip():
-        parts.append(f"Thoughts: {thoughts.strip()}")
-    text = state.get("text")
-    if isinstance(text, str) and text.strip():
-        parts.append(f"Observation:\n{text.strip()}")
+    thought = state.get("thought") or state.get("thoughts")
+    if isinstance(thought, str) and thought.strip():
+        parts.append(f"Thought: {thought.strip()}")
+    observation = state.get("accessibility_tree") or state.get("text")
+    if isinstance(observation, str) and observation.strip():
+        parts.append(f"Observation:\n{observation.strip()}")
     return "\n".join(parts)
 
 

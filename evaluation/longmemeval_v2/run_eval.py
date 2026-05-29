@@ -193,12 +193,16 @@ def _stage_retrieve(
             f"[retrieve] {i}/{total}  qid={qid}  haystack={len(traj_ids)}  "
             f"ctx_items={len(ctx_items)} chars={n_chars}  t={dt:.1f}s"
         )
+        # V2 uses `question_type` (V1-compatible naming). Some downstream
+        # tools may add a `category` alias later; check both.
+        category_raw = q.get("question_type") or q.get("category") or ""
         rows.append(
             {
                 "question_id": qid,
                 "domain": str(q.get("domain", "")),
-                "category_raw": str(q.get("category", "")),
-                "category": normalize_category(q.get("category")),
+                "category_raw": str(category_raw),
+                "category": normalize_category(category_raw),
+                "eval_function": str(q.get("eval_function", "")),
                 "question": question_text,
                 "reference_answer": str(q.get("answer", "")),
                 "haystack_trajectory_ids": list(traj_ids),
