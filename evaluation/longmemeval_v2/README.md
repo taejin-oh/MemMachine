@@ -225,37 +225,50 @@ uv run python -m evaluation.longmemeval_v2.run_eval \
     $LIMIT
 ```
 
-### 일부만 평가 — 4 가지 필터
+### 일부만 평가 — 6 가지 필터
 
 | 옵션 | 효과 | 예시 |
 |---|---|---|
-| `--limit N` | 선택된 도메인의 첫 N 질문만 ingest + 평가 | `--limit 2` |
-| `--question-ids ID1 ID2 ...` | 특정 question_id 만 (공백 구분) | `--question-ids q_web_001 q_web_005` |
-| `--domain web` / `enterprise` | 도메인 단위 (필수 인자) | — |
-| `--tier small` / `medium` | haystack 난이도 (small: trajectory pool 작음) | — |
+| `--domain web`/`enterprise` | 도메인 단위 (필수 인자) | — |
+| `--tier small`/`medium` | haystack 난이도 (small: pool 작음) | — |
+| `--question-types T1 T2 ...` | `question_type` 필터 (space/comma 둘 다) | `--question-types static-environment errors-gotchas` |
+| `--question-ids ID1 ID2 ...` | 특정 ID 만 | `--question-ids 01307e07 0a2b3c4d` |
+| `--offset N` | 필터 적용 후 처음 N 건 스킵 (default 0) | `--offset 5` |
+| `--limit N` | 필터+offset 적용 후 N 건만 (default all) | `--limit 10` |
 
-스모크 흐름:
+필터 적용 순서: `domain → question_ids → question_types → offset → limit`
+(파일 순서 보존 — 같은 옵션 조합은 항상 같은 슬라이스).
 
+**예시: `errors-gotchas` 6번째 ~ 15번째 (총 10건)**
 ```bash
-# 1. 텍스트만 받기 (수십 MB, ~수 분)
+uv run python -m evaluation.longmemeval_v2.run_eval \
+    --data-root $DATA --domain enterprise --tier small \
+    --memmachine-configuration-path $CFG \
+    --output-dir results/lmev2_gotchas_6_15 \
+    --question-types errors-gotchas \
+    --offset 5 --limit 10
+```
+
+**예시: 빠른 스모크 (도메인 첫 2 건)**
+```bash
+# 1. 텍스트만 받기 (~수십 MB)
 uv run python -m evaluation.longmemeval_v2.download_dataset \
     --skip-screenshots --skip-validate
 
-# 2. 2 문항만 한 사이클 돌려 동작 확인 (~수 분, LLM API 호출 적음)
+# 2. 2 문항만 한 사이클 (~수 분, LLM 호출 적음)
 uv run python -m evaluation.longmemeval_v2.run_eval \
-    --data-root $DATA \
-    --domain web --tier small \
+    --data-root $DATA --domain web --tier small \
     --memmachine-configuration-path $CFG \
     --output-dir results/lmev2_smoke \
     --limit 2
 
-# 3. 결과 확인
+# 3. 결과 확인 (overall + by_category 정확도)
 cat results/lmev2_smoke/summary.json
 ```
 
-`--limit` 가 가리키는 N 질문이 참조하는 trajectory 만 ingest 되므로,
-Neo4j 적재 비용이 N 에 비례. 풀 런 (`LIMIT=""`) 시엔 도메인 전체 (web ~수백,
-enterprise ~수백) 가 한 번에 ingest 되니 시간/디스크 미리 가늠.
+`question_type` 값은 위 "V2 데이터 schema" 섹션의 분포표 참고 (오타 시
+필터 결과 0건). 필터된 질문이 참조하는 trajectory 만 ingest 되므로
+Neo4j 적재 비용은 선택된 질문 수에 비례.
 
 결과:
 ```

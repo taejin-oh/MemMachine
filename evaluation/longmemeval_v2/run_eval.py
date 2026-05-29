@@ -102,16 +102,47 @@ def _load_dataset(
     return questions, trajectories, {str(k): list(v) for k, v in haystack.items()}
 
 
+def _parse_csv_list(values: list[str] | None) -> list[str] | None:
+    """Accept either space-separated nargs or comma-separated entries."""
+    if not values:
+        return None
+    out: list[str] = []
+    for raw in values:
+        for item in str(raw).split(","):
+            s = item.strip()
+            if s:
+                out.append(s)
+    return out or None
+
+
 def _select_questions(
     questions: list[dict[str, Any]],
     *,
     question_ids: list[str] | None,
+    question_types: list[str] | None,
+    offset: int,
     limit: int | None,
 ) -> list[dict[str, Any]]:
+    """Apply filters in order: ids → types → offset → limit.
+
+    File order is preserved within each filtered subset, so `--offset` /
+    `--limit` give a stable "N번째 ~ M번째" slice of (type-filtered) questions.
+    """
     if question_ids:
-        keep = set(question_ids)
-        questions = [q for q in questions if str(q.get("id")) in keep]
+        keep_ids = set(question_ids)
+        questions = [q for q in questions if str(q.get("id")) in keep_ids]
+    if question_types:
+        keep_types = set(question_types)
+        questions = [
+            q for q in questions if str(q.get("question_type", "")) in keep_types
+        ]
+    if offset:
+        if offset < 0:
+            raise ValueError(f"--offset must be >= 0, got {offset}")
+        questions = questions[offset:]
     if limit is not None:
+        if limit < 0:
+            raise ValueError(f"--limit must be >= 0, got {limit}")
         questions = questions[:limit]
     return questions
 
@@ -404,12 +435,38 @@ def main() -> int:
         required=True,
         help="Destination for retrieve/generate/judge.jsonl + summary.json",
     )
-    p.add_argument("--limit", type=int, default=None)
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Keep at most this many questions after type-filter + offset (default: all)",
+    )
+    p.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help=(
+            "Skip the first N questions after type-filter (default: 0). "
+            "Combine with --question-types and --limit for a stable "
+            "'<type> N번째 ~ M번째' slice."
+        ),
+    )
     p.add_argument(
         "--question-ids",
         nargs="*",
         default=None,
-        help="Restrict to these question ids (space-separated)",
+        help="Restrict to these question ids (space- or comma-separated)",
+    )
+    p.add_argument(
+        "--question-types",
+        nargs="*",
+        default=None,
+        help=(
+            "Filter by question_type (space- or comma-separated). Valid values: "
+            "static-environment, static-environment-abs, dynamic-environment, "
+            "dynamic-environment-abs, procedure, procedure-abs, errors-gotchas. "
+            "See README for per-type counts."
+        ),
     )
     p.add_argument(
         "--skip-ingest",
@@ -461,10 +518,20 @@ def main() -> int:
         f"[main] dataset: {len(questions)} questions (domain={args.domain}), "
         f"{len(trajectories)} trajectories, haystack tier={args.tier}"
     )
+    question_ids_parsed = _parse_csv_list(args.question_ids)
+    question_types_parsed = _parse_csv_list(args.question_types)
     selected = _select_questions(
-        questions, question_ids=args.question_ids, limit=args.limit
+        questions,
+        question_ids=question_ids_parsed,
+        question_types=question_types_parsed,
+        offset=args.offset,
+        limit=args.limit,
     )
-    print(f"[main] selected: {len(selected)} questions")
+    print(
+        f"[main] selected: {len(selected)} questions "
+        f"(question_types={question_types_parsed}, offset={args.offset}, "
+        f"limit={args.limit}, question_ids={question_ids_parsed})"
+    )
 
     selected_traj_ids: set[str] = set()
     for q in selected:
