@@ -119,6 +119,24 @@ uv run python -m evaluation.longmemeval.retrieve \
 gold_turn_ids 는 `--in-file` 의 has_answer=True turn 들로 자동 채워짐
 (`s_cleaned` / `m_cleaned` / `oracle` 모두 has_answer 보유).
 
+**Adaptive-k retrieval** (MemMachine `MemMachineAgent` 동작 옵션, 기본 OFF):
+`--adaptive-k` 를 주면 고정 `--top-k` 대신 `--top-k` 를 **후보 풀**로 보고
+점수 분포에서 **가장 큰 gap** 앞까지만 회수 (Taguchi et al., EMNLP 2025).
+질문마다 회수 chunk 수가 달라짐 — factoid 는 적게, aggregation 은 많게.
+
+```bash
+# 고정 top-k vs adaptive-k A/B (같은 ingest 재사용)
+uv run python -m evaluation.longmemeval.retrieve ... --top-k 50 \
+    --out results/$PREFIX/retrieve_fixed.jsonl
+uv run python -m evaluation.longmemeval.retrieve ... --top-k 50 --adaptive-k \
+    --out results/$PREFIX/retrieve_adaptive.jsonl
+```
+
+`--adaptive-min-k` (기본 1) 로 최소 회수 수, `--adaptive-max-k` (기본 0 = 후보 풀
+전체) 로 상한 지정. 로그에 `adaptive_k: pool=.. kept=.. (score ..)` 가 질문마다
+찍힘. 구현은 `memmachine_server`의 `MemMachineAgent.do_query` 자체에 들어가 있어
+서버 retrieval 경로 전반에서 `QueryParam(adaptive_k=True)` 로 켤 수 있음.
+
 ### 3-A. (선택) ID 기반 recall
 
 ```bash

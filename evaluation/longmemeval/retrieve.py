@@ -57,6 +57,9 @@ async def _retrieve_one(
     entry: dict,
     session_prefix: str,
     top_k: int,
+    adaptive_k: bool = False,
+    adaptive_min_k: int = 1,
+    adaptive_max_k: int = 0,
 ) -> dict[str, Any]:
     qid = str(entry.get("question_id", ""))
     session_id = f"{session_prefix}_{qid}"
@@ -74,7 +77,14 @@ async def _retrieve_one(
             max_attempts=3,
             max_return_len=10000,
         ),
-        QueryParam(query=question, limit=top_k, memory=memory),
+        QueryParam(
+            query=question,
+            limit=top_k,
+            memory=memory,
+            adaptive_k=adaptive_k,
+            adaptive_k_min=adaptive_min_k,
+            adaptive_k_max=adaptive_max_k,
+        ),
     )
     latency = time.perf_counter() - t0
 
@@ -134,7 +144,13 @@ async def _run(args: argparse.Namespace) -> None:
         async with sem:
             t0 = time.perf_counter()
             rows[idx] = await _retrieve_one(
-                rm, entry, args.session_prefix, args.top_k
+                rm,
+                entry,
+                args.session_prefix,
+                args.top_k,
+                adaptive_k=args.adaptive_k,
+                adaptive_min_k=args.adaptive_min_k,
+                adaptive_max_k=args.adaptive_max_k,
             )
             dt = time.perf_counter() - t0
             print(
@@ -176,7 +192,31 @@ def main() -> int:
         "--top-k",
         type=int,
         default=50,
-        help="Retrieved chunks per question (default: 50)",
+        help=(
+            "Retrieved chunks per question (default: 50). With --adaptive-k"
+            " this is the candidate pool the gap-cut chooses from."
+        ),
+    )
+    p.add_argument(
+        "--adaptive-k",
+        action="store_true",
+        help=(
+            "Enable Adaptive-k retrieval: keep only the prefix before the"
+            " largest score gap in the top-k candidate pool, instead of a"
+            " fixed top-k (Taguchi et al., EMNLP 2025)."
+        ),
+    )
+    p.add_argument(
+        "--adaptive-min-k",
+        type=int,
+        default=1,
+        help="Adaptive-k floor on chunks kept (default: 1).",
+    )
+    p.add_argument(
+        "--adaptive-max-k",
+        type=int,
+        default=0,
+        help="Adaptive-k ceiling on chunks kept (default: 0 = top-k pool).",
     )
     p.add_argument(
         "--out",

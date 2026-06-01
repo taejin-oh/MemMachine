@@ -21,6 +21,35 @@ from memmachine_server.episodic_memory import EpisodicMemory
 logger = logging.getLogger(__name__)
 
 
+def adaptive_k_cutoff(scores_desc: list[float], min_k: int, max_k: int) -> int:
+    """Largest-gap cutoff for descending-sorted relevance scores.
+
+    Returns how many top items to keep: cut just before the biggest drop in
+    score, clamped to ``[min_k, max_k]``. Mirrors Adaptive-k (Taguchi et al.,
+    "No Tuning, No Iteration, Just Adaptive-k", EMNLP 2025): locate the largest
+    consecutive gap in the sorted similarities and cut there. Pure-Python — the
+    paper uses ``torch.diff``/``argmin``; this is the same result with no
+    torch/numpy dependency.
+
+    ``max_k <= 0`` means no extra ceiling (the candidate pool itself bounds it);
+    ``min_k`` guarantees a non-empty result when scores collapse early.
+    """
+    n = len(scores_desc)
+    min_k = max(1, min_k)
+    if n <= min_k:
+        return n
+    upper = min(max_k, n) if max_k > 0 else n
+    last = min(upper, n - 1)  # largest cut that still has a dropped item
+    best_k = upper
+    best_gap = -1.0
+    for k in range(min_k, last + 1):
+        gap = scores_desc[k - 1] - scores_desc[k]
+        if gap > best_gap:
+            best_gap = gap
+            best_k = k
+    return best_k
+
+
 class QueryPolicy(BaseModel):
     """Scoring and budget policy used by retrieval-agent tools."""
 
@@ -42,6 +71,11 @@ class QueryParam(BaseModel):
     score_threshold: float = -float("inf")
     property_filter: FilterExpr | None = None
     memory: InstanceOf[EpisodicMemory]
+    # Adaptive-k: when True, treat ``limit`` as a candidate pool and keep only
+    # the prefix before the largest score gap instead of a fixed ``limit``.
+    adaptive_k: bool = False
+    adaptive_k_min: int = 1
+    adaptive_k_max: int = 0  # <=0 → bounded only by the candidate pool
 
 
 class AgentToolBaseParam(BaseModel):
