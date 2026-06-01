@@ -73,7 +73,8 @@ class MemMachineAgent(AgentToolBase):
             scored = list(query_response.long_term_memory.episodes)
 
         if query.adaptive_k and scored:
-            scored = self._apply_adaptive_k(scored, query)
+            scored, ak_info = self._apply_adaptive_k(scored, query)
+            perf_metrics.update(ak_info)
 
         episodes = [
             Episode(
@@ -97,13 +98,17 @@ class MemMachineAgent(AgentToolBase):
         return episodes, perf_metrics
 
     @staticmethod
-    def _apply_adaptive_k(scored: list[Any], query: QueryParam) -> list[Any]:
+    def _apply_adaptive_k(
+        scored: list[Any], query: QueryParam
+    ) -> tuple[list[Any], dict[str, Any]]:
         """Keep only the prefix before the largest score gap.
 
         ``scored`` is the candidate pool (size <= ``query.limit``) in
         query_memory's order. We rank a copy by score, find the adaptive cut,
         then return the survivors in their original order so downstream
-        formatting is unchanged apart from the count.
+        formatting is unchanged apart from the count. The returned info dict
+        (pool size, kept k, score bounds) is merged into ``perf_metrics`` so
+        callers can record the per-query k.
         """
         ranked = sorted(
             scored,
@@ -112,11 +117,18 @@ class MemMachineAgent(AgentToolBase):
         )
         scores_desc = [e.score for e in ranked if e.score is not None]
         if not scores_desc:
-            return scored
+            return scored, {"adaptive_k": True, "adaptive_pool": len(scored)}
         keep = adaptive_k_cutoff(
             scores_desc, query.adaptive_k_min, query.adaptive_k_max
         )
         kept_uids = {e.uid for e in ranked[:keep]}
+        info = {
+            "adaptive_k": True,
+            "adaptive_pool": len(scores_desc),
+            "adaptive_kept": keep,
+            "adaptive_score_hi": round(scores_desc[0], 6),
+            "adaptive_score_cut": round(scores_desc[keep - 1], 6),
+        }
         logger.info(
             "adaptive_k: pool=%d kept=%d (score %.4f..%.4f)",
             len(scores_desc),
@@ -124,4 +136,4 @@ class MemMachineAgent(AgentToolBase):
             scores_desc[0],
             scores_desc[keep - 1],
         )
-        return [e for e in scored if e.uid in kept_uids]
+        return [e for e in scored if e.uid in kept_uids], info
