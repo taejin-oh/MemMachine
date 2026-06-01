@@ -70,6 +70,7 @@ chunks, perf = await query_agent.do_query(
 | `limit` | `--top-k` | `50` | **후보 풀** 크기. gap 은 이 안에서 선택 |
 | `adaptive_k_min` | `--adaptive-min-k` | `1` | 회수 하한 (점수가 급락해도 최소 이만큼은 유지) |
 | `adaptive_k_max` | `--adaptive-max-k` | `0` | 회수 상한. `0` = 후보 풀(`limit`) 전체 |
+| `adaptive_k_bias` | `--adaptive-bias` | `0.0` | **cut 공격성**. 0 = plain largest-gap(가장 공격적), 높일수록 늦게 자름 → 더 많이 유지(recall↑) |
 
 - **`limit`(top-k)** 은 adaptive-k ON 일 때 "최종 개수" 가 아니라 "후보 풀" 이다.
   풀이 작으면 gap 을 찾을 여지가 적으니, 후보를 넉넉히(예: 50) 주고 cut 에 맡긴다.
@@ -77,6 +78,25 @@ chunks, perf = await query_agent.do_query(
   "아무리 많아도 N 개" 로 제한하고 싶을 때 사용.
 - **`adaptive_k_min`** 은 under-retrieval 방지. 점수가 1 등 직후 급락하는 질문에서
   최소 회수 수를 보장.
+- **`adaptive_k_bias`** 는 "얼마나 공격적으로 자를지". largest-gap 은 1 등 점수가
+  나머지보다 크게 높으면 **첫 gap(k=1)** 이 최대가 돼 k=1 로 잘리는 경향이 있다
+  (recall 급락). 각 gap 을 `k**bias` 로 가중해 늦은 cut 을 선호하게 만든다.
+  `0` = 무가중(가장 공격적), `0.5~2.0` 으로 올리면 지배적 top gap 이 더 이상 단독
+  우승하지 못해 비슷한 점수의 cluster 를 함께 유지. 단, **진짜 cliff** (예: 상위 3 개
+  뒤 큰 낙차) 는 bias 와 무관하게 그대로 잘린다.
+
+### recall 이 너무 떨어질 때 (k 가 과하게 작을 때)
+
+| 증상 | 처방 |
+|---|---|
+| 대부분 질문이 `adaptive_kept=1~2` 로 잘림 | `--adaptive-bias 1.0` (안 되면 1.5, 2.0) 으로 공격성 완화 |
+| 특정 카테고리(aggregation/multi-hop) recall 만 낮음 | `--adaptive-min-k` 를 그 카테고리 근거 수만큼 올림 (가장 확실한 recall 하한) |
+| 한두 질문만 과소 회수 | `--adaptive-min-k 2~3` 로 전역 하한만 살짝 |
+
+> `bias` 는 "점수 모양 기반 소프트 조정", `min_k` 는 "무조건 보장 하한". recall 이
+> 급하면 `min_k` 로 바닥을 깔고, 토큰을 더 아끼려면 `bias` 로 모양을 다듬는다.
+> `adaptive_bias` 값은 retrieve.jsonl 의 `adaptive_bias` 필드와 로그(`bias=..`)에
+> 기록되므로 sweep 결과를 추적할 수 있다.
 
 ## 각 질문마다 선택된 k 확인
 

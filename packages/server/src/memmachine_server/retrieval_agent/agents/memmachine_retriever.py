@@ -119,20 +119,25 @@ class MemMachineAgent(AgentToolBase):
         if not scores_desc:
             return scored, {"adaptive_k": True, "adaptive_pool": len(scored)}
         keep = adaptive_k_cutoff(
-            scores_desc, query.adaptive_k_min, query.adaptive_k_max
+            scores_desc,
+            query.adaptive_k_min,
+            query.adaptive_k_max,
+            query.adaptive_k_bias,
         )
         kept_uids = {e.uid for e in ranked[:keep]}
         info = {
             "adaptive_k": True,
             "adaptive_pool": len(scores_desc),
             "adaptive_kept": keep,
+            "adaptive_bias": query.adaptive_k_bias,
             "adaptive_score_hi": round(scores_desc[0], 6),
             "adaptive_score_cut": round(scores_desc[keep - 1], 6),
         }
         logger.info(
-            "adaptive_k: pool=%d kept=%d (score %.4f..%.4f)",
+            "adaptive_k: pool=%d kept=%d bias=%.2f (score %.4f..%.4f)",
             len(scores_desc),
             keep,
+            query.adaptive_k_bias,
             scores_desc[0],
             scores_desc[keep - 1],
         )

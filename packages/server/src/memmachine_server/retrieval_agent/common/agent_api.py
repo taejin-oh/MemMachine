@@ -21,7 +21,9 @@ from memmachine_server.episodic_memory import EpisodicMemory
 logger = logging.getLogger(__name__)
 
 
-def adaptive_k_cutoff(scores_desc: list[float], min_k: int, max_k: int) -> int:
+def adaptive_k_cutoff(
+    scores_desc: list[float], min_k: int, max_k: int, bias: float = 0.0
+) -> int:
     """Largest-gap cutoff for descending-sorted relevance scores.
 
     Returns how many top items to keep: cut just before the biggest drop in
@@ -31,8 +33,16 @@ def adaptive_k_cutoff(scores_desc: list[float], min_k: int, max_k: int) -> int:
     paper uses ``torch.diff``/``argmin``; this is the same result with no
     torch/numpy dependency.
 
+    ``bias`` tunes how aggressively we cut. Each candidate gap is weighted by
+    ``k ** bias`` (k = items kept at that cut), so a higher bias favours later
+    cuts — keeping more chunks, trading a larger k for higher recall. The plain
+    largest-gap rule (``bias=0.0``, the default) is the most aggressive: when
+    the top hit scores far above the rest the first gap dominates and it cuts
+    to k=1. Raise ``bias`` (e.g. 0.5-2.0) so a dominant top gap no longer wins
+    outright. ``bias=0.0`` reproduces the un-weighted behaviour exactly.
+
     ``max_k <= 0`` means no extra ceiling (the candidate pool itself bounds it);
-    ``min_k`` guarantees a non-empty result when scores collapse early.
+    ``min_k`` is a hard floor — the surest recall lever when gaps are unhelpful.
     """
     n = len(scores_desc)
     min_k = max(1, min_k)
@@ -41,11 +51,12 @@ def adaptive_k_cutoff(scores_desc: list[float], min_k: int, max_k: int) -> int:
     upper = min(max_k, n) if max_k > 0 else n
     last = min(upper, n - 1)  # largest cut that still has a dropped item
     best_k = upper
-    best_gap = -1.0
+    best_score = -1.0
     for k in range(min_k, last + 1):
         gap = scores_desc[k - 1] - scores_desc[k]
-        if gap > best_gap:
-            best_gap = gap
+        weighted = gap * (k**bias)
+        if weighted > best_score:
+            best_score = weighted
             best_k = k
     return best_k
 
@@ -76,6 +87,7 @@ class QueryParam(BaseModel):
     adaptive_k: bool = False
     adaptive_k_min: int = 1
     adaptive_k_max: int = 0  # <=0 → bounded only by the candidate pool
+    adaptive_k_bias: float = 0.0  # higher → cut later (keep more, higher recall)
 
 
 class AgentToolBaseParam(BaseModel):

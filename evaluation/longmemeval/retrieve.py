@@ -60,6 +60,7 @@ async def _retrieve_one(
     adaptive_k: bool = False,
     adaptive_min_k: int = 1,
     adaptive_max_k: int = 0,
+    adaptive_bias: float = 0.0,
 ) -> dict[str, Any]:
     qid = str(entry.get("question_id", ""))
     session_id = f"{session_prefix}_{qid}"
@@ -84,6 +85,7 @@ async def _retrieve_one(
             adaptive_k=adaptive_k,
             adaptive_k_min=adaptive_min_k,
             adaptive_k_max=adaptive_max_k,
+            adaptive_k_bias=adaptive_bias,
         ),
     )
     latency = time.perf_counter() - t0
@@ -104,6 +106,7 @@ async def _retrieve_one(
         "adaptive_k": perf.get("adaptive_k", False),
         "adaptive_pool": perf.get("adaptive_pool", 0),
         "adaptive_kept": perf.get("adaptive_kept", len(chunks)),
+        "adaptive_bias": perf.get("adaptive_bias", 0.0),
         "adaptive_score_hi": perf.get("adaptive_score_hi"),
         "adaptive_score_cut": perf.get("adaptive_score_cut"),
         "retrieved_turn_ids": pred_ids,
@@ -156,6 +159,7 @@ async def _run(args: argparse.Namespace) -> None:
                 adaptive_k=args.adaptive_k,
                 adaptive_min_k=args.adaptive_min_k,
                 adaptive_max_k=args.adaptive_max_k,
+                adaptive_bias=args.adaptive_bias,
             )
             dt = time.perf_counter() - t0
             print(
@@ -222,6 +226,16 @@ def main() -> int:
         type=int,
         default=0,
         help="Adaptive-k ceiling on chunks kept (default: 0 = top-k pool).",
+    )
+    p.add_argument(
+        "--adaptive-bias",
+        type=float,
+        default=0.0,
+        help=(
+            "Adaptive-k cut aggressiveness (default: 0.0 = plain largest-gap,"
+            " most aggressive). Higher (e.g. 0.5-2.0) weights gaps by k**bias"
+            " so the cut happens later — keeps more chunks, higher recall."
+        ),
     )
     p.add_argument(
         "--out",

@@ -133,9 +133,13 @@ uv run python -m evaluation.longmemeval.retrieve ... --top-k 50 --adaptive-k \
 ```
 
 `--adaptive-min-k` (기본 1) 로 최소 회수 수, `--adaptive-max-k` (기본 0 = 후보 풀
-전체) 로 상한 지정. 로그에 `adaptive_k: pool=.. kept=.. (score ..)` 가 질문마다
-찍힘. 구현은 `memmachine_server`의 `MemMachineAgent.do_query` 자체에 들어가 있어
-서버 retrieval 경로 전반에서 `QueryParam(adaptive_k=True)` 로 켤 수 있음.
+전체) 로 상한 지정. **너무 공격적으로 잘려 recall 이 떨어지면** `--adaptive-bias`
+(기본 0.0) 를 0.5~2.0 으로 올려 cut 을 늦추거나(더 많이 유지), 가장 확실하게는
+`--adaptive-min-k` 로 하한을 올린다. 로그/`retrieve.jsonl` 에 질문별
+`kept`/`adaptive_bias` 가 기록됨. 구현은 `memmachine_server`의
+`MemMachineAgent.do_query` 자체에 들어가 있어 서버 retrieval 경로 전반에서
+`QueryParam(adaptive_k=True)` 로 켤 수 있음. 자세히는
+`docs/msr/adaptive_k_retrieval.md`.
 
 ### 3-A. (선택) ID 기반 recall
 
