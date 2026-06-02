@@ -119,6 +119,11 @@ uv run python -m evaluation.longmemeval.retrieve \
 gold_turn_ids 는 `--in-file` 의 has_answer=True turn 들로 자동 채워짐
 (`s_cleaned` / `m_cleaned` / `oracle` 모두 has_answer 보유).
 
+**이웃 turn 포함** (`--expand-context`, 기본 0=없음): 매칭된 turn 주변을 함께
+회수. `expand_context // 3` 만큼 앞, 나머지는 뒤로 (forward 편향) — 예: `3` → 앞 1 +
+뒤 2, `6` → 앞 2 + 뒤 4. 이웃도 `--top-k`(후보 풀) 개수에 포함되니, 많이 키우면
+서로 다른 매칭이 들어갈 자리가 줄어듦. 각 row 에 `expand_context` 값이 기록됨.
+
 **Adaptive-k retrieval** (MemMachine `MemMachineAgent` 동작 옵션, 기본 OFF):
 `--adaptive-k` 를 주면 고정 `--top-k` 대신 `--top-k` 를 **후보 풀**로 보고
 점수 분포에서 **가장 큰 gap** 앞까지만 회수 (Taguchi et al., EMNLP 2025).

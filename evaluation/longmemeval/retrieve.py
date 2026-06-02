@@ -61,6 +61,7 @@ async def _retrieve_one(
     adaptive_min_k: int = 1,
     adaptive_max_k: int = 0,
     adaptive_bias: float = 0.0,
+    expand_context: int = 0,
 ) -> dict[str, Any]:
     qid = str(entry.get("question_id", ""))
     session_id = f"{session_prefix}_{qid}"
@@ -82,6 +83,7 @@ async def _retrieve_one(
             query=question,
             limit=top_k,
             memory=memory,
+            expand_context=expand_context,
             adaptive_k=adaptive_k,
             adaptive_k_min=adaptive_min_k,
             adaptive_k_max=adaptive_max_k,
@@ -103,6 +105,7 @@ async def _retrieve_one(
         "cell_idx": 0,
         "chunks_text": episodes_to_string(chunks),
         "num_episodes_retrieved": len(chunks),
+        "expand_context": expand_context,
         "adaptive_k": perf.get("adaptive_k", False),
         "adaptive_pool": perf.get("adaptive_pool", 0),
         "adaptive_kept": perf.get("adaptive_kept", len(chunks)),
@@ -160,6 +163,7 @@ async def _run(args: argparse.Namespace) -> None:
                 adaptive_min_k=args.adaptive_min_k,
                 adaptive_max_k=args.adaptive_max_k,
                 adaptive_bias=args.adaptive_bias,
+                expand_context=args.expand_context,
             )
             dt = time.perf_counter() - t0
             print(
@@ -235,6 +239,16 @@ def main() -> int:
             "Adaptive-k cut aggressiveness (default: 0.0 = plain largest-gap,"
             " most aggressive). Higher (e.g. 0.5-2.0) weights gaps by k**bias"
             " so the cut happens later — keeps more chunks, higher recall."
+        ),
+    )
+    p.add_argument(
+        "--expand-context",
+        type=int,
+        default=0,
+        help=(
+            "Pull neighbour turns around each matched turn (default: 0 = none)."
+            " Split ~1/3 backward, ~2/3 forward: e.g. 3 -> 1 before + 2 after."
+            " Neighbours count against --top-k (the candidate pool)."
         ),
     )
     p.add_argument(
