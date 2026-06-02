@@ -124,6 +124,28 @@ gold_turn_ids 는 `--in-file` 의 has_answer=True turn 들로 자동 채워짐
 뒤 2, `6` → 앞 2 + 뒤 4. 이웃도 `--top-k`(후보 풀) 개수에 포함되니, 많이 키우면
 서로 다른 매칭이 들어갈 자리가 줄어듦. 각 row 에 `expand_context` 값이 기록됨.
 
+```bash
+# 이웃 끄기(기본) vs 앞1·뒤2 vs 앞2·뒤4 — 같은 ingest 재사용, retrieve 만 반복
+uv run python -m evaluation.longmemeval.retrieve \
+    --in-file evaluation/data/longmemeval_s_cleaned.json \
+    --config-path evaluation/longmemeval/configuration.yml \
+    --session-prefix $PREFIX --top-k 50 --expand-context 3 \
+    --out results/$PREFIX/retrieve_ctx3.jsonl
+
+# 이웃을 키울 땐 top-k 도 같이 키워 매칭 자리를 확보
+uv run python -m evaluation.longmemeval.retrieve ... \
+    --top-k 80 --expand-context 6 --out results/$PREFIX/retrieve_ctx6.jsonl
+
+# adaptive-k 와 함께 (이웃 포함된 풀에서 gap cut)
+uv run python -m evaluation.longmemeval.retrieve ... \
+    --top-k 50 --expand-context 3 --adaptive-k --adaptive-bias 1.0 \
+    --out results/$PREFIX/retrieve_ctx3_ak.jsonl
+
+# 적용 여부 확인 (row 에 기록된 값)
+jq -r '[.question_id, .expand_context, .num_episodes_retrieved] | @tsv' \
+   results/$PREFIX/retrieve_ctx3.jsonl | head
+```
+
 **Adaptive-k retrieval** (MemMachine `MemMachineAgent` 동작 옵션, 기본 OFF):
 `--adaptive-k` 를 주면 고정 `--top-k` 대신 `--top-k` 를 **후보 풀**로 보고
 점수 분포에서 **가장 큰 gap** 앞까지만 회수 (Taguchi et al., EMNLP 2025).
