@@ -1,0 +1,117 @@
+# Example working configuration.yml for evaluation/longmemeval_v2/.
+#
+# This file configures MemMachine itself (Neo4j vector graph store, Postgres,
+# embedder, LLMs, reranker). The V2 `memory_modules.memmachine.MemMachineMemory`
+# adapter loads it via `memory_params.configuration_path`.
+#
+# Structurally identical to evaluation/longmemeval/example_configuration.yml
+# (V1). Same defaults: internal OpenAI-compatible endpoint for embedder +
+# LLM. Swap `resources.embedders` / `resources.language_models` blocks to
+# point at cloud (OpenAI / Gemini / Anthropic via LiteLLM / Bedrock) endpoints.
+#
+# 사용법:
+#   1. 이 파일을 evaluation/longmemeval_v2/configuration.yml 로 복사 후
+#      두 개 placeholder 만 채우면 됨:
+#        <NEO4J_PASSWORD>    — Neo4j 비밀번호
+#        <POSTGRES_PASSWORD> — Postgres 비밀번호
+#      (embedder / LLM 의 api_key 는 default "empty" — 내부 endpoint 가정.
+#       외부 OpenAI 등 쓰려면 실제 키로 교체.)
+#   2. Neo4j + Postgres 띄우기 (docker compose 등)
+#   3. `run_eval.py --memmachine-configuration-path` 로 전달
+
+episode_store:
+  database: postgres_main
+  with_count_cache: true
+
+episodic_memory:
+  enabled: true
+  long_term_memory_enabled: true
+  long_term_memory:
+    embedder: qwen3_embed_4b
+    reranker: rrf_hybrid_main
+    vector_graph_store: neo4j_main
+    message_sentence_chunking: false
+  short_term_memory_enabled: false
+
+retrieval_agent:
+  # llm_model: retrieval / planning default. 답변/judge 가 별도 지정 없으면
+  # 이 값으로 fallback.
+  llm_model: qwen35_397b
+  reranker: rrf_hybrid_main
+  # answer_llm_model: 답변 LLM 만 별도 지정 (미지정 시 llm_model 재사용).
+  answer_llm_model: qwen35_397b
+  # judge_llm_model: judge LLM 만 별도 지정. 미지정 시 answer_llm_model →
+  # llm_model 순으로 fallback. 더 강한 모델 (gpt-4 등) 을 judge 에 쓰고
+  # 싶으면 여기에 다른 language_models 의 ID 지정.
+  judge_llm_model: qwen35_397b
+
+semantic_memory:
+  enabled: false
+  config_database: postgres_main
+
+logging:
+  level: INFO
+
+session_manager:
+  database: postgres_main
+
+resources:
+  databases:
+    neo4j_main:
+      provider: neo4j
+      config:
+        uri: bolt://localhost:7687
+        user: neo4j
+        password: "<NEO4J_PASSWORD>"
+    postgres_main:
+      provider: postgres
+      config:
+        dialect: postgresql
+        driver: asyncpg
+        host: localhost
+        port: 5432
+        user: memmachine
+        password: "<POSTGRES_PASSWORD>"
+        db_name: memmachine
+
+  embedders:
+    qwen3_embed_4b:
+      provider: openai
+      config:
+        api_key: "empty"
+        base_url: http://10.78.59.136:8001/v1
+        model: Qwen/Qwen3-Embedding-4B
+        dimensions: 2560
+
+  language_models:
+    qwen35_397b:
+      provider: openai-chat-completions
+      config:
+        api_key: "empty"
+        base_url: http://10.78.58.25:8026/v1
+        model: nvidia/Qwen3.5-397B-A17B-NVFP4
+
+  rerankers:
+    bm25_main:
+      provider: bm25
+      config:
+        k1: 1.5
+        b: 0.75
+        epsilon: 0.25
+        language: english
+        tokenizer: default
+    identity_main:
+      provider: identity
+      config: {}
+    rrf_hybrid_main:
+      provider: rrf-hybrid
+      config:
+        reranker_ids:
+          - bm25_main
+          - identity_main
+        k: 60
+
+# Alternative providers (cloud OpenAI / Gemini / Anthropic / Bedrock /
+# Cohere reranker / sentence-transformer embedder / cross-encoder etc.) —
+# see evaluation/longmemeval/example_configuration.yml "옵션 예시 모음"
+# section for ready-to-copy blocks. The format is identical here.
