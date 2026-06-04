@@ -1,0 +1,1970 @@
+diff --git a/evaluation/longmemeval/README.md b/evaluation/longmemeval/README.md
+new file mode 100644
+index 0000000..de6b3fa
+--- /dev/null
++++ b/evaluation/longmemeval/README.md
+@@ -0,0 +1,260 @@
++# `evaluation/longmemeval/` — LongMemEval, MemMachine 백엔드, per-question 격리
++
++upstream LongMemEval (xiaowu0162/LongMemEval) 의 평가 방식을 MemMachine
++스택 (Neo4j vector graph store + Postgres + 워크스페이스 패키지의
++embedder/reranker) 위에서 재현. 각 질문이 자기 session_id 안에 격리되어
++적재/검색되므로 cross-question contamination 없음 — upstream 의 매-entry
++in-memory corpus 와 등가 의미론.
++
++## 파일
++
++| 파일 | 역할 |
++|---|---|
++| `_common.py` | MemMachine 부트스트랩 + upstream prompts (verbatim) |
++| `ingest.py` | per-question delete + `add_memory_episodes` (idempotent). turn 마다 Episode.metadata 에 `lme_session_id` + `lme_turn_idx` 저장. |
++| `retrieve.py` | per-question `query_agent.do_query` → retrieve.jsonl (chunks_text + retrieved_turn_ids + gold_turn_ids) |
++| `generate.py` | retrieve.jsonl → answer LLM → generate.jsonl |
++| `judge.py` | generate.jsonl → judge LLM → judge.jsonl + 카테고리별 정확도 요약 |
++| `recall_id.py` | retrieve.jsonl → ID-기반 recall (= upstream `answer_turn_indices` 정렬) + recall@k 곡선 (`--curve`) |
++| `example_configuration.yml` | 워킹 configuration.yml 템플릿 (placeholder 만 채우면 됨) |
++
++ingest → retrieve → generate → judge 네 단계가 본 디렉토리만으로 완결.
++recall 측정은 generate 단계 없이 retrieve.jsonl 만 있으면 `recall_id.py` 로 즉시 가능.
++
++## ID-기반 recall
++
++ingest 가 매 turn 의 Episode.metadata 에 `{"lme_session_id": <원본
++haystack_session_id>, "lme_turn_idx": <enumerate index>}` 를 저장. retrieve
++시 회수된 episode 마다 이 metadata 를 round-trip 받아 `<session_id>:<idx>`
++형식 ID 로 직렬화해서 row 의 `retrieved_turn_ids` 에 기록.
++
++`gold_turn_ids` 는 같은 entry 의 has_answer=True turn 들을 동일 형식
++(`f"{sid}:{idx}"`) 으로 모은 set. `longmemeval_s_cleaned` /
++`longmemeval_m_cleaned` / `longmemeval_oracle` 셋 다 has_answer 플래그를
++turn 별로 가지고 있어서 entry 자체로 직접 추출 가능 (oracle cross-reference
++불필요). 세 데이터셋 모두 has_answer=True 개수가 896 으로 동일 — gold 셋이
++데이터셋 무관 byte-equal.
++
++`recall_id.py` 가 `|pred ∩ gold| / |gold|` 를 계산:
++```bash
++uv run python -m evaluation.longmemeval.recall_id \
++    --retrieve results/lme_iso/retrieve.jsonl
++# overall + 카테고리별 평균 recall, 그리고 --curve 면 recall@k 곡선
++```
++
++이 ID 기반 정의는 `evaluation/episodic_memory/longmemeval_models.py:91` 의
++`answer_turn_indices = [f"{sid}:{idx}"]` 와 byte-equal 형식 — upstream
++패턴과 정렬.
++
++## 독립성
++
++본 디렉토리는 `evaluation/longmemeval/` 자기 자신 + `memmachine_server.*`
++(워크스페이스 패키지) **만** 의존:
++
++```
++$ grep -rE "^from evaluation\." evaluation/longmemeval/*.py | grep -v _common
++(아무것도 안 나옴)
++```
++
++`evaluation/retrieval_agent/`, `evaluation/utils/`, `evaluation/episodic_memory/`,
++`scripts/` 어느 것도 import 안 함. 외부 의존은 **워킹 configuration.yml 한 개**
++(`example_configuration.yml` 베이스로 직접 작성).
++
++## 사용 흐름
++
++```bash
++PREFIX=lme_iso          # 실험 이름 = --session-prefix = 결과 디렉토리
++LIMIT_ARG="--limit 1"   # 스모크 1 문항. 풀 500 시 LIMIT_ARG=""
++```
++
++### 0. 사전 준비
++
++- Python 3.12+, `uv sync` (워크스페이스 의존성 설치)
++- Neo4j + Postgres docker 실행 (별도 도커 컴포즈 사용)
++- LongMemEval 데이터셋 (`evaluation/data/longmemeval_s_cleaned.json`) —
++  HuggingFace `xiaowu0162/longmemeval-cleaned` 에서 다운로드
++
++### 1. 워킹 configuration.yml 작성
++
++`example_configuration.yml` 복사 후 2 개 placeholder 만 채움 (DB 비번):
++
++```bash
++cp evaluation/longmemeval/example_configuration.yml \
++   evaluation/longmemeval/configuration.yml
++# 편집기로 열어 <NEO4J_PASSWORD> / <POSTGRES_PASSWORD> 채우기
++```
++
++embedder + LLM 은 default 로 **내부 OpenAI-호환 endpoint** (Qwen3-Embedding-4B
+++ nvidia/Qwen3.5-397B-A17B-NVFP4) 를 가리킴. api_key 는 `"empty"` 로 두고
++`base_url` 만 자기 환경의 endpoint 로 바꾸면 됨. 외부 OpenAI / Gemini 등을
++쓰려면 `resources.embedders` / `resources.language_models` 의 `config` 블록
++교체 (provider / api_key / base_url / model 한 묶음으로).
++
++### 2. Ingest
++
++```bash
++uv run python -m evaluation.longmemeval.ingest \
++    --in-file evaluation/data/longmemeval_s_cleaned.json \
++    --config-path evaluation/longmemeval/configuration.yml \
++    --session-prefix $PREFIX \
++    $LIMIT_ARG
++```
++
++매 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 PREFIX 로
++재실행해도 중복 적재 없음 (idempotent). 1 turn = 1 Episode.
++
++### 3. Retrieve → retrieve.jsonl
++
++```bash
++uv run python -m evaluation.longmemeval.retrieve \
++    --in-file evaluation/data/longmemeval_s_cleaned.json \
++    --config-path evaluation/longmemeval/configuration.yml \
++    --session-prefix $PREFIX \
++    --top-k 50 \
++    --out results/$PREFIX/retrieve.jsonl \
++    $LIMIT_ARG
++```
++
++`--top-k` 만 바꿔 retrieve 만 다시 돌릴 수 있음 (재-ingest 불필요).
++gold_turn_ids 는 `--in-file` 의 has_answer=True turn 들로 자동 채워짐
++(`s_cleaned` / `m_cleaned` / `oracle` 모두 has_answer 보유).
++
++**이웃 turn 포함** (`--expand-context`, 기본 0=없음): 매칭된 turn 주변을 함께
++회수. `expand_context // 3` 만큼 앞, 나머지는 뒤로 (forward 편향) — 예: `3` → 앞 1 +
++뒤 2, `6` → 앞 2 + 뒤 4. 이웃도 `--top-k`(후보 풀) 개수에 포함되니, 많이 키우면
++서로 다른 매칭이 들어갈 자리가 줄어듦. 각 row 에 `expand_context` 값이 기록됨.
++
++```bash
++# 이웃 끄기(기본) vs 앞1·뒤2 vs 앞2·뒤4 — 같은 ingest 재사용, retrieve 만 반복
++uv run python -m evaluation.longmemeval.retrieve \
++    --in-file evaluation/data/longmemeval_s_cleaned.json \
++    --config-path evaluation/longmemeval/configuration.yml \
++    --session-prefix $PREFIX --top-k 50 --expand-context 3 \
++    --out results/$PREFIX/retrieve_ctx3.jsonl
++
++# 이웃을 키울 땐 top-k 도 같이 키워 매칭 자리를 확보
++uv run python -m evaluation.longmemeval.retrieve ... \
++    --top-k 80 --expand-context 6 --out results/$PREFIX/retrieve_ctx6.jsonl
++
++# adaptive-k 와 함께 (이웃 포함된 풀에서 gap cut)
++uv run python -m evaluation.longmemeval.retrieve ... \
++    --top-k 50 --expand-context 3 --adaptive-k --adaptive-bias 1.0 \
++    --out results/$PREFIX/retrieve_ctx3_ak.jsonl
++
++# 적용 여부 확인 (row 에 기록된 값)
++jq -r '[.question_id, .expand_context, .num_episodes_retrieved] | @tsv' \
++   results/$PREFIX/retrieve_ctx3.jsonl | head
++```
++
++**Adaptive-k retrieval** (MemMachine `MemMachineAgent` 동작 옵션, 기본 OFF):
++`--adaptive-k` 를 주면 고정 `--top-k` 대신 `--top-k` 를 **후보 풀**로 보고
++점수 분포에서 **가장 큰 gap** 앞까지만 회수 (Taguchi et al., EMNLP 2025).
++질문마다 회수 chunk 수가 달라짐 — factoid 는 적게, aggregation 은 많게.
++
++```bash
++# 고정 top-k vs adaptive-k A/B (같은 ingest 재사용)
++uv run python -m evaluation.longmemeval.retrieve ... --top-k 50 \
++    --out results/$PREFIX/retrieve_fixed.jsonl
++uv run python -m evaluation.longmemeval.retrieve ... --top-k 50 --adaptive-k \
++    --out results/$PREFIX/retrieve_adaptive.jsonl
++```
++
++`--adaptive-min-k` (기본 1) 로 최소 회수 수, `--adaptive-max-k` (기본 0 = 후보 풀
++전체) 로 상한 지정. **너무 공격적으로 잘려 recall 이 떨어지면** `--adaptive-bias`
++(기본 0.0) 를 0.5~2.0 으로 올려 cut 을 늦추거나(더 많이 유지), 가장 확실하게는
++`--adaptive-min-k` 로 하한을 올린다. 로그/`retrieve.jsonl` 에 질문별
++`kept`/`adaptive_bias` 가 기록됨. 구현은 `memmachine_server`의
++`MemMachineAgent.do_query` 자체에 들어가 있어 서버 retrieval 경로 전반에서
++`QueryParam(adaptive_k=True)` 로 켤 수 있음. 자세히는
++`docs/msr/adaptive_k_retrieval.md`.
++
++### 3-A. (선택) ID 기반 recall
++
++```bash
++uv run python -m evaluation.longmemeval.recall_id \
++    --retrieve results/$PREFIX/retrieve.jsonl
++```
++
++`gold_turn_ids` ∩ `retrieved_turn_ids` 기반 overall + 카테고리별 평균 recall.
++`--curve` 로 recall@k 곡선 (k=1..50). 자세한 정의는 위 "ID-기반 recall" 절.
++
++### 4. Generate → generate.jsonl
++
++```bash
++uv run python -m evaluation.longmemeval.generate \
++    --retrieve results/$PREFIX/retrieve.jsonl \
++    --config-path evaluation/longmemeval/configuration.yml \
++    --out results/$PREFIX/generate.jsonl \
++    $LIMIT_ARG
++```
++
++upstream `src/generation/run_generation.py` 의 `LME_origin_prompt` 를 verbatim
++으로 사용. CoT 원하면 `--answer-prompt LME_origin_cot_prompt`.
++
++### 5. Judge → judge.jsonl + 정확도 요약
++
++```bash
++uv run python -m evaluation.longmemeval.judge \
++    --generate results/$PREFIX/generate.jsonl \
++    --config-path evaluation/longmemeval/configuration.yml \
++    --out results/$PREFIX/judge.jsonl \
++    $LIMIT_ARG
++```
++
++upstream `src/evaluation/evaluate_qa.py` 의 `get_anscheck_prompt` (5 task +
++abstention) + lenient yes/no parser **verbatim**. 끝나면 overall + 카테고리별
++정확도 표 stdout 자동 출력.
++
++### 스모크 → 풀 런
++
++step 2~5 가 `--limit 1` 로 통과하면 `LIMIT_ARG=""` 로 같은 명령 재실행 →
++500 문항 풀. `--concurrency N` 으로 가속 가능 (Neo4j / LLM API rate 부하 ↑).
++
++### 다른 실험 병행
++
++`PREFIX` 만 바꿔서 같은 Neo4j 안에서 별개 실험 공존. session_id 가 prefix
++별로 격리되어 cross-experiment contamination 0.
++
++## upstream / lme_updated 정렬 상태
++
++| 항목 | upstream | lme_updated | 우리 |
++|---|---|---|---|
++| 격리 단위 | per-question in-memory corpus | per-question Qdrant collection | per-question Neo4j session_id |
++| Ingest 단위 | 1 turn = 1 corpus item | 1 turn = 1 Event → segmenter(500자) | 1 turn = 1 Episode |
++| Recall 의미론 | turn-level binary | turn-level binary | turn-level binary (fact-piece hit = turn recalled) |
++| Answer prompt | LME_origin / LME_origin_cot | mastra-augmented | **upstream verbatim** |
++| Judge prompt + yes/no parser | `get_anscheck_prompt` + lenient | 동일 (verbatim) | 동일 (verbatim) |
++
++algorithmic 단위 + 의미론 정렬됨. recall 절대값까지 동일 재현 원하면
++embedder / reranker / exact-cosine 추가 정렬 필요 — `_common.py` 위 doc 의
++"upstream 점수와 동일한 결과를 원하면" 섹션 참고.
++
++## 정리 메모
++
++- **idempotent re-run**: 같은 prefix 로 ingest 재실행 시 매 질문 시작 시
++  `delete_session_episodes()` 가 먼저 돌아 중복 적재 없음.
++- **상위 디렉토리 정리**: 다른 prefix 로 옮기거나 모든 lme_iso_* 한 번에
++  지우는 cleanup 스크립트는 없음. 필요하면 Neo4j Cypher 직접 또는
++  `docker compose down -v` 로 전체 초기화.
++- **LLM 모델 분리 (3 필드)**: upstream RetrievalAgentConf 는 세 필드 지원
++  — `llm_model` (retrieval / planning default), `answer_llm_model` (답변 전용),
++  `judge_llm_model` (judge 전용). 우리 `_common.get_answer_llm` 은
++  `answer_llm_model` → `llm_model`, `get_judge_llm` 은 `judge_llm_model` →
++  답변 LLM 순으로 fallback. 셋 다 같은 모델이면 `llm_model` 만 두면 됨.
++
++## upstream 점수와 동일한 결과를 원하면
++
++algorithmic 단위는 이미 정렬. **완전 동일 (bit-for-bit)** 까지 가려면
++profile / DB 차원 3 가지 추가 정렬:
++
++1. **Reranker 제거** — upstream 은 flat retrieval. 현재 default 는
++   `rrf-hybrid([bm25, identity])`. configuration.yml 에서 reranker 를
++   `identity` 단일로.
++2. **같은 embedder** — upstream 은 contriever / stella / gte. configuration.yml
++   의 embedder 만 swap (resources.embedders 에 ID 추가 후 long_term_memory.embedder
++   가 그걸 가리키게).
++3. **Exact cosine search** — Neo4j 의 HNSW ANN 은 근사. 정확 일치 원하면
++   ANN 인덱스 끄거나 fallback 조건 강화.
++
++위 셋 없이도 alignment 충분. **시스템 평가**가 목적이면 default OK,
++**upstream 점수표 재현**이 목적이면 추가 정렬 권장.
+diff --git a/evaluation/longmemeval/__init__.py b/evaluation/longmemeval/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/evaluation/longmemeval/_common.py b/evaluation/longmemeval/_common.py
+new file mode 100644
+index 0000000..d487816
+--- /dev/null
++++ b/evaluation/longmemeval/_common.py
+@@ -0,0 +1,362 @@
++"""Standalone helpers for `evaluation/longmemeval/`.
++
++This module isolates the directory from the rest of the eval-tool tree:
++nothing here imports from `evaluation/retrieval_agent/`,
++`evaluation/utils/agent_utils.py`, or `scripts/`. The only dependency
++is the workspace package `memmachine_server` (the server code itself).
++
++That means `evaluation/longmemeval/` keeps working even if
++`evaluation/retrieval_agent/` is reverted to main-branch state.
++
++Helpers:
++  - load_eval_config            ResourceManager from configuration.yml
++  - build_memory_and_agent      EpisodicMemory + MemMachineAgent per session
++  - get_answer_llm / get_judge_llm  LanguageModel from RM
++  - set_safe_embedder_limits    embedder request-size cap
++  - collect_supporting_facts    has_answer=True turn contents
++  - parse_session_dt            longmemeval session_date parser
++
++Upstream-aligned prompts (verbatim from xiaowu0162/LongMemEval):
++  - ANSWER_PROMPTS              {LME_origin_prompt, LME_origin_cot_prompt}
++                                from src/generation/run_generation.py
++  - get_anscheck_prompt         from src/evaluation/evaluate_qa.py
++"""
++
++from __future__ import annotations
++
++from datetime import UTC, datetime
++from pathlib import Path
++from typing import Any
++
++from memmachine_server.common.configuration import Configuration
++from memmachine_server.common.language_model.language_model import LanguageModel
++from memmachine_server.common.metrics_factory import PrometheusMetricsFactory
++from memmachine_server.common.resource_manager.resource_manager import (
++    ResourceManagerImpl,
++)
++from memmachine_server.episodic_memory.episodic_memory import (
++    EpisodicMemory,
++    EpisodicMemoryParams,
++)
++from memmachine_server.episodic_memory.long_term_memory import LongTermMemory
++
++# upstream/main 50+ 커밋 위에선 LongTermMemoryParams 가 discriminated-union
++# 의 type alias (= 인스턴스화 불가) 가 되고, declarative 백엔드는 별도
++# DeclarativeBackendParams 로 분리됨 (PR #1395). origin/main 에선 여전히 flat
++# instantiable 클래스. 두 브랜치 모두에서 작동하도록 shim — `_DeclarativeParams`
++# 가 어느 쪽이든 같은 필드 (session_id / vector_graph_store / embedder /
++# reranker / message_sentence_chunking) 로 인스턴스화 가능.
++try:
++    from memmachine_server.episodic_memory.long_term_memory import (
++        DeclarativeBackendParams as _DeclarativeParams,
++    )
++except ImportError:  # origin/main
++    from memmachine_server.episodic_memory.long_term_memory import (
++        LongTermMemoryParams as _DeclarativeParams,
++    )
++
++from memmachine_server.retrieval_agent.agents import MemMachineAgent
++from memmachine_server.retrieval_agent.common.agent_api import (
++    AgentToolBase,
++    AgentToolBaseParam,
++)
++
++
++def load_eval_config(config_path: str) -> ResourceManagerImpl:
++    """Load working configuration.yml → ResourceManagerImpl."""
++    config_file = Path(config_path)
++    if not config_file.exists():
++        raise FileNotFoundError(
++            f"configuration.yml not found at {config_path!r}. Run "
++            "scripts/generate_config.py first or supply a hand-written yml."
++        )
++    config = Configuration.load_yml_file(str(config_file))
++    return ResourceManagerImpl(config)
++
++
++async def build_memory_and_agent(
++    rm: ResourceManagerImpl, session_id: str
++) -> tuple[EpisodicMemory, AgentToolBase]:
++    """Per-session EpisodicMemory + MemMachineAgent.
++
++    ResourceManagerImpl caches embedder / reranker / vector_graph_store
++    resources internally, so calling this per question only creates new
++    wrappers — no model re-loading.
++    """
++    conf = rm.config
++    ltm_conf = conf.episodic_memory.long_term_memory
++    if ltm_conf is None:
++        raise ValueError(
++            "episodic_memory.long_term_memory is not configured in configuration.yml"
++        )
++    if not ltm_conf.embedder:
++        raise ValueError(
++            "episodic_memory.long_term_memory.embedder is not set"
++        )
++    if not ltm_conf.vector_graph_store:
++        raise ValueError(
++            "episodic_memory.long_term_memory.vector_graph_store is not set"
++        )
++
++    embedder = await rm.get_embedder(ltm_conf.embedder)
++    reranker_id = conf.retrieval_agent.reranker or ltm_conf.reranker
++    if not reranker_id:
++        raise ValueError(
++            "No reranker configured "
++            "(retrieval_agent.reranker or episodic_memory.long_term_memory.reranker)"
++        )
++    reranker = await rm.get_reranker(reranker_id)
++    vector_graph_store = await rm.get_vector_graph_store(
++        ltm_conf.vector_graph_store
++    )
++
++    chunking = getattr(ltm_conf, "message_sentence_chunking", None) or False
++
++    long_term_memory = LongTermMemory(
++        _DeclarativeParams(
++            session_id=session_id,
++            vector_graph_store=vector_graph_store,
++            embedder=embedder,
++            reranker=reranker,
++            message_sentence_chunking=chunking,
++        )
++    )
++    memory = EpisodicMemory(
++        EpisodicMemoryParams(
++            session_key=session_id,
++            metrics_factory=PrometheusMetricsFactory(),
++            long_term_memory=long_term_memory,
++            short_term_memory=None,
++            enabled=True,
++        ),
++    )
++
++    query_agent: AgentToolBase = MemMachineAgent(
++        AgentToolBaseParam(
++            model=None,
++            children_tools=[],
++            extra_params={},
++            reranker=reranker,
++        )
++    )
++
++    return memory, query_agent
++
++
++def set_safe_embedder_limits(memory: EpisodicMemory) -> None:
++    """Cap embedder request size below typical model token ceilings."""
++    long_term_memory = getattr(memory, "long_term_memory", None)
++    declarative_memory = (
++        getattr(long_term_memory, "declarative_memory", None)
++        if long_term_memory is not None
++        else None
++    )
++    embedder = getattr(declarative_memory, "_embedder", None)
++    if embedder is None:
++        return
++    if hasattr(embedder, "max_total_input_length_per_request"):
++        embedder.max_total_input_length_per_request = 30000
++
++
++def collect_supporting_facts(sample: dict[str, Any]) -> list[str]:
++    """Return has_answer=True turn contents from a longmemeval sample."""
++    facts: list[str] = []
++    for session in sample.get("haystack_sessions", []) or []:
++        for turn in session or []:
++            if turn.get("has_answer"):
++                content = str(turn.get("content", "")).strip()
++                if content:
++                    facts.append(content)
++    return facts
++
++
++def collect_gold_turn_ids(sample: dict[str, Any]) -> set[str]:
++    """Return gold turn-ID set `{"<haystack_session_id>:<turn_idx>", ...}`.
++
++    Format = `evaluation/episodic_memory/longmemeval_models.py:91` 의
++    `answer_turn_indices` 와 동일. has_answer=True turn 들의 `(session_id,
++    turn_idx)` 페어. longmemeval_s_cleaned / m_cleaned / oracle 모두
++    has_answer 플래그를 turn 별로 가지고 있어 entry 자체로 직접 추출 가능
++    (oracle cross-reference 불필요). dataset 별 has_answer=True 개수는
++    896 으로 동일 — gold 셋이 데이터셋 무관 byte-equal.
++    """
++    gold: set[str] = set()
++    sids = sample.get("haystack_session_ids", []) or []
++    sessions = sample.get("haystack_sessions", []) or []
++    for sid, sess in zip(sids, sessions, strict=False):
++        for i, turn in enumerate(sess or []):
++            if turn.get("has_answer"):
++                gold.add(f"{sid}:{i}")
++    return gold
++
++
++def retrieved_turn_ids(chunks: list[Any]) -> list[str]:
++    """Extract `<lme_session_id>:<lme_turn_idx>` IDs from retrieved Episodes.
++
++    `evaluation/longmemeval/ingest.py` 가 매 turn 의 Episode.metadata 에
++    이 두 키를 넣음. metadata 가 빠진 chunk 는 skip (e.g., 다른 ingest
++    경로로 적재된 데이터). 순서는 retrieve 순서 보존 (recall@k 곡선 계산용).
++    """
++    out: list[str] = []
++    for ep in chunks:
++        md = getattr(ep, "metadata", None) or {}
++        sid = md.get("lme_session_id")
++        idx = md.get("lme_turn_idx")
++        if sid is not None and idx is not None:
++            out.append(f"{sid}:{idx}")
++    return out
++
++
++def parse_session_dt(ts: str) -> datetime:
++    """Parse a longmemeval session_date string ('2023/04/10 (Mon) 23:07')."""
++    return datetime.strptime(ts, "%Y/%m/%d (%a) %H:%M").replace(tzinfo=UTC)
++
++
++# ---------------------------------------------------------------------------
++# Language-model helpers (answer + judge)
++# ---------------------------------------------------------------------------
++async def get_answer_llm(rm: ResourceManagerImpl) -> LanguageModel:
++    """LanguageModel for the answer step.
++
++    Prefers `retrieval_agent.answer_llm_model` (upstream's dedicated answer
++    field) if set, falls back to `retrieval_agent.llm_model`. `getattr` 로
++    필드 부재 (origin/main) 도 무해.
++    """
++    rac = rm.config.retrieval_agent
++    model_id = getattr(rac, "answer_llm_model", None) or rac.llm_model
++    if not model_id:
++        raise ValueError(
++            "Neither retrieval_agent.answer_llm_model nor "
++            "retrieval_agent.llm_model is set in configuration.yml"
++        )
++    return await rm.get_language_model(model_id)
++
++
++async def get_judge_llm(rm: ResourceManagerImpl) -> LanguageModel:
++    """LanguageModel for the judge step.
++
++    Prefers `retrieval_agent.judge_llm_model` if set, falls back to the
++    answer LLM (answer_llm_model → llm_model).
++    """
++    judge_id = getattr(rm.config.retrieval_agent, "judge_llm_model", None)
++    if judge_id:
++        return await rm.get_language_model(judge_id)
++    return await get_answer_llm(rm)
++
++
++# ---------------------------------------------------------------------------
++# Upstream-verbatim answer prompts
++# (from xiaowu0162/LongMemEval src/generation/run_generation.py:54-57)
++# ---------------------------------------------------------------------------
++_ANSWER_PROMPT_PLAIN = (
++    "I will give you several history chats between you and a user. "
++    "Please answer the question based on the relevant chat history.\n\n\n"
++    "History Chats:\n\n{memories}\n\nCurrent Date: {question_date}\n"
++    "Question: {question}\nAnswer:"
++)
++
++_ANSWER_PROMPT_COT = (
++    "I will give you several history chats between you and a user. "
++    "Please answer the question based on the relevant chat history. "
++    "Answer the question step by step: first extract all the relevant "
++    "information, and then reason over the information to get the "
++    "answer.\n\n\nHistory Chats:\n\n{memories}\n\nCurrent Date: "
++    "{question_date}\nQuestion: {question}\nAnswer (step by step):"
++)
++
++ANSWER_PROMPTS: dict[str, str] = {
++    "LME_origin_prompt": _ANSWER_PROMPT_PLAIN,
++    "LME_origin_cot_prompt": _ANSWER_PROMPT_COT,
++}
++
++
++# ---------------------------------------------------------------------------
++# Upstream-verbatim judge prompts
++# (from xiaowu0162/LongMemEval src/evaluation/evaluate_qa.py:24-43)
++# ---------------------------------------------------------------------------
++def get_anscheck_prompt(
++    task: str,
++    question: str,
++    answer: str,
++    response: str,
++    abstention: bool = False,
++) -> str:
++    """Verbatim port of upstream `get_anscheck_prompt`. Picks one of 5
++    templates by question_type; abstention has its own template.
++    """
++    if not abstention:
++        if task in (
++            "single-session-user",
++            "single-session-assistant",
++            "multi-session",
++        ):
++            template = (
++                "I will give you a question, a correct answer, and a response "
++                "from a model. Please answer yes if the response contains the "
++                "correct answer. Otherwise, answer no. If the response is "
++                "equivalent to the correct answer or contains all the "
++                "intermediate steps to get the correct answer, you should "
++                "also answer yes. If the response only contains a subset of "
++                "the information required by the answer, answer no. \n\n"
++                "Question: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
++                "Is the model response correct? Answer yes or no only."
++            )
++        elif task == "temporal-reasoning":
++            template = (
++                "I will give you a question, a correct answer, and a response "
++                "from a model. Please answer yes if the response contains the "
++                "correct answer. Otherwise, answer no. If the response is "
++                "equivalent to the correct answer or contains all the "
++                "intermediate steps to get the correct answer, you should "
++                "also answer yes. If the response only contains a subset of "
++                "the information required by the answer, answer no. In "
++                "addition, do not penalize off-by-one errors for the number "
++                "of days. If the question asks for the number of "
++                "days/weeks/months, etc., and the model makes off-by-one "
++                "errors (e.g., predicting 19 days when the answer is 18), "
++                "the model's response is still correct. \n\nQuestion: {}\n\n"
++                "Correct Answer: {}\n\nModel Response: {}\n\n"
++                "Is the model response correct? Answer yes or no only."
++            )
++        elif task == "knowledge-update":
++            template = (
++                "I will give you a question, a correct answer, and a response "
++                "from a model. Please answer yes if the response contains the "
++                "correct answer. Otherwise, answer no. If the response "
++                "contains some previous information along with an updated "
++                "answer, the response should be considered as correct as "
++                "long as the updated answer is the required answer.\n\n"
++                "Question: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
++                "Is the model response correct? Answer yes or no only."
++            )
++        elif task == "single-session-preference":
++            template = (
++                "I will give you a question, a rubric for desired "
++                "personalized response, and a response from a model. Please "
++                "answer yes if the response satisfies the desired response. "
++                "Otherwise, answer no. The model does not need to reflect "
++                "all the points in the rubric. The response is correct as "
++                "long as it recalls and utilizes the user's personal "
++                "information correctly.\n\nQuestion: {}\n\nRubric: {}\n\n"
++                "Model Response: {}\n\nIs the model response correct? "
++                "Answer yes or no only."
++            )
++        else:
++            raise NotImplementedError(f"Unknown task type: {task!r}")
++    else:
++        template = (
++            "I will give you an unanswerable question, an explanation, and a "
++            "response from a model. Please answer yes if the model correctly "
++            "identifies the question as unanswerable. The model could say "
++            "that the information is incomplete, or some other information "
++            "is given but the asked information is not.\n\nQuestion: {}\n\n"
++            "Explanation: {}\n\nModel Response: {}\n\nDoes the model "
++            "correctly identify the question as unanswerable? Answer yes or "
++            "no only."
++        )
++    return template.format(question, answer, response)
++
++
++def parse_yes_no_lenient(raw: str) -> bool:
++    """Upstream's lenient parser: ``'yes' in raw.lower()``."""
++    return "yes" in (raw or "").lower()
+diff --git a/evaluation/longmemeval/example_configuration.yml b/evaluation/longmemeval/example_configuration.yml
+new file mode 100644
+index 0000000..55be8e2
+--- /dev/null
++++ b/evaluation/longmemeval/example_configuration.yml
+@@ -0,0 +1,315 @@
++# Example working configuration.yml for evaluation/longmemeval/.
++#
++# 기본값: 내부 OpenAI-호환 endpoint 사용 (Qwen3 embedding + Qwen3.5 LLM).
++# 외부 서비스를 쓰려면 resources.embedders / resources.language_models 의
++# config 만 자기 endpoint 로 바꾸면 됨 (예: OpenAI 공식 API, Gemini, Anthropic
++# 호환 endpoint 등).
++#
++# 사용법:
++#   1. 이 파일을 evaluation/longmemeval/configuration.yml 로 복사 후
++#      두 개 placeholder 만 채우면 됨:
++#        <NEO4J_PASSWORD>    — Neo4j 비밀번호
++#        <POSTGRES_PASSWORD> — Postgres 비밀번호
++#      (embedder / LLM 의 api_key 는 default "empty" — 내부 endpoint 가정.
++#       외부 OpenAI 등 쓰려면 실제 키로 교체.)
++#   2. Neo4j + Postgres 띄우기 (docker compose 등)
++#   3. evaluation/longmemeval/{ingest,retrieve,generate,judge}.py 에
++#      `--config-path evaluation/longmemeval/configuration.yml` 전달
++#
++# 우리 코드가 읽는 필드 (그 외 블록은 서버 운영 호환을 위해 둠):
++#   episodic_memory.long_term_memory.{embedder, reranker, vector_graph_store,
++#                                      message_sentence_chunking}
++#   retrieval_agent.{llm_model, reranker, judge_llm_model}
++#   resources.* (위 ID 들을 해결할 때 참조)
++
++episode_store:
++  database: postgres_main
++  with_count_cache: true
++
++episodic_memory:
++  enabled: true
++  long_term_memory_enabled: true
++  long_term_memory:
++    embedder: qwen3_embed_4b
++    reranker: rrf_hybrid_main
++    vector_graph_store: neo4j_main
++    message_sentence_chunking: false
++  # short_term_memory 는 evaluation/longmemeval 코드가
++  # short_term_memory=None 으로 끄기 때문에 사용 안 됨. 런타임 영향 0.
++  short_term_memory_enabled: false
++
++retrieval_agent:
++  # llm_model: retrieval / planning 단계 (default agent model). 답변 / judge
++  # 가 별도 지정 없으면 이 값으로 fallback.
++  llm_model: qwen35_397b
++  reranker: rrf_hybrid_main
++  # answer_llm_model: 답변 LLM 만 별도 지정 (미지정 시 llm_model 재사용).
++  answer_llm_model: qwen35_397b
++  # judge_llm_model: judge LLM 만 별도 지정 (미지정 시 answer_llm_model →
++  # llm_model 순으로 fallback). 더 강한 모델 (GPT-4 등) 을 judge 에 쓰고
++  # 싶으면 여기에 다른 language_models 의 ID 지정.
++  judge_llm_model: qwen35_397b
++
++semantic_memory:
++  enabled: false
++  # config_database 는 Pydantic 필수 필드 — semantic_memory 가 disabled
++  # 라도 비워두면 validation 실패. postgres_main 가리키기만 하면 됨
++  # (semantic_memory 자체는 enabled: false 라 사용 안 됨).
++  config_database: postgres_main
++
++logging:
++  level: INFO
++
++session_manager:
++  database: postgres_main
++
++resources:
++  databases:
++    neo4j_main:
++      provider: neo4j
++      config:
++        uri: bolt://localhost:7687
++        user: neo4j
++        password: "<NEO4J_PASSWORD>"
++    postgres_main:
++      provider: postgres
++      config:
++        dialect: postgresql
++        driver: asyncpg
++        host: localhost
++        port: 5432
++        user: memmachine
++        password: "<POSTGRES_PASSWORD>"
++        db_name: memmachine
++
++  embedders:
++    qwen3_embed_4b:
++      provider: openai
++      config:
++        api_key: "empty"
++        base_url: http://10.78.59.136:8001/v1
++        model: Qwen/Qwen3-Embedding-4B
++        dimensions: 2560
++
++  language_models:
++    qwen35_397b:
++      provider: openai-chat-completions
++      config:
++        api_key: "empty"
++        base_url: http://10.78.58.25:8026/v1
++        model: nvidia/Qwen3.5-397B-A17B-NVFP4
++
++  rerankers:
++    bm25_main:
++      provider: bm25
++      config:
++        k1: 1.5
++        b: 0.75
++        epsilon: 0.25
++        language: english
++        tokenizer: default
++    identity_main:
++      provider: identity
++      config: {}
++    rrf_hybrid_main:
++      provider: rrf-hybrid
++      config:
++        reranker_ids:
++          - bm25_main
++          - identity_main
++        k: 60
++
++# ============================================================================
++# 옵션 예시 모음 — 활성 설정 (위) 대신 / 추가로 쓸 수 있는 변종들.
++# 필요한 블록을 위쪽 active 영역에 복붙해서 ID 만 일관성 있게 바꾸면 됨.
++# ============================================================================
++
++# ----------------------------------------------------------------------------
++# 1. Chunk on/off — episodic_memory.long_term_memory.message_sentence_chunking
++# ----------------------------------------------------------------------------
++#
++# default: false (1 turn = 1 Episode, upstream `--granularity turn` 정렬)
++# true 면 LongTermMemory 가 turn 을 문장 단위로 추가 분할 → 1 turn 이 여러
++# Episode 로 흩어짐. 검색 단위가 더 미세해지지만 upstream 의 turn-단위와
++# 멀어짐. LongMemEval 정렬 평가에선 false 권장.
++#
++# episodic_memory:
++#   long_term_memory:
++#     message_sentence_chunking: true   # 문장 단위 분할 (실험용)
++
++# ----------------------------------------------------------------------------
++# 2. LLM 변종 — resources.language_models
++# ----------------------------------------------------------------------------
++
++# 2a. OpenAI Chat Completions (cloud)
++# resources:
++#   language_models:
++#     openai_4o:
++#       provider: openai-chat-completions
++#       config:
++#         api_key: "<OPENAI_API_KEY>"
++#         base_url: https://api.openai.com/v1
++#         model: gpt-4o
++#     openai_4o_mini:
++#       provider: openai-chat-completions
++#       config:
++#         api_key: "<OPENAI_API_KEY>"
++#         base_url: https://api.openai.com/v1
++#         model: gpt-4o-mini
++
++# 2b. OpenAI Responses API (gpt-5 계열)
++# resources:
++#   language_models:
++#     openai_gpt5_mini:
++#       provider: openai-responses
++#       config:
++#         api_key: "<OPENAI_API_KEY>"
++#         model: gpt-5-mini
++
++# 2c. LiteLLM (multi-provider: Anthropic / Gemini / Mistral / etc.)
++# resources:
++#   language_models:
++#     claude_sonnet_4:
++#       provider: litellm
++#       config:
++#         api_key: "<ANTHROPIC_API_KEY>"
++#         model: anthropic/claude-sonnet-4
++#     gemini_25_flash:
++#       provider: litellm
++#       config:
++#         api_key: "<GEMINI_API_KEY>"
++#         model: gemini/gemini-2.5-flash
++
++# 2d. Amazon Bedrock (Claude / Llama / Titan 등 via AWS)
++# resources:
++#   language_models:
++#     bedrock_claude_4:
++#       provider: amazon-bedrock
++#       config:
++#         aws_access_key_id: "<AWS_KEY>"
++#         aws_secret_access_key: "<AWS_SECRET>"
++#         region: us-west-2
++#         model_id: anthropic.claude-sonnet-4-20250514-v1:0
++
++# 2e. Ollama (로컬 OpenAI-호환 endpoint)
++# resources:
++#   language_models:
++#     ollama_llama3_3:
++#       provider: openai-chat-completions
++#       config:
++#         api_key: "empty"
++#         base_url: http://host.docker.internal:11434/v1   # docker → host
++#         model: llama3.3:70b
++
++# ----------------------------------------------------------------------------
++# 3. Embedder 변종 — resources.embedders
++# ----------------------------------------------------------------------------
++
++# 3a. Sentence-transformer (로컬 HF 모델, GPU 또는 CPU)
++# resources:
++#   embedders:
++#     st_bge_base:
++#       provider: sentence-transformer
++#       config:
++#         model: BAAI/bge-base-en-v1.5
++#         max_input_length: 512
++
++# 3b. OpenAI cloud embedding
++# resources:
++#   embedders:
++#     openai_3_small:
++#       provider: openai
++#       config:
++#         api_key: "<OPENAI_API_KEY>"
++#         base_url: https://api.openai.com/v1
++#         model: text-embedding-3-small
++#         dimensions: 1536
++#     openai_3_large:
++#       provider: openai
++#       config:
++#         api_key: "<OPENAI_API_KEY>"
++#         base_url: https://api.openai.com/v1
++#         model: text-embedding-3-large
++#         dimensions: 3072
++
++# 3c. Amazon Bedrock (Titan / Cohere)
++# resources:
++#   embedders:
++#     bedrock_titan:
++#       provider: amazon-bedrock
++#       config:
++#         aws_access_key_id: "<AWS_KEY>"
++#         aws_secret_access_key: "<AWS_SECRET>"
++#         region: us-west-2
++#         model_id: amazon.titan-embed-text-v2:0
++#         dimensions: 1024
++
++# ----------------------------------------------------------------------------
++# 4. Reranker 변종 — resources.rerankers
++# ----------------------------------------------------------------------------
++
++# 4a. Identity 단일 (upstream LongMemEval 처럼 flat retrieval, no rerank)
++# resources:
++#   rerankers:
++#     identity_only:
++#       provider: identity
++#       config: {}
++# retrieval_agent:
++#   reranker: identity_only
++
++# 4b. Cohere Rerank (Cohere API 직접)
++# resources:
++#   rerankers:
++#     cohere_v3:
++#       provider: cohere
++#       config:
++#         api_key: "<COHERE_API_KEY>"
++#         model: rerank-v3.5
++
++# 4c. Cohere Rerank via Amazon Bedrock
++# resources:
++#   rerankers:
++#     bedrock_cohere_v3:
++#       provider: amazon-bedrock
++#       config:
++#         aws_access_key_id: "<AWS_KEY>"
++#         aws_secret_access_key: "<AWS_SECRET>"
++#         region: us-west-2
++#         model_id: cohere.rerank-v3-5:0
++
++# 4d. Cross-encoder (HuggingFace ms-marco-MiniLM 등, 로컬)
++# resources:
++#   rerankers:
++#     cross_enc:
++#       provider: cross-encoder
++#       config:
++#         model: cross-encoder/ms-marco-MiniLM-L-6-v2
++
++# 4e. Embedder reranker (embedder 자체로 재점수)
++# resources:
++#   rerankers:
++#     embedder_rerank:
++#       provider: embedder
++#       config:
++#         embedder_id: qwen3_embed_4b
++
++# ----------------------------------------------------------------------------
++# 5. LLM 모델 분리 — answer / judge 를 서로 다른 모델로
++# ----------------------------------------------------------------------------
++#
++# default 는 셋 다 같은 qwen35_397b. 답변은 가벼운 모델, judge 는 강한 모델
++# 같이 분리하려면:
++#
++# resources:
++#   language_models:
++#     answer_gpt5_mini:
++#       provider: openai-responses
++#       config: { api_key: "<KEY>", model: gpt-5-mini }
++#     judge_gpt4o:
++#       provider: openai-chat-completions
++#       config: { api_key: "<KEY>", base_url: https://api.openai.com/v1, model: gpt-4o }
++#
++# retrieval_agent:
++#   llm_model: answer_gpt5_mini       # planning / fallback
++#   answer_llm_model: answer_gpt5_mini
++#   judge_llm_model: judge_gpt4o       # judge 만 강한 모델
+diff --git a/evaluation/longmemeval/generate.py b/evaluation/longmemeval/generate.py
+new file mode 100644
+index 0000000..f3accbe
+--- /dev/null
++++ b/evaluation/longmemeval/generate.py
+@@ -0,0 +1,165 @@
++#!/usr/bin/env python3
++"""LongMemEval generate — answer LLM 호출 (upstream-aligned prompt).
++
++`retrieve.jsonl` 의 각 row 에 대해 upstream LongMemEval 의 답변 prompt
++(LME_origin_prompt 또는 LME_origin_cot_prompt) 를 그대로 사용해 answer
++LLM 을 호출하고 `generate.jsonl` 을 출력.
++
++본 모듈은 `evaluation/longmemeval/_common.py` 와 `memmachine_server.*` 만
++import — `evaluation/retrieval_agent/`, `evaluation/utils/`, `scripts/` 의존 없음.
++
++Upstream 의 prompt 는 `_common.ANSWER_PROMPTS` 에 verbatim 으로 들어가
++있고, 기본은 `LME_origin_prompt`. CoT 변종을 쓰려면
++`--answer-prompt LME_origin_cot_prompt`.
++
++Usage:
++    uv run python -m evaluation.longmemeval.generate \\
++        --retrieve results/lme_iso/retrieve.jsonl \\
++        --config-path configs/generated/<run>_configuration.yml \\
++        --out results/lme_iso/generate.jsonl
++"""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import json
++import sys
++import time
++from pathlib import Path
++from typing import Any
++
++REPO_ROOT = Path(__file__).resolve().parent.parent.parent
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from evaluation.longmemeval._common import (  # noqa: E402
++    ANSWER_PROMPTS,
++    get_answer_llm,
++    load_eval_config,
++)
++
++
++def _read_jsonl(path: Path) -> list[dict[str, Any]]:
++    with open(path) as f:
++        return [json.loads(line) for line in f if line.strip()]
++
++
++async def _generate_one(
++    row: dict[str, Any],
++    answer_llm: Any,
++    prompt_template: str,
++) -> dict[str, Any]:
++    question = str(row.get("question", "")).strip()
++    chunks_text = str(row.get("chunks_text", ""))
++    question_date = str(row.get("question_date", ""))
++    prompt = prompt_template.format(
++        memories=chunks_text,
++        question_date=question_date,
++        question=question,
++    )
++    t0 = time.perf_counter()
++    rsp_text, _ = await answer_llm.generate_response(user_prompt=prompt)
++    latency = time.perf_counter() - t0
++    return {
++        "question": question,
++        "question_id": str(row.get("question_id", "")),
++        "category": str(row.get("category", "")),
++        "question_date": question_date,
++        "sweep": row.get("sweep", {}),
++        "cell_idx": row.get("cell_idx", 0),
++        "golden_answer": str(row.get("golden_answer", "")),
++        "model_answer": rsp_text,
++        "llm_time": latency,
++    }
++
++
++async def _run(args: argparse.Namespace) -> None:
++    if args.answer_prompt not in ANSWER_PROMPTS:
++        raise SystemExit(
++            f"Unknown --answer-prompt {args.answer_prompt!r}. "
++            f"Available: {sorted(ANSWER_PROMPTS)}"
++        )
++    prompt_template = ANSWER_PROMPTS[args.answer_prompt]
++
++    rows = _read_jsonl(Path(args.retrieve))
++    if args.include_categories:
++        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
++        before = len(rows)
++        rows = [r for r in rows if str(r.get("category", "")) in keep]
++        print(
++            f"[lme-generate] category filter {sorted(keep)}: "
++            f"{before} -> {len(rows)}"
++        )
++    if args.limit is not None:
++        rows = rows[: args.limit]
++
++    rm = load_eval_config(args.config_path)
++    answer_llm = await get_answer_llm(rm)
++    print(
++        f"[lme-generate] policy={args.answer_prompt}  n={len(rows)}  "
++        f"concurrency={args.concurrency}"
++    )
++
++    sem = asyncio.Semaphore(args.concurrency)
++    out_rows: list[dict[str, Any] | None] = [None] * len(rows)
++
++    async def _one(row: dict[str, Any], idx: int) -> None:
++        async with sem:
++            out_rows[idx] = await _generate_one(row, answer_llm, prompt_template)
++            print(
++                f"[lme-generate] {idx + 1}/{len(rows)}  "
++                f"qid={row.get('question_id', '')}  "
++                f"t={out_rows[idx]['llm_time']:.1f}s"
++            )
++
++    await asyncio.gather(*[_one(r, i) for i, r in enumerate(rows)])
++
++    out_path = args.out_path
++    with open(out_path, "w") as f:
++        for r in out_rows:
++            if r is not None:
++                f.write(json.dumps(r, ensure_ascii=False) + "\n")
++    print(
++        f"[lme-generate] wrote {sum(r is not None for r in out_rows)} rows -> {out_path}"
++    )
++
++
++def main() -> int:
++    p = argparse.ArgumentParser(
++        description=__doc__,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    p.add_argument("--retrieve", required=True, help="retrieve.jsonl from retrieve.py")
++    p.add_argument(
++        "--config-path",
++        required=True,
++        help="Working configuration.yml (from scripts/generate_config.py)",
++    )
++    p.add_argument("--out", required=True, help="Output generate.jsonl path")
++    p.add_argument(
++        "--answer-prompt",
++        default="LME_origin_prompt",
++        choices=sorted(ANSWER_PROMPTS),
++        help=(
++            "Upstream prompt variant (default: LME_origin_prompt). "
++            "Use LME_origin_cot_prompt for chain-of-thought."
++        ),
++    )
++    p.add_argument("--limit", type=int, default=None)
++    p.add_argument("--include-categories", default=None)
++    p.add_argument(
++        "--concurrency",
++        type=int,
++        default=4,
++        help="Max in-flight answer-LLM calls (default: 4).",
++    )
++    args = p.parse_args()
++    args.out_path = Path(args.out).resolve()
++    args.out_path.parent.mkdir(parents=True, exist_ok=True)
++    asyncio.run(_run(args))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/longmemeval/ingest.py b/evaluation/longmemeval/ingest.py
+new file mode 100644
+index 0000000..c675aa0
+--- /dev/null
++++ b/evaluation/longmemeval/ingest.py
+@@ -0,0 +1,179 @@
++#!/usr/bin/env python3
++"""LongMemEval ingest — per-question session_id 격리 (MemMachine 백엔드).
++
++각 질문의 haystack 을 `session_id = <prefix>_<question_id>` 에 격리 적재.
++ingest 후엔 같은 prefix 로 `retrieve.py` 를 부르면 그 session 안에서만 검색.
++
++매 질문 시작 시 `delete_session_episodes()` 가 먼저 도니까 같은 prefix 로
++재실행해도 중복 적재 없이 idempotent.
++
++본 모듈은 `evaluation/longmemeval/_common.py` 와 `memmachine_server.*` 만
++import — `evaluation/retrieval_agent/`, `evaluation/utils/` 의존 없음.
++
++Usage:
++    uv run python -m evaluation.longmemeval.ingest \\
++        --in-file evaluation/data/longmemeval_s_cleaned.json \\
++        --config-path configs/generated/<run>_configuration.yml \\
++        --session-prefix lme_iso
++"""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import json
++import sys
++import time
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from typing import Any
++from uuid import uuid4
++
++REPO_ROOT = Path(__file__).resolve().parent.parent.parent
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from memmachine_server.common.episode_store import Episode  # noqa: E402
++
++from evaluation.longmemeval._common import (  # noqa: E402
++    build_memory_and_agent,
++    load_eval_config,
++    parse_session_dt,
++    set_safe_embedder_limits,
++)
++
++
++def _build_episodes(entry: dict, session_id: str) -> list[Episode]:
++    """entry 의 haystack 을 Episode 리스트로 변환.
++
++    **1 turn = 1 Episode** (upstream `run_retrieval.py --granularity turn`
++    과 동일 단위). turn 길이 무관 — 긴 turn 도 자르지 않음. embedder 의
++    max_input_length (e.g., bge-base = 512 token ≈ 2000자) 를 넘으면
++    임베딩 단계에서 silently truncate 되는 건 upstream 도 동일.
++
++    role 보존 (User/Assistant), session_date + turn_idx 초 timestamp.
++
++    Episode.metadata 에 `lme_session_id` (haystack_session_ids 의 원본 ID,
++    `session_key` 와 다름) + `lme_turn_idx` (그 session 안의 enumerate
++    index) 를 저장. retrieve 가 이 둘을 묶어 `{sid}:{idx}` turn-ID 로
++    내보내, oracle 의 has_answer=True turn 과 ID 교집합 기반 recall 계산
++    가능. (`evaluation/episodic_memory/longmemeval_models.py:91` 의
++    `answer_turn_indices = [f"{session_id}:{turn.index}"]` 와 같은 의미.)
++    """
++    episodes: list[Episode] = []
++    for sid, sess, sdate in zip(
++        entry.get("haystack_session_ids", []) or [],
++        entry.get("haystack_sessions", []) or [],
++        entry.get("haystack_dates", []) or [],
++        strict=False,
++    ):
++        try:
++            base_dt = parse_session_dt(sdate)
++        except (TypeError, ValueError):
++            base_dt = datetime.now(UTC)
++        for i, turn in enumerate(sess or []):
++            content = str(turn.get("content", "")).strip()
++            if not content:
++                continue
++            role = str(turn.get("role", "user"))
++            ts = base_dt + timedelta(seconds=i)
++            episodes.append(
++                Episode(
++                    uid=str(uuid4()),
++                    content=content,
++                    session_key=session_id,
++                    created_at=ts,
++                    producer_id="Assistant" if role == "assistant" else "User",
++                    producer_role=role,
++                    metadata={
++                        "lme_session_id": sid,
++                        "lme_turn_idx": i,
++                    },
++                )
++            )
++    return episodes
++
++
++async def _ingest_one(rm: Any, entry: dict, session_prefix: str) -> int:
++    qid = str(entry.get("question_id", ""))
++    session_id = f"{session_prefix}_{qid}"
++    memory, _query_agent = await build_memory_and_agent(rm, session_id)
++    set_safe_embedder_limits(memory)
++
++    await memory.delete_session_episodes()
++    episodes = _build_episodes(entry, session_id)
++    if episodes:
++        await memory.add_memory_episodes(episodes=episodes)
++    return len(episodes)
++
++
++async def _run(args: argparse.Namespace) -> None:
++    with open(args.in_file) as f:
++        entry_list = json.load(f)
++    if args.include_categories:
++        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
++        before = len(entry_list)
++        entry_list = [
++            e for e in entry_list if str(e.get("question_type", "")) in keep
++        ]
++        print(
++            f"[lme-ingest] category filter {sorted(keep)}: "
++            f"{before} -> {len(entry_list)}"
++        )
++    if args.limit is not None:
++        entry_list = entry_list[: args.limit]
++
++    rm = load_eval_config(args.config_path)
++    sem = asyncio.Semaphore(args.concurrency)
++
++    async def _one(entry: dict, idx: int) -> None:
++        async with sem:
++            t0 = time.perf_counter()
++            n = await _ingest_one(rm, entry, args.session_prefix)
++            dt = time.perf_counter() - t0
++            print(
++                f"[lme-ingest] {idx + 1}/{len(entry_list)}  "
++                f"qid={entry.get('question_id', '')}  episodes={n}  t={dt:.1f}s"
++            )
++
++    await asyncio.gather(
++        *[_one(e, i) for i, e in enumerate(entry_list)]
++    )
++    print(f"[lme-ingest] done — {len(entry_list)} questions ingested.")
++
++
++def main() -> int:
++    p = argparse.ArgumentParser(
++        description=__doc__,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    p.add_argument(
++        "--in-file",
++        required=True,
++        help="longmemeval_*.json (e.g. evaluation/data/longmemeval_s_cleaned.json)",
++    )
++    p.add_argument(
++        "--config-path",
++        required=True,
++        help="Working configuration.yml (from scripts/generate_config.py)",
++    )
++    p.add_argument(
++        "--session-prefix",
++        default="lme_iso",
++        help="session_id prefix; final id = '<prefix>_<question_id>'. Default: lme_iso",
++    )
++    p.add_argument("--limit", type=int, default=None)
++    p.add_argument("--include-categories", default=None)
++    p.add_argument(
++        "--concurrency",
++        type=int,
++        default=4,
++        help="Max questions ingested in parallel (default: 4).",
++    )
++    args = p.parse_args()
++    asyncio.run(_run(args))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/longmemeval/judge.py b/evaluation/longmemeval/judge.py
+new file mode 100644
+index 0000000..8280bd3
+--- /dev/null
++++ b/evaluation/longmemeval/judge.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""LongMemEval judge — upstream-verbatim `get_anscheck_prompt`.
++
++`generate.jsonl` 의 각 row 에 대해 upstream LongMemEval 의 task-별
++judge prompt 5종 (single-session-{user,assistant,preference},
++temporal-reasoning, knowledge-update, multi-session + abstention) 을
++그대로 사용해 judge LLM 호출 → 'yes' 포함 여부 (lenient) 로 llm_score
++판정 → `judge.jsonl` 출력 + 마지막에 overall + 카테고리별 정확도 요약.
++
++본 모듈은 `evaluation/longmemeval/_common.py` 와 stdlib 만 import —
++`evaluation/retrieval_agent/`, `evaluation/utils/`, `scripts/` 의존 없음.
++
++Usage:
++    uv run python -m evaluation.longmemeval.judge \\
++        --generate results/lme_iso/generate.jsonl \\
++        --config-path configs/generated/<run>_configuration.yml \\
++        --out results/lme_iso/judge.jsonl
++"""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import json
++import statistics
++import sys
++import time
++from collections import defaultdict
++from pathlib import Path
++from typing import Any
++
++REPO_ROOT = Path(__file__).resolve().parent.parent.parent
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from evaluation.longmemeval._common import (  # noqa: E402
++    get_anscheck_prompt,
++    get_judge_llm,
++    load_eval_config,
++    parse_yes_no_lenient,
++)
++
++
++def _read_jsonl(path: Path) -> list[dict[str, Any]]:
++    with open(path) as f:
++        return [json.loads(line) for line in f if line.strip()]
++
++
++async def _judge_one(row: dict[str, Any], judge_llm: Any) -> dict[str, Any]:
++    qid = str(row.get("question_id", ""))
++    qtype = str(row.get("category", "")) or "unknown"
++    abstention = qid.endswith("_abs")
++    prompt = get_anscheck_prompt(
++        qtype,
++        str(row.get("question", "")),
++        str(row.get("golden_answer", "")),
++        str(row.get("model_answer", "")),
++        abstention=abstention,
++    )
++    t0 = time.perf_counter()
++    rsp_text, _ = await judge_llm.generate_response(user_prompt=prompt)
++    dt = time.perf_counter() - t0
++    label = parse_yes_no_lenient(rsp_text)
++    out = dict(row)
++    out["llm_score"] = 1 if label else 0
++    out["judge_raw_response"] = rsp_text
++    out["judge_parsed_label"] = "yes" if label else "no"
++    out["judge_time"] = dt
++    return out
++
++
++def _print_summary(rows: list[dict[str, Any]]) -> None:
++    n = len(rows)
++    if n == 0:
++        print("[lme-judge] no rows.")
++        return
++    correct = sum(1 for r in rows if int(r.get("llm_score", 0) or 0) == 1)
++    by_cat: dict[str, list[int]] = defaultdict(list)
++    for r in rows:
++        cat = str(r.get("category", "")) or "unknown"
++        by_cat[cat].append(int(r.get("llm_score", 0) or 0))
++    cat_w = max(28, *(len(c) for c in by_cat))
++    print()
++    print("=" * (cat_w + 38))
++    print("Judge summary")
++    print("=" * (cat_w + 38))
++    print(
++        f"{'category':<{cat_w}}  {'n':>5}  {'correct':>7}  {'wrong':>5}  {'acc':>6}"
++    )
++    print("-" * (cat_w + 38))
++    print(
++        f"{'OVERALL':<{cat_w}}  {n:>5}  {correct:>7}  "
++        f"{n - correct:>5}  {correct / n:>6.3f}"
++    )
++    print("-" * (cat_w + 38))
++    for cat in sorted(by_cat):
++        scores = by_cat[cat]
++        acc = statistics.mean(scores) if scores else 0.0
++        print(
++            f"{cat:<{cat_w}}  {len(scores):>5}  {sum(scores):>7}  "
++            f"{len(scores) - sum(scores):>5}  {acc:>6.3f}"
++        )
++    print()
++
++
++async def _run(args: argparse.Namespace) -> None:
++    rows = _read_jsonl(Path(args.generate))
++    if args.include_categories:
++        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
++        before = len(rows)
++        rows = [r for r in rows if str(r.get("category", "")) in keep]
++        print(
++            f"[lme-judge] category filter {sorted(keep)}: "
++            f"{before} -> {len(rows)}"
++        )
++    if args.limit is not None:
++        rows = rows[: args.limit]
++
++    rm = load_eval_config(args.config_path)
++    judge_llm = await get_judge_llm(rm)
++    print(f"[lme-judge] n={len(rows)}  concurrency={args.concurrency}")
++
++    sem = asyncio.Semaphore(args.concurrency)
++    out_rows: list[dict[str, Any] | None] = [None] * len(rows)
++
++    async def _one(row: dict[str, Any], idx: int) -> None:
++        async with sem:
++            out_rows[idx] = await _judge_one(row, judge_llm)
++            print(
++                f"[lme-judge] {idx + 1}/{len(rows)}  "
++                f"qid={row.get('question_id', '')}  "
++                f"score={out_rows[idx]['llm_score']}  "
++                f"t={out_rows[idx]['judge_time']:.1f}s"
++            )
++
++    await asyncio.gather(*[_one(r, i) for i, r in enumerate(rows)])
++
++    out_path = args.out_path
++    written = [r for r in out_rows if r is not None]
++    with open(out_path, "w") as f:
++        f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in written)
++    print(f"[lme-judge] wrote {len(written)} rows -> {out_path}")
++
++    _print_summary(written)
++
++
++def main() -> int:
++    p = argparse.ArgumentParser(
++        description=__doc__,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    p.add_argument("--generate", required=True, help="generate.jsonl from generate.py")
++    p.add_argument(
++        "--config-path",
++        required=True,
++        help="Working configuration.yml (from scripts/generate_config.py)",
++    )
++    p.add_argument("--out", required=True, help="Output judge.jsonl path")
++    p.add_argument("--limit", type=int, default=None)
++    p.add_argument("--include-categories", default=None)
++    p.add_argument(
++        "--concurrency",
++        type=int,
++        default=4,
++        help="Max in-flight judge-LLM calls (default: 4).",
++    )
++    args = p.parse_args()
++    args.out_path = Path(args.out).resolve()
++    args.out_path.parent.mkdir(parents=True, exist_ok=True)
++    asyncio.run(_run(args))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/longmemeval/recall_id.py b/evaluation/longmemeval/recall_id.py
+new file mode 100644
+index 0000000..c03ebed
+--- /dev/null
++++ b/evaluation/longmemeval/recall_id.py
+@@ -0,0 +1,188 @@
++#!/usr/bin/env python3
++"""LongMemEval — ID-based recall analyzer (upstream-aligned).
++
++retrieve.jsonl 의 `retrieved_turn_ids` (= 매 retrieved Episode 의 metadata
++에서 뽑은 `<haystack_session_id>:<turn_idx>` 리스트) 와 `gold_turn_ids`
++(= oracle 의 has_answer=True turn 들의 같은 형식 ID 집합) 으로:
++
++    recall_per_q = |pred ∩ gold| / |gold|
++
++를 질문별로 계산하고 overall + 카테고리별 평균 출력. 또한 recall@k
++곡선 (k = 1..max_topk) 도 함께 계산 가능 — `--curve`.
++
++`evaluation/episodic_memory/longmemeval_models.py:91` 의
++`answer_turn_indices` 정의와 byte-equal 한 형식 (`f"{sid}:{idx}"`) 을
++씀으로써 upstream 의 ID 기반 retrieval evaluation 와 정렬.
++
++Usage:
++    uv run python -m evaluation.longmemeval.recall_id \\
++        --retrieve results/lme_iso/retrieve.jsonl \\
++        --out      results/lme_iso/recall_id.json
++
++    # recall@k 곡선까지:
++    uv run python -m evaluation.longmemeval.recall_id \\
++        --retrieve results/lme_iso/retrieve.jsonl \\
++        --curve \\
++        --max-k 50
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from collections import defaultdict
++from pathlib import Path
++from statistics import mean
++from typing import Any
++
++
++def _read_jsonl(path: Path) -> list[dict[str, Any]]:
++    rows: list[dict[str, Any]] = []
++    with open(path) as f:
++        for line in f:
++            line = line.strip()
++            if line:
++                rows.append(json.loads(line))
++    return rows
++
++
++def _per_q_recall(row: dict[str, Any]) -> float | None:
++    gold = {x for x in row.get("gold_turn_ids", []) or [] if x}
++    if not gold:
++        return None
++    pred = {x for x in row.get("retrieved_turn_ids", []) or [] if x}
++    return len(pred & gold) / len(gold)
++
++
++def _recall_at_k(pred_ordered: list[str], gold: set[str], k: int) -> float:
++    if not gold:
++        return float("nan")
++    seen = set(pred_ordered[:k])
++    return len(seen & gold) / len(gold)
++
++
++def _summarize(retrieve_path: Path, out_path: Path | None, curve: bool, max_k: int) -> None:
++    rows = _read_jsonl(retrieve_path)
++    if not rows:
++        print(f"[recall-id] no rows in {retrieve_path}", file=sys.stderr)
++        return
++
++    per_q: list[tuple[str, str, float]] = []
++    skipped_no_gold = 0
++    for r in rows:
++        v = _per_q_recall(r)
++        if v is None:
++            skipped_no_gold += 1
++            continue
++        per_q.append(
++            (
++                str(r.get("question_id", "")),
++                str(r.get("category", "")),
++                v,
++            )
++        )
++
++    if not per_q:
++        print(
++            "[recall-id] all rows had empty gold_turn_ids. "
++            "Did you pass --oracle to retrieve.py? "
++            "(s_cleaned/m_cleaned have no has_answer flag — gold needs oracle.)",
++            file=sys.stderr,
++        )
++        return
++
++    overall = mean(v for _, _, v in per_q)
++    by_cat: dict[str, list[float]] = defaultdict(list)
++    for _qid, cat, v in per_q:
++        by_cat[cat].append(v)
++
++    summary: dict[str, Any] = {
++        "n_rows": len(rows),
++        "n_scored": len(per_q),
++        "n_skipped_no_gold": skipped_no_gold,
++        "overall_recall": overall,
++        "by_category": {
++            cat: {"n": len(vs), "recall": mean(vs)} for cat, vs in by_cat.items()
++        },
++    }
++
++    if curve:
++        # Recall@k curve: averaged over questions with non-empty gold.
++        curve_avgs: list[float] = []
++        for k in range(1, max_k + 1):
++            ks_vals: list[float] = []
++            for r in rows:
++                gold = {x for x in r.get("gold_turn_ids", []) or [] if x}
++                if not gold:
++                    continue
++                pred_ordered = list(r.get("retrieved_turn_ids", []) or [])
++                ks_vals.append(_recall_at_k(pred_ordered, gold, k))
++            curve_avgs.append(mean(ks_vals) if ks_vals else float("nan"))
++        summary["recall_at_k_overall"] = curve_avgs
++
++    # Print human summary.
++    print(f"[recall-id] rows={summary['n_rows']}  scored={summary['n_scored']}  "
++          f"skipped_no_gold={summary['n_skipped_no_gold']}")
++    print(f"[recall-id] overall recall = {overall:.4f}")
++    print("[recall-id] by category:")
++    for cat in sorted(by_cat):
++        vs = by_cat[cat]
++        print(f"  {cat:32}  n={len(vs):4d}  recall={mean(vs):.4f}")
++    if curve:
++        print("[recall-id] recall@k curve:")
++        for k, v in enumerate(summary["recall_at_k_overall"], 1):
++            print(f"  k={k:3d}  recall={v:.4f}")
++
++    if out_path is not None:
++        out_path.parent.mkdir(parents=True, exist_ok=True)
++        with open(out_path, "w") as f:
++            json.dump(summary, f, indent=2)
++        print(f"[recall-id] wrote -> {out_path}")
++
++
++def main() -> int:
++    p = argparse.ArgumentParser(
++        description=__doc__,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    p.add_argument(
++        "--retrieve",
++        required=True,
++        help="retrieve.jsonl from evaluation.longmemeval.retrieve",
++    )
++    p.add_argument(
++        "--out",
++        default=None,
++        help="Output JSON path. Default: <retrieve dir>/recall_id.json",
++    )
++    p.add_argument(
++        "--curve",
++        action="store_true",
++        help="Compute recall@k curve for k=1..max-k",
++    )
++    p.add_argument(
++        "--max-k",
++        type=int,
++        default=50,
++        help="Max k for recall@k curve (default: 50). Only used with --curve.",
++    )
++    args = p.parse_args()
++
++    retrieve_path = Path(args.retrieve).resolve()
++    if not retrieve_path.exists():
++        print(f"[recall-id] not found: {retrieve_path}", file=sys.stderr)
++        return 1
++
++    out_path: Path | None
++    if args.out:
++        out_path = Path(args.out).resolve()
++    else:
++        out_path = retrieve_path.parent / "recall_id.json"
++
++    _summarize(retrieve_path, out_path, args.curve, args.max_k)
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/longmemeval/retrieve.py b/evaluation/longmemeval/retrieve.py
+new file mode 100644
+index 0000000..821b8bb
+--- /dev/null
++++ b/evaluation/longmemeval/retrieve.py
+@@ -0,0 +1,275 @@
++#!/usr/bin/env python3
++"""LongMemEval retrieve — per-question session 검색 (MemMachine 백엔드).
++
++`evaluation/longmemeval/ingest.py` 가 먼저 돌아 `<prefix>_<question_id>`
++session 에 데이터가 적재된 상태에서, 각 질문 별로 그 session 안에서 top-K
++검색 → retrieve.jsonl (이 브랜치 schema) 출력.
++
++ingest 와 분리되어 있어서 같은 데이터로 `--top-k` 만 바꿔 여러 번 돌릴 수
++있다 (재-ingest 비용 0). 답변 LLM / judge 호출 없음.
++
++본 모듈은 `evaluation/longmemeval/_common.py` 와 `memmachine_server.*` 만
++import — `evaluation/retrieval_agent/`, `evaluation/utils/` 의존 없음.
++
++Usage:
++    uv run python -m evaluation.longmemeval.retrieve \\
++        --in-file evaluation/data/longmemeval_s_cleaned.json \\
++        --config-path configs/generated/<run>_configuration.yml \\
++        --session-prefix lme_iso \\
++        --top-k 50 \\
++        --out results/lme_iso/retrieve.jsonl
++"""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import json
++import sys
++import time
++from pathlib import Path
++from typing import Any
++
++REPO_ROOT = Path(__file__).resolve().parent.parent.parent
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from memmachine_server.common.episode_store.episode_model import (  # noqa: E402
++    episodes_to_string,
++)
++from memmachine_server.retrieval_agent.common.agent_api import (  # noqa: E402
++    QueryParam,
++    QueryPolicy,
++)
++
++from evaluation.longmemeval._common import (  # noqa: E402
++    build_memory_and_agent,
++    collect_gold_turn_ids,
++    collect_supporting_facts,
++    load_eval_config,
++    retrieved_turn_ids,
++    set_safe_embedder_limits,
++)
++
++
++async def _retrieve_one(
++    rm: Any,
++    entry: dict,
++    session_prefix: str,
++    top_k: int,
++    adaptive_k: bool = False,
++    adaptive_min_k: int = 1,
++    adaptive_max_k: int = 0,
++    adaptive_bias: float = 0.0,
++    expand_context: int = 0,
++) -> dict[str, Any]:
++    qid = str(entry.get("question_id", ""))
++    session_id = f"{session_prefix}_{qid}"
++    memory, query_agent = await build_memory_and_agent(rm, session_id)
++    set_safe_embedder_limits(memory)
++
++    question = str(entry.get("question", "")).strip()
++    t0 = time.perf_counter()
++    chunks, perf = await query_agent.do_query(
++        QueryPolicy(
++            token_cost=10,
++            time_cost=10,
++            accuracy_score=10,
++            confidence_score=10,
++            max_attempts=3,
++            max_return_len=10000,
++        ),
++        QueryParam(
++            query=question,
++            limit=top_k,
++            memory=memory,
++            expand_context=expand_context,
++            adaptive_k=adaptive_k,
++            adaptive_k_min=adaptive_min_k,
++            adaptive_k_max=adaptive_max_k,
++            adaptive_k_bias=adaptive_bias,
++        ),
++    )
++    latency = time.perf_counter() - t0
++
++    gold_ids = collect_gold_turn_ids(entry)
++    pred_ids = retrieved_turn_ids(chunks)
++
++    return {
++        "question": question,
++        "question_id": qid,
++        "category": str(entry.get("question_type", "")),
++        "question_date": str(entry.get("question_date", "")),
++        "golden_answer": str(entry.get("answer", "")),
++        "sweep": {},
++        "cell_idx": 0,
++        "chunks_text": episodes_to_string(chunks),
++        "num_episodes_retrieved": len(chunks),
++        "expand_context": expand_context,
++        "adaptive_k": perf.get("adaptive_k", False),
++        "adaptive_pool": perf.get("adaptive_pool", 0),
++        "adaptive_kept": perf.get("adaptive_kept", len(chunks)),
++        "adaptive_bias": perf.get("adaptive_bias", 0.0),
++        "adaptive_score_hi": perf.get("adaptive_score_hi"),
++        "adaptive_score_cut": perf.get("adaptive_score_cut"),
++        "retrieved_turn_ids": pred_ids,
++        "gold_turn_ids": sorted(gold_ids),
++        "memory_retrieval_time": perf.get("memory_retrieval_time", latency),
++        "memory_search_called": perf.get("memory_search_called", 1),
++        "agent": perf.get("agent", "lme_iso"),
++        "selected_tool": perf.get("selected_tool", "lme_iso"),
++        "supporting_facts": collect_supporting_facts(entry),
++        "input_token": perf.get("input_token", 0),
++        "output_token": perf.get("output_token", 0),
++        "tool_select_input_token": perf.get("tool_select_input_token", 0),
++        "tool_select_output_token": perf.get("tool_select_output_token", 0),
++        "fact_hits": [],
++        "fact_miss": [],
++    }
++
++
++async def _run(args: argparse.Namespace) -> None:
++    with open(args.in_file) as f:
++        entry_list = json.load(f)
++
++    if args.include_categories:
++        keep = {c.strip() for c in args.include_categories.split(",") if c.strip()}
++        before = len(entry_list)
++        entry_list = [
++            e for e in entry_list if str(e.get("question_type", "")) in keep
++        ]
++        print(
++            f"[lme-retrieve] category filter {sorted(keep)}: "
++            f"{before} -> {len(entry_list)}"
++        )
++    if args.limit is not None:
++        entry_list = entry_list[: args.limit]
++
++    rm = load_eval_config(args.config_path)
++    out_path = args.out_path  # resolved in main() before asyncio.run
++
++    sem = asyncio.Semaphore(args.concurrency)
++    rows: list[dict[str, Any] | None] = [None] * len(entry_list)
++
++    async def _one(entry: dict, idx: int) -> None:
++        async with sem:
++            t0 = time.perf_counter()
++            rows[idx] = await _retrieve_one(
++                rm,
++                entry,
++                args.session_prefix,
++                args.top_k,
++                adaptive_k=args.adaptive_k,
++                adaptive_min_k=args.adaptive_min_k,
++                adaptive_max_k=args.adaptive_max_k,
++                adaptive_bias=args.adaptive_bias,
++                expand_context=args.expand_context,
++            )
++            dt = time.perf_counter() - t0
++            print(
++                f"[lme-retrieve] {idx + 1}/{len(entry_list)}  "
++                f"qid={entry.get('question_id', '')}  "
++                f"chunks={rows[idx]['num_episodes_retrieved']}  t={dt:.1f}s"
++            )
++
++    await asyncio.gather(
++        *[_one(e, i) for i, e in enumerate(entry_list)]
++    )
++
++    with open(out_path, "w") as f:
++        for row in rows:
++            if row is not None:
++                f.write(json.dumps(row, ensure_ascii=False) + "\n")
++    print(
++        f"[lme-retrieve] wrote {sum(r is not None for r in rows)} rows -> {out_path}"
++    )
++
++
++def main() -> int:
++    p = argparse.ArgumentParser(
++        description=__doc__,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    p.add_argument("--in-file", required=True, help="longmemeval_*.json")
++    p.add_argument(
++        "--config-path",
++        required=True,
++        help="Working configuration.yml (from scripts/generate_config.py)",
++    )
++    p.add_argument(
++        "--session-prefix",
++        default="lme_iso",
++        help="Must match the prefix used at ingest. Default: lme_iso",
++    )
++    p.add_argument(
++        "--top-k",
++        type=int,
++        default=50,
++        help=(
++            "Retrieved chunks per question (default: 50). With --adaptive-k"
++            " this is the candidate pool the gap-cut chooses from."
++        ),
++    )
++    p.add_argument(
++        "--adaptive-k",
++        action="store_true",
++        help=(
++            "Enable Adaptive-k retrieval: keep only the prefix before the"
++            " largest score gap in the top-k candidate pool, instead of a"
++            " fixed top-k (Taguchi et al., EMNLP 2025)."
++        ),
++    )
++    p.add_argument(
++        "--adaptive-min-k",
++        type=int,
++        default=1,
++        help="Adaptive-k floor on chunks kept (default: 1).",
++    )
++    p.add_argument(
++        "--adaptive-max-k",
++        type=int,
++        default=0,
++        help="Adaptive-k ceiling on chunks kept (default: 0 = top-k pool).",
++    )
++    p.add_argument(
++        "--adaptive-bias",
++        type=float,
++        default=0.0,
++        help=(
++            "Adaptive-k cut aggressiveness (default: 0.0 = plain largest-gap,"
++            " most aggressive). Higher (e.g. 0.5-2.0) weights gaps by k**bias"
++            " so the cut happens later — keeps more chunks, higher recall."
++        ),
++    )
++    p.add_argument(
++        "--expand-context",
++        type=int,
++        default=0,
++        help=(
++            "Pull neighbour turns around each matched turn (default: 0 = none)."
++            " Split ~1/3 backward, ~2/3 forward: e.g. 3 -> 1 before + 2 after."
++            " Neighbours count against --top-k (the candidate pool)."
++        ),
++    )
++    p.add_argument(
++        "--out",
++        required=True,
++        help="Output retrieve.jsonl path (this-branch schema)",
++    )
++    p.add_argument("--limit", type=int, default=None)
++    p.add_argument("--include-categories", default=None)
++    p.add_argument(
++        "--concurrency",
++        type=int,
++        default=4,
++        help="Max in-flight question queries (default: 4).",
++    )
++    args = p.parse_args()
++    args.out_path = Path(args.out).resolve()
++    args.out_path.parent.mkdir(parents=True, exist_ok=True)
++    asyncio.run(_run(args))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
