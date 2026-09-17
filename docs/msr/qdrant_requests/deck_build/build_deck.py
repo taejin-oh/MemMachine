@@ -1,4 +1,4 @@
-"""memmachine_workload.pptx(3장)에 이어지는 추가 7장(4~10장)을 만든다.
+"""memmachine_workload.pptx(3장)에 이어지는 추가 9장(4~12장)을 만든다.
 
 구성 의도
   4장  배경      — 세션·인스턴스·캐시가 무엇이고 요청 1건이 겪는 세 상황
@@ -8,12 +8,16 @@
   8장  실측 상세 — worker를 늘렸을 때
   9장  구조      — 컬렉션 둘, 세션은 payload 한 칸
   10장 인접 비용 — 임베딩 호출 분할
+  11장 접점      — 1장 파이프라인 위에 Qdrant 접점과 요청별 실측 시간
+  12장 요약      — 파이프라인을 걷어낸 세 접점과 시간 비교 막대
 
 기준 커밋 a8322a7. 수치는 docs/msr/qdrant_requests/ 의 보고서와 상세 문서에서만 가져왔다.
+11~12장의 밀리초는 qdrant_request_trace.json 의 요청별 ms 를 구간별로 합산한 값이다.
 시각 체계는 deck_style.py가 원본 덱에서 추출한 토큰 그대로다.
 """
 
 from pptx.enum.text import PP_ALIGN
+from pptx.util import Pt
 
 import deck_style as S
 
@@ -31,6 +35,43 @@ def _labeled_box(sl, x, y, w, h, kind, title, lines, *, badge=None,
     S.text(sl, x + 0.15, y + 0.08, w - 0.45, 0.22, title, size=title_size, bold=True)
     for i, line in enumerate(lines):
         S.text(sl, x + 0.15, y + 0.32 + i * gap, w - 0.25, 0.18, line, size=line_size)
+
+
+def _dim(sl, x, y, w, h, lines, *, size=9):
+    """Qdrant를 건드리지 않는 단계. 회색으로 눌러 둔다."""
+    shp = S.box(sl, x, y, w, h, lines, kind="self", size=size)
+    shp.fill.fore_color.rgb = S._rgb("F4F4F4")
+    shp.line.color.rgb = S._rgb("C4C4C4")
+    for para in shp.text_frame.paragraphs:
+        for run in para.runs:
+            run.font.color.rgb = S._rgb("8A8A8A")
+    return shp
+
+
+def _hit(sl, x, y, w, h, lines, *, size=9):
+    """Qdrant 요청이 나가는 단계. 초록 + 네이비 굵은 테두리."""
+    shp = S.box(sl, x, y, w, h, lines, kind="store", size=size, bold=True)
+    shp.line.color.rgb = S._rgb(S.NAVY)
+    shp.line.width = Pt(2.25)
+    return shp
+
+
+def _flow(sl, y, stages, x0, w, pitch, aw):
+    """가로 흐름 한 줄. stages = [(윗줄, 아랫줄, Qdrant닿음), ...]"""
+    for i, (top, bottom, hit) in enumerate(stages):
+        x = x0 + i * pitch
+        (_hit if hit else _dim)(sl, x, y, w, 0.66, [top, bottom])
+        if i < len(stages) - 1:
+            S.arrow(sl, x + w + 0.01, y + 0.275, w=aw, h=0.11)
+
+
+def _bar(sl, lx, lw, bx, bw, y, frac, label, value, *, fill=None):
+    """가로 막대 한 줄. frac은 0~1로 미리 환산해 넘긴다."""
+    S.text(sl, lx, y + 0.03, lw, 0.18, label, size=9)
+    S.rect(sl, bx, y, bw, 0.20, "ECECEC")
+    S.rect(sl, bx, y, max(0.05, bw * frac), 0.20, fill or S.STORE_L)
+    S.text(sl, bx + bw + 0.12, y + 0.02, 1.20, 0.20, value,
+           size=9.5, bold=True, font=S.MONO, color=S.CODE)
 
 
 # ---------------------------------------------------------------- 4장 배경
@@ -550,9 +591,176 @@ def slide10(prs):
                  "입력 개수와 총 길이를 셌고, 임베더 구현은 운영과 같은 OpenAIEmbedder다.", y=7.06)
 
 
+# ---------------------------------------------------------------- 11장 접점
+
+INGEST = [
+    ("세션 확보", "LRU · RW 락", True),
+    ("원문 INSERT", "… RETURNING", False),
+    ("세그먼트화", "기본 passthrough", False),
+    ("derivative", "생성", False),
+    ("임베딩", "외부 API", False),
+    ("세그먼트 쓰기", "segment_store", False),
+    ("벡터 upsert", "Qdrant", True),
+]
+
+SEARCH = [
+    ("세션 확보", "LRU · RW 락", True),
+    ("필터 파싱", "검증 · 번역", False),
+    ("쿼리 임베딩", "외부 API", False),
+    ("ANN 탐색", "+ payload 필터", True),
+    ("문맥 walk", "PostgreSQL", False),
+    ("리랭킹", "기본 없음", False),
+    ("결과 조립", "프로세스 내", False),
+    ("원문 복원", "PK 조회 · PG", False),
+]
+
+
+def slide11(prs):
+    sl = S.add_slide(prs)
+    S.header(
+        sl,
+        "Qdrant는 언제 불리고 얼마나 걸리는가 — 파이프라인 위의 세 접점",
+        "1장의 두 흐름 그대로 · 초록 굵은 테두리만 Qdrant 요청 · 시간은 같은 장비 Docker 실측",
+    )
+
+    S.chip(sl, M, 1.02, "store", w=0.26, h=0.17)
+    S.text(sl, M + 0.33, 1.02, 2.40, 0.2, "Qdrant 요청 발생", size=11)
+    c = S.chip(sl, 3.30, 1.02, "self", w=0.26, h=0.17)
+    c.fill.fore_color.rgb = S._rgb("F4F4F4")
+    c.line.color.rgb = S._rgb("C4C4C4")
+    S.text(sl, 3.63, 1.02, 6.00, 0.2,
+           "Qdrant 요청 없음 — PostgreSQL 또는 프로세스 안", size=11)
+
+    S.section(sl, M, 1.34, "① 적재   POST /memories", w=6.0)
+    _flow(sl, 1.68, INGEST, M, 1.52, 1.72, 0.17)
+    S.text(sl, M, 2.38, 1.52, 0.18, "0 · 2 · 17회", size=9, bold=True,
+           color=S.NAVY, align=PP_ALIGN.CENTER)
+    S.text(sl, 10.77, 2.38, 1.52, 0.18, "1회 · 3.0 ms", size=9, bold=True,
+           color=S.NAVY, align=PP_ALIGN.CENTER)
+    S.text(sl, 2.30, 2.38, 8.30, 0.18,
+           "원문과 세그먼트는 PostgreSQL, 임베딩은 외부 API — 여기서는 Qdrant 요청이 없다",
+           size=8.5, color=S.FOOT, align=PP_ALIGN.CENTER)
+
+    S.section(sl, M, 2.86, "② 검색   POST /memories/search", w=6.0)
+    _flow(sl, 3.20, SEARCH, M, 1.38, 1.535, 0.14)
+    S.text(sl, M, 3.90, 1.38, 0.18, "0 · 2 · 17회", size=9, bold=True,
+           color=S.NAVY, align=PP_ALIGN.CENTER)
+    S.text(sl, 5.055, 3.90, 1.38, 0.18, "1회 · 1.6~2.5 ms", size=9, bold=True,
+           color=S.NAVY, align=PP_ALIGN.CENTER)
+    S.text(sl, 6.59, 3.90, 5.98, 0.18,
+           "이 뒤로 Qdrant 요청은 0회 — 문맥 walk와 원문 복원은 PostgreSQL이다",
+           size=8.5, color=S.FOOT, align=PP_ALIGN.CENTER)
+
+    S.table(
+        sl, M, 4.22, 7.30, [3.05, 0.90, 1.55, 1.80],
+        [
+            ["바로 처리 — 캐시에 인스턴스 있음", "0회", "0 ms", "대부분의 요청"],
+            ["재준비 — 캐시에서 빠짐", "2회", "3.4 ms", "유휴 10분 · 100칸 초과"],
+            ["신규 등록 — 처음 보는 세션", "17회", "850 → 47 ms", "그 세션의 첫 요청 한 번"],
+        ],
+        header=["세션 확보의 상태", "요청", "실측 시간", "언제 생기나"],
+        header_size=9, body_size=8.5, row_h=0.30,
+        mono_cols={1, 2}, emphasis_rows={2},
+    )
+    S.badge(sl, 0.16, 4.53, "yes")
+
+    _labeled_box(sl, 8.05, 4.22, 4.83, 1.18, "opt",
+                 "같은 17회인데 시간은 18배 다르다",
+                 ["첫 세션 850ms — 컬렉션과 색인을 실제로 만든다",
+                  "두 번째 새 세션부터 47ms — 이미 있다는 응답만 받는다",
+                  "850ms 내역: 색인 11회 667ms · 컬렉션 2회 165ms"],
+                 gap=0.22)
+
+    S.conclusion(sl, M, 5.50, FULL, 1.52, [
+        ("Qdrant가 닿는 곳은 파이프라인 전체에서 세 군데뿐이다.",
+         " 세션 확보, 벡터 upsert, ANN 탐색이다."),
+        ("평상시 Qdrant가 쓰는 시간은 저장 3.0ms, 검색 2ms 안팎이다.",
+         " 문맥 walk와 리랭킹, 원문 복원은 Qdrant 요청이 0회다."),
+        ("검색 옵션을 바꿔도 요청은 1회로 고정이다.",
+         " top_k와 필터, 문맥 확장, 점수 기준 모두 마찬가지다."),
+        ("이 시간은 같은 장비 기준이다.",
+         " Qdrant를 다른 노드에 두면 요청마다 네트워크 왕복이 그대로 더해진다."),
+    ], size=10, gap=0.26)
+    S.footer(sl, "근거: 측정 기록 2부(S1~S13)와 qdrant_request_trace.json. "
+                 "요청별 ms는 qdrant-client의 HTTP 전송 함수에서 직접 쟀다.", y=7.10)
+
+
+# ---------------------------------------------------------------- 12장 요약
+
+def slide12(prs):
+    sl = S.add_slide(prs)
+    S.header(
+        sl,
+        "요약 — Qdrant를 건드리는 곳은 세 군데뿐",
+        "파이프라인을 걷어내고 접점만 남긴 그림 · 아래 두 막대는 눈금이 서로 다르다",
+    )
+
+    cards = [
+        ("① 세션 확보", "0 · 2 · 17회",
+         ["요청 직전의 준비 단계. 저장과 검색이 같이 쓴다",
+          "캐시에 있으면 0회, 빠지면 2회, 처음이면 17회"]),
+        ("② 벡터 upsert", "1회",
+         ["저장 요청 1건당 항상 1회",
+          "에피소드를 몇 건 담아 보내든 1회로 고정된다"]),
+        ("③ ANN 탐색", "1회",
+         ["검색 요청 1건당 항상 1회",
+          "top_k와 필터, 문맥 확장을 바꿔도 1회다"]),
+    ]
+    for i, (title, big, lines) in enumerate(cards):
+        x = 0.45 + i * 4.24
+        S.box(sl, x, 1.15, 3.95, 2.25, [""], kind="store")
+        S.badge(sl, x + 3.95 - 0.30, 1.09, "yes")
+        S.text(sl, x + 0.18, 1.26, 3.4, 0.26, title, size=13, bold=True)
+        S.text(sl, x + 0.18, 1.62, 3.6, 0.50, big, size=27, bold=True, color=S.NAVY)
+        for j, line in enumerate(lines):
+            S.text(sl, x + 0.18, 2.36 + j * 0.24, 3.65, 0.20, line, size=9, wrap=True)
+        S.rect(sl, x + 0.18, 2.94, 3.60, 0.01, S.STORE_L)
+        S.text(sl, x + 0.18, 3.04, 3.60, 0.20,
+               ["저장 · 검색 공통", "저장 경로", "검색 경로"][i],
+               size=8.5, color=S.FOOT)
+
+    S.text(sl, M, 3.52, FULL, 0.20,
+           "나머지 단계는 Qdrant를 부르지 않는다. 원문 저장과 문맥 walk, 원문 복원은 PostgreSQL이고 "
+           "세그먼트화와 필터 파싱, 리랭킹, 결과 조립은 프로세스 안에서 끝나며 임베딩은 별도 API다.",
+           size=9, color=S.GRAY)
+
+    S.panel(sl, M, 3.80, 5.95, 1.55, style="info", radius=0.08)
+    S.text(sl, 0.60, 3.88, 5.6, 0.22, "평상시   눈금 0~4 ms", size=11, bold=True)
+    for i, (label, ms, frac) in enumerate([
+        ("벡터 upsert — 저장 1건", "3.0 ms", 3.0 / 4.0),
+        ("ANN 탐색 — 검색 1건", "2.0 ms", 2.0 / 4.0),
+        ("재준비 2회 — 캐시 미스", "3.4 ms", 3.4 / 4.0),
+    ]):
+        _bar(sl, 0.60, 1.85, 2.55, 2.45, 4.22 + i * 0.35, frac, label, ms)
+
+    S.panel(sl, 6.93, 3.80, 5.95, 1.55, style="info", radius=0.08)
+    S.text(sl, 7.08, 3.88, 5.6, 0.22, "세션 등록   눈금 0~900 ms", size=11, bold=True)
+    _bar(sl, 7.08, 1.85, 9.03, 2.45, 4.22, 850 / 900,
+         "첫 세션 17회", "850 ms", fill=S.API_L)
+    _bar(sl, 7.08, 1.85, 9.03, 2.45, 4.57, 47 / 900,
+         "두 번째 세션부터 17회", "47 ms")
+    S.text(sl, 7.08, 4.98, 5.70, 0.20,
+           "850ms의 78%는 색인 생성 11회(667ms), 19%는 컬렉션 생성 2회(165ms)다",
+           size=8.5, color=S.FOOT)
+
+    S.conclusion(sl, M, 5.45, FULL, 1.55, [
+        ("평상시 Qdrant 부담은 요청당 2~3ms다.",
+         " 저장도 검색도 요청 1회로 고정이고, 옵션을 바꿔도 늘지 않는다."),
+        ("17회라는 숫자는 크지만 시간은 두 번째 세션부터 47ms다.",
+         " 850ms는 컬렉션과 색인을 실제로 만드는 첫 한 번뿐이다."),
+        ("그래서 세션이 늘 때 걱정할 곳은 등록 시간이 아니라",
+         " 캐시 100칸을 넘겨 재준비가 상시화되는 쪽이다."),
+        ("다만 이 값은 같은 장비 기준이다.",
+         " Qdrant를 다른 노드에 두면 요청마다 네트워크 왕복이 그대로 더해진다."),
+    ], size=10, gap=0.26)
+    S.footer(sl, "근거: 측정 기록 2부(S1~S13) · qdrant_request_trace.json · 보고서 6부. "
+                 "기준 커밋 a8322a7, qdrant 1.17.0 + postgres 16.", y=7.10)
+
+
 def main():
     prs = S.new_deck()
-    for fn in (slide4, slide5, slide6, slide7, slide8, slide9, slide10):
+    for fn in (slide4, slide5, slide6, slide7, slide8, slide9, slide10,
+               slide11, slide12):
         fn(prs)
     prs.save(OUT)
     print(f"saved {OUT}: {len(prs.slides._sldIdLst)} slides")
