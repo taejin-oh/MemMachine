@@ -1,0 +1,454 @@
+[
+ {
+  "section": "P0 process start: get_vector_store(validate=True)",
+  "requests": [
+   {
+    "method": "GET",
+    "path": "/collections",
+    "query": "",
+    "status": 200,
+    "ms": 26.4,
+    "body": ""
+   }
+  ]
+ },
+ {
+  "section": "S1 cold: first session ever in this Qdrant (registry + native collection do not exist)",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 404,
+    "ms": 5.3,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__registry",
+    "query": "",
+    "status": 200,
+    "ms": 83.6,
+    "body": "{\"vectors\":{\"size\":1,\"distance\":\"Cosine\"},\"hnsw_config\":{\"m\":0},\"replication_factor\":1,\"write_consistency_factor\":1}"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 6.5,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>",
+    "query": "",
+    "status": 200,
+    "ms": 81.0,
+    "body": "{\"vectors\":{\"size\":64,\"distance\":\"Cosine\"},\"hnsw_config\":{\"m\":0,\"payload_m\":16}}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 88.2,
+    "body": "{\"field_name\":\"sys-partition_key\",\"field_schema\":{\"type\":\"keyword\",\"is_tenant\":true}}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 72.5,
+    "body": "{\"field_name\":\"_timestamp\",\"field_schema\":\"datetime\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 66.1,
+    "body": "{\"field_name\":\"_episode_uid\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 58.8,
+    "body": "{\"field_name\":\"_session_key\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 49.4,
+    "body": "{\"field_name\":\"_producer_id\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 53.1,
+    "body": "{\"field_name\":\"_producer_role\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 42.2,
+    "body": "{\"field_name\":\"_produced_for_id\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 73.9,
+    "body": "{\"field_name\":\"_sequence_num\",\"field_schema\":\"integer\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 55.1,
+    "body": "{\"field_name\":\"_episode_type\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 75.7,
+    "body": "{\"field_name\":\"_content_type\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 32.1,
+    "body": "{\"field_name\":\"_created_at\",\"field_schema\":\"datetime\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.3,
+    "body": "points=1 dim=1 payload_keys=['indexed_properties_schema', 'name', 'vector_dimensions']"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 2.9,
+    "body": "ids=1 with_payload=True"
+   }
+  ]
+ },
+ {
+  "section": "S2 cold: second new session (native collection exists, registry entry missing)",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 2.3,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__registry",
+    "query": "",
+    "status": 409,
+    "ms": 1.2,
+    "body": "{\"vectors\":{\"size\":1,\"distance\":\"Cosine\"},\"hnsw_config\":{\"m\":0},\"replication_factor\":1,\"write_consistency_factor\":1}"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 1.4,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>",
+    "query": "",
+    "status": 409,
+    "ms": 1.0,
+    "body": "{\"vectors\":{\"size\":64,\"distance\":\"Cosine\"},\"hnsw_config\":{\"m\":0,\"payload_m\":16}}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.0,
+    "body": "{\"field_name\":\"sys-partition_key\",\"field_schema\":{\"type\":\"keyword\",\"is_tenant\":true}}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 2.8,
+    "body": "{\"field_name\":\"_timestamp\",\"field_schema\":\"datetime\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.1,
+    "body": "{\"field_name\":\"_episode_uid\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.4,
+    "body": "{\"field_name\":\"_session_key\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.6,
+    "body": "{\"field_name\":\"_producer_id\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.4,
+    "body": "{\"field_name\":\"_producer_role\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.5,
+    "body": "{\"field_name\":\"_produced_for_id\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.4,
+    "body": "{\"field_name\":\"_sequence_num\",\"field_schema\":\"integer\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.5,
+    "body": "{\"field_name\":\"_episode_type\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.4,
+    "body": "{\"field_name\":\"_content_type\",\"field_schema\":\"keyword\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/index",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.3,
+    "body": "{\"field_name\":\"_created_at\",\"field_schema\":\"datetime\"}"
+   },
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 2.4,
+    "body": "points=1 dim=1 payload_keys=['indexed_properties_schema', 'name', 'vector_dimensions']"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 2.1,
+    "body": "ids=1 with_payload=True"
+   }
+  ]
+ },
+ {
+  "section": "S3 warm: reopen A while instance is in the LRU cache (no memory op)",
+  "requests": []
+ },
+ {
+  "section": "S4 warm: add 4 episodes in one request (instance cached)",
+  "requests": [
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/points",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.0,
+    "body": "points=4 dim=64 payload_keys=['_content_type', '_created_at', '_episode_type', '_episode_uid', '_produced_for_id', '_producer_id', '_producer_role', '_sequence_num', '_session_key', '_timestamp', 'sys-partition_key', 'user_id']"
+   }
+  ]
+ },
+ {
+  "section": "S5 warm: add 2 episodes in one request",
+  "requests": [
+   {
+    "method": "PUT",
+    "path": "/collections/long_term_memory__<hash>/points",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 3.0,
+    "body": "points=2 dim=64 payload_keys=['_content_type', '_created_at', '_episode_type', '_episode_uid', '_produced_for_id', '_producer_id', '_producer_role', '_sequence_num', '_session_key', '_timestamp', 'sys-partition_key', 'user_id']"
+   }
+  ]
+ },
+ {
+  "section": "S6 warm: search, no filter, limit=20 (default), expand_context=0",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/query/batch",
+    "query": "",
+    "status": 200,
+    "ms": 2.5,
+    "body": "searches=1; limit=80 with_payload=False with_vector=False filter={\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]}"
+   }
+  ]
+ },
+ {
+  "section": "S7 warm: search with OR filter, limit=20",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/query/batch",
+    "query": "",
+    "status": 200,
+    "ms": 1.6,
+    "body": "searches=1; limit=80 with_payload=False with_vector=False filter={\"must\":[{\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]},{\"should\":[{\"must\":[{\"key\":\"_producer_id\",\"match\":{\"value\":\"user_a\"}}]},{\"must\":[{\"key\":\"_produced_for_id\",\"match\":{\"value\":\"user_a\"}}]}]}]}"
+   }
+  ]
+ },
+ {
+  "section": "S8 warm: search with m.user_id filter, expand_context=4",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/query/batch",
+    "query": "",
+    "status": 200,
+    "ms": 1.6,
+    "body": "searches=1; limit=80 with_payload=False with_vector=False filter={\"must\":[{\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]},{\"must\":[{\"key\":\"user_id\",\"match\":{\"value\":\"user_a\"}}]}]}"
+   }
+  ]
+ },
+ {
+  "section": "S9 warm: search limit=5, score_threshold=0.1",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/query/batch",
+    "query": "",
+    "status": 200,
+    "ms": 2.0,
+    "body": "searches=1; limit=20 with_payload=False with_vector=False filter={\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]}"
+   }
+  ]
+ },
+ {
+  "section": "S10 evict A from the instance cache (close_session)",
+  "requests": []
+ },
+ {
+  "section": "S11 cold instance / warm Qdrant: reopen A after eviction, then one search",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 1.5,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/query/batch",
+    "query": "",
+    "status": 200,
+    "ms": 1.9,
+    "body": "searches=1; limit=80 with_payload=False with_vector=False filter={\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]}"
+   }
+  ]
+ },
+ {
+  "section": "S12 warm: delete 1 episode",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/delete",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 2.8,
+    "body": "{\"filter\":{\"must\":[{\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"bd36dbe5eef78ec754963d978108ef7b\"}}]},{\"has_id\":[\"e99d628c-8286-48b3-ba2b-8d234806da3b\"]}]}}"
+   }
+  ]
+ },
+ {
+  "section": "S13 delete session B (drop_session_partition)",
+  "requests": [
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 1.6,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points",
+    "query": "",
+    "status": 200,
+    "ms": 1.5,
+    "body": "ids=1 with_payload=True"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__<hash>/points/delete",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 2.4,
+    "body": "{\"filter\":{\"must\":[{\"key\":\"sys-partition_key\",\"match\":{\"value\":\"931a6e4ce7b9594c1efdf4c2b58bda35\"}}]}}"
+   },
+   {
+    "method": "POST",
+    "path": "/collections/long_term_memory__registry/points/delete",
+    "query": "wait=true",
+    "status": 200,
+    "ms": 2.3,
+    "body": "{\"points\":[\"c41bb950-4e4e-52ce-8fb2-41a72105d898\"]}"
+   }
+  ]
+ }
+]

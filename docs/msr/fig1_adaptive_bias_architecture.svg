@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif">
+  <defs>
+    <marker id="arw" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L9,4 L0,8 Z" fill="#111"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1080" height="1080" fill="#ffffff"/>
+
+  <!-- 장치 100 (dashed enclosure) -->
+  <rect x="120" y="116" width="890" height="600" fill="none" stroke="#111" stroke-width="1.2" stroke-dasharray="7 5"/>
+  <text x="128" y="108" font-size="16" fill="#111">적응형 자동 순위 가중 문맥 선택 장치 (100)</text>
+
+  <!-- Query (external, top) -->
+  <rect x="260" y="44" width="240" height="46" rx="23" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="73" font-size="17" text-anchor="middle" fill="#111">질의 (Query)</text>
+
+  <!-- 110 후보·점수 획득부 -->
+  <rect x="170" y="126" width="420" height="96" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="156" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">후보·점수 획득부 (110)</text>
+  <text x="380" y="182" font-size="14" text-anchor="middle" fill="#111">벡터·그래프 DB 검색 → 후보 집합</text>
+  <text x="380" y="204" font-size="14" text-anchor="middle" fill="#111">관련도 점수 부여 → 내림차순 정렬</text>
+
+  <!-- 120 낙폭 산출부 -->
+  <rect x="220" y="272" width="320" height="62" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="299" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">낙폭 산출부 (120)</text>
+  <text x="380" y="322" font-size="14" text-anchor="middle" fill="#111">g_k = s_k − s_(k+1)</text>
+
+  <!-- 130 순위 가중 결합부 (CORE) -->
+  <rect x="170" y="388" width="420" height="94" fill="#eeeeee" stroke="#111" stroke-width="2.6"/>
+  <text x="380" y="418" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">순위 가중 결합부 (130)</text>
+  <text x="380" y="444" font-size="14" text-anchor="middle" fill="#111">score_k = g_k · f(k)   (곱셈 결합)</text>
+  <text x="380" y="466" font-size="13" text-anchor="middle" fill="#111">→ 무-낙폭 지점 배제 (gap-anchored)</text>
+
+  <!-- 140 컷 결정부 -->
+  <rect x="220" y="534" width="320" height="62" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="561" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">컷 결정부 (140)</text>
+  <text x="380" y="584" font-size="14" text-anchor="middle" fill="#111">k* = argmax score_k → 상위 k* 유지</text>
+
+  <!-- 160 문맥 전달부 -->
+  <rect x="200" y="640" width="360" height="62" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="667" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">문맥 전달부 (160)</text>
+  <text x="380" y="690" font-size="14" text-anchor="middle" fill="#111">유지 문맥만 전달 (토큰↓ · 비용↓ · 지연↓)</text>
+
+  <!-- LLM (external, bottom) -->
+  <rect x="260" y="760" width="240" height="50" rx="10" fill="#ffffff" stroke="#111" stroke-width="1.5"/>
+  <text x="380" y="791" font-size="17" text-anchor="middle" fill="#111">LLM 답변 생성</text>
+
+  <!-- 150 bias 자동 결정부 (CORE, side) -->
+  <rect x="670" y="390" width="320" height="90" fill="#eeeeee" stroke="#111" stroke-width="2.6"/>
+  <text x="830" y="420" font-size="18" text-anchor="middle" fill="#111" font-weight="bold">bias 자동 결정부 (150)</text>
+  <text x="830" y="446" font-size="14" text-anchor="middle" fill="#111">신호: 점수 분포 / 목표 예산</text>
+  <text x="830" y="466" font-size="14" text-anchor="middle" fill="#111">/ 답변 품질</text>
+
+  <!-- Arrows (main column) -->
+  <line x1="380" y1="90"  x2="380" y2="124" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+  <line x1="380" y1="222" x2="380" y2="270" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text x="392" y="252" font-size="13" fill="#111">s_1 ≥ s_2 ≥ … ≥ s_n</text>
+  <line x1="380" y1="334" x2="380" y2="386" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text x="392" y="366" font-size="13" fill="#111">{g_k}</text>
+  <line x1="380" y1="482" x2="380" y2="532" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text x="392" y="514" font-size="13" fill="#111">{score_k}</text>
+  <line x1="380" y1="596" x2="380" y2="638" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+  <text x="392" y="624" font-size="13" fill="#111">선택된 문맥</text>
+  <line x1="380" y1="702" x2="380" y2="758" stroke="#111" stroke-width="1.5" marker-end="url(#arw)"/>
+
+  <!-- bias arrow: 150 -> 130 -->
+  <line x1="670" y1="435" x2="592" y2="435" stroke="#111" stroke-width="1.8" marker-end="url(#arw)"/>
+  <text x="600" y="424" font-size="14" fill="#111" font-weight="bold">bias</text>
+
+  <!-- feedback: 160 -> 150 (optional, dashed) -->
+  <polyline points="560,671 962,671 962,482" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 5" marker-end="url(#arw)"/>
+  <text x="626" y="663" font-size="13" fill="#111">품질 신호 (선택)</text>
+
+  <!-- Figure caption -->
+  <text x="540" y="900" font-size="22" text-anchor="middle" fill="#111" font-weight="bold">도 1</text>
+  <text x="540" y="930" font-size="15" text-anchor="middle" fill="#111">검색 점수의 순위 가중 낙폭과 bias 자동 결정을 이용한 적응형 문맥 선택 장치</text>
+</svg>

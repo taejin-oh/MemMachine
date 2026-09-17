@@ -1,0 +1,77 @@
+logging:
+  path: /private/tmp/claude-501/-Users-taejin-Projects-MemMachine-repo/de56f566-1d00-4983-a1d2-bcf65019a61c/scratchpad/prodtest/mm_embed.log
+  level: error
+
+episode_store:
+  database: pg
+
+episodic_memory:
+  long_term_memory:
+    backend: event
+    embedder: stub_embedder
+    vector_store: event_vector_store
+    segment_store: pg
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+
+retrieval_agent:
+  llm_model: openai_model
+  reranker: my_reranker_id
+
+semantic_memory:
+  llm_model: openai_model
+  embedding_model: stub_embedder
+  database: pg
+  config_database: pg
+
+session_manager:
+  database: pg
+
+prompt:
+  default_project_categories: [profile_prompt]
+
+resources:
+  databases:
+    pg:
+      provider: postgres
+      config:
+        host: localhost
+        port: 15432
+        user: postgres
+        password: mmtest
+        db_name: postgres
+    event_vector_store:
+      provider: qdrant
+      config:
+        host: localhost
+        port: 16333
+        grpc_port: 16334
+        prefer_grpc: false
+        https: false
+  embedders:
+    stub_embedder:
+      provider: openai
+      config:
+        model: "text-embedding-3-small"
+        api_key: "stub"
+        base_url: "http://127.0.0.1:18099/v1"
+        dimensions: 1536
+    stub_embedder_batch2:
+      provider: openai
+      config:
+        model: "text-embedding-3-small"
+        api_key: "stub"
+        base_url: "http://127.0.0.1:18099/v1"
+        dimensions: 1536
+        batch_size: 2
+  language_models:
+    openai_model:
+      provider: openai-responses
+      config:
+        model: "gpt-4o-mini"
+        api_key: "unused-stubbed-in-test"
+        base_url: "https://api.openai.com/v1"
+  rerankers:
+    my_reranker_id:
+      provider: "identity"
