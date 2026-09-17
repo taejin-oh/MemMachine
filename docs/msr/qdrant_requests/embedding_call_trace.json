@@ -1,0 +1,273 @@
+[
+ {
+  "section": "E1 first session open: embedder built with validate=True",
+  "calls": [
+   {
+    "kind": "search_embed",
+    "n_inputs": 1,
+    "total_chars": 1,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 1,
+    "max_chars": 1,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E2 second new session: embedder already cached in this process",
+  "calls": [],
+  "http": []
+ },
+ {
+  "section": "E3 add: 4 episodes in one request (passthrough + whole_text)",
+  "calls": [
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 4,
+    "total_chars": 336,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 4,
+    "total_chars": 336,
+    "max_chars": 84,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E4 add: 1 episode",
+  "calls": [
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 1,
+    "total_chars": 84,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 84,
+    "max_chars": 84,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E5 search: no filter, top_k=20",
+  "calls": [
+   {
+    "kind": "search_embed",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "max_chars": 16,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E6 search: expand_context=4, top_k=5",
+  "calls": [
+   {
+    "kind": "search_embed",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "max_chars": 16,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E7 add: 1 very long episode (160k chars -> chunk_text at 75k)",
+  "calls": [
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 1,
+    "total_chars": 160039,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 75000,
+    "max_chars": 75000,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 75000,
+    "max_chars": 75000,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 10039,
+    "max_chars": 10039,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E8 add: 2100 episodes in one request (max 2048 inputs per API request)",
+  "calls": [
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 2100,
+    "total_chars": 186780,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 854,
+    "total_chars": 74932,
+    "max_chars": 88,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 836,
+    "total_chars": 74948,
+    "max_chars": 90,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 410,
+    "total_chars": 36900,
+    "max_chars": 90,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E9 add: 5 episodes, embedder configured with batch_size=2",
+  "calls": [
+   {
+    "kind": "search_embed",
+    "n_inputs": 1,
+    "total_chars": 1,
+    "batch_size": 2,
+    "max_attempts": 1
+   },
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 5,
+    "total_chars": 420,
+    "batch_size": 2,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 1,
+    "max_chars": 1,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 2,
+    "total_chars": 168,
+    "max_chars": 84,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 2,
+    "total_chars": 168,
+    "max_chars": 84,
+    "dimensions_param": true
+   },
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 84,
+    "max_chars": 84,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E10 add: 2 episodes with sentence_text deriver (3 sentences each)",
+  "calls": [
+   {
+    "kind": "ingest_embed",
+    "n_inputs": 6,
+    "total_chars": 356,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 6,
+    "total_chars": 356,
+    "max_chars": 60,
+    "dimensions_param": true
+   }
+  ]
+ },
+ {
+  "section": "E11 search after instance-cache eviction (cold instance)",
+  "calls": [
+   {
+    "kind": "search_embed",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "batch_size": null,
+    "max_attempts": 1
+   }
+  ],
+  "http": [
+   {
+    "path": "/v1/embeddings",
+    "n_inputs": 1,
+    "total_chars": 16,
+    "max_chars": 16,
+    "dimensions_param": true
+   }
+  ]
+ }
+]

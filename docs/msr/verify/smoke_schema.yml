@@ -1,0 +1,66 @@
+logging:
+  path: /tmp/smoke-mem.log
+  level: info
+
+episode_store:
+  database: sqlite_test
+
+episodic_memory:
+  long_term_memory:
+    backend: event
+    embedder: openai_embedder
+    vector_store: event_vector_store
+    segment_store: sqlite_test
+    properties_schema:
+      user_id: str
+      session_id: str
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+
+retrieval_agent:
+  llm_model: openai_model
+  reranker: my_reranker_id
+
+semantic_memory:
+  llm_model: openai_model
+  embedding_model: openai_embedder
+  database: sqlite_test
+  config_database: sqlite_test
+
+session_manager:
+  database: sqlite_test
+
+prompt:
+  default_project_categories:
+  - profile_prompt
+
+resources:
+  databases:
+    sqlite_test:
+      provider: sqlite
+      config:
+        path: /tmp/smoke_seg.db
+    event_vector_store:
+      provider: sqlite_vector_store
+      config:
+        path: /tmp/smoke_vectors.db
+        vector_search_engine: usearch
+  embedders:
+    openai_embedder:
+      provider: openai
+      config:
+        model: "text-embedding-3-small"
+        api_key: "unused-stubbed-in-test"
+        base_url: "https://api.openai.com/v1"
+        dimensions: 1536
+  language_models:
+    openai_model:
+      provider: openai-responses
+      config:
+        model: "gpt-4o-mini"
+        api_key: "unused-stubbed-in-test"
+        base_url: "https://api.openai.com/v1"
+  rerankers:
+    my_reranker_id:
+      provider: "identity"

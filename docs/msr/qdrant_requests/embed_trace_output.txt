@@ -1,0 +1,64 @@
+    from memmachine_server.retrieval_agent.agents.decomposer.decomposer import (
+
+■ E1 first session open: embedder built with validate=True
+   embedder calls = 1 {'search_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  search_embed  inputs=1     chars=1        batch_size=None
+     HTTP  inputs=1     chars=1        max_chars=1       dims_param=True
+
+■ E2 second new session: embedder already cached in this process
+   embedder calls = 0 {}   ->   HTTP /v1/embeddings = 0
+
+■ E3 add: 4 episodes in one request (passthrough + whole_text)
+   embedder calls = 1 {'ingest_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  ingest_embed  inputs=4     chars=336      batch_size=None
+     HTTP  inputs=4     chars=336      max_chars=84      dims_param=True
+
+■ E4 add: 1 episode
+   embedder calls = 1 {'ingest_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  ingest_embed  inputs=1     chars=84       batch_size=None
+     HTTP  inputs=1     chars=84       max_chars=84      dims_param=True
+
+■ E5 search: no filter, top_k=20
+   embedder calls = 1 {'search_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  search_embed  inputs=1     chars=16       batch_size=None
+     HTTP  inputs=1     chars=16       max_chars=16      dims_param=True
+
+■ E6 search: expand_context=4, top_k=5
+   embedder calls = 1 {'search_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  search_embed  inputs=1     chars=16       batch_size=None
+     HTTP  inputs=1     chars=16       max_chars=16      dims_param=True
+
+■ E7 add: 1 very long episode (160k chars -> chunk_text at 75k)
+   embedder calls = 1 {'ingest_embed': 1}   ->   HTTP /v1/embeddings = 3
+     call  ingest_embed  inputs=1     chars=160039   batch_size=None
+     HTTP  inputs=1     chars=75000    max_chars=75000   dims_param=True
+     HTTP  inputs=1     chars=75000    max_chars=75000   dims_param=True
+     HTTP  inputs=1     chars=10039    max_chars=10039   dims_param=True
+
+■ E8 add: 2100 episodes in one request (max 2048 inputs per API request)
+   embedder calls = 1 {'ingest_embed': 1}   ->   HTTP /v1/embeddings = 3
+     call  ingest_embed  inputs=2100  chars=186780   batch_size=None
+     HTTP  inputs=854   chars=74932    max_chars=88      dims_param=True
+     HTTP  inputs=836   chars=74948    max_chars=90      dims_param=True
+     HTTP  inputs=410   chars=36900    max_chars=90      dims_param=True
+
+■ E9 add: 5 episodes, embedder configured with batch_size=2
+   embedder calls = 2 {'search_embed': 1, 'ingest_embed': 1}   ->   HTTP /v1/embeddings = 4
+     call  search_embed  inputs=1     chars=1        batch_size=2
+     call  ingest_embed  inputs=5     chars=420      batch_size=2
+     HTTP  inputs=1     chars=1        max_chars=1       dims_param=True
+     HTTP  inputs=2     chars=168      max_chars=84      dims_param=True
+     HTTP  inputs=2     chars=168      max_chars=84      dims_param=True
+     HTTP  inputs=1     chars=84       max_chars=84      dims_param=True
+
+■ E10 add: 2 episodes with sentence_text deriver (3 sentences each)
+   embedder calls = 1 {'ingest_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  ingest_embed  inputs=6     chars=356      batch_size=None
+     HTTP  inputs=6     chars=356      max_chars=60      dims_param=True
+
+■ E11 search after instance-cache eviction (cold instance)
+   embedder calls = 1 {'search_embed': 1}   ->   HTTP /v1/embeddings = 1
+     call  search_embed  inputs=1     chars=16       batch_size=None
+     HTTP  inputs=1     chars=16       max_chars=16      dims_param=True
+
+wrote /private/tmp/claude-501/-Users-taejin-Projects-MemMachine-repo/de56f566-1d00-4983-a1d2-bcf65019a61c/scratchpad/prodtest/embedding_call_trace.json

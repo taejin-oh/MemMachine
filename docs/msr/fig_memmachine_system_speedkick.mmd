@@ -1,0 +1,48 @@
+%%{init: {"flowchart": {"wrappingWidth": 500, "nodeSpacing": 38, "rankSpacing": 75, "curve": "basis"}, "themeVariables": {"fontSize": "15px"}}}%%
+flowchart LR
+    C["클라이언트<br/>v2 REST API"]
+
+    subgraph MMP["MemMachine 프로세스"]
+        direction TB
+        OWN["<b>MemMachine 고유 로직</b> — 조율만<br/> <br/>① 순서 강제 · 원문 저장 → 인덱싱<br/>(main/memmachine.py:755, 775)<br/>② 세션 인스턴스 수명 · LRU 100 · RW 락<br/>③ 필터 DSL 파싱 · 검증 · 필드 번역<br/>339줄 자체 구현 (토크나이저+재귀하강, 표준 라이브러리만)<br/>④ 결과 조립 · 임계값 · 중복제거 ·<br/>점수 재결합 · 창→에피소드 통합 (#1547)<br/> <br/><i>이 경로에서 가장 큰 고유 코드가 ③ 필터 파서다.<br/>즉 고유 로직은 계산이 아니라 <b>번역·조율</b>이다.<br/>모델도 인덱스도 랭킹 알고리즘도 없다</i>"]
+        AD["<b>어댑터 계층</b> — 감싸기만 한다<br/>(주석·공백 제외 실코드, acb4f9a)<br/> <br/><b>세그먼트화</b> 기본 passthrough · text 90줄 → langchain<br/>RecursiveCharacterTextSplitter.split_text()<br/><b>리랭커</b> embedder_reranker 24 · rrf 32 · bm25 45<br/>cross_encoder 48 · cohere 48<br/><b>임베더</b> sentence_transformer 140<br/>bedrock 186 · openai 277<br/><b>스토어</b> qdrant-client · pymilvus · SQLAlchemy<br/> <br/><i>큰 줄 수는 청킹·배치·재시도·레이트리밋.<br/>확인함: openai 277줄에 임베딩 알고리즘 없음</i>"]
+    end
+
+    subgraph PROV["기능을 실제로 제공하는 쪽 — 전부 MemMachine 것이 아니다"]
+        direction TB
+        P1["<b>① 항상 외부 프로세스</b><br/> <br/>Qdrant / Milvus — 인덱스 구축 · ANN 탐색 · payload 필터 실행<br/>PostgreSQL — 원문 저장·PK 복원 · 세그먼트 조회·문맥 walk<br/>LLM API — 시맨틱 추출(백그라운드) · agent 모드(설정 시)"]
+        P2["<b>② 실행 위치만 설정으로 갈림</b> — 소유는 어느 쪽이든 외부<br/> <br/>임베딩 모델　openai · bedrock <b>(기본)</b> → API 호출<br/>　　　　　　　sentence_transformer → 프로세스 안, <b>남의 라이브러리</b><br/>리랭킹 모델　cohere · bedrock → API 호출<br/>　　　　　　　cross_encoder · bm25 → 프로세스 안, <b>남의 라이브러리</b>"]
+        P3["<b>③ 라이브러리를 안 부르는 둘</b> — 그래도 자체 점수는 없다<br/> <br/>rrf_hybrid = 하위 리랭커 랭킹을 1/(k+rank)로 합치는 <b>융합 계층</b><br/>embedder_reranker = 임베더(외부 모델) 결과의 코사인<br/><i>→ 모든 경로가 결국 외부 모델에서 끝난다</i>"]
+    end
+
+    BURDEN["<b>그래서 다중 사용자 부하는 외부로 간다</b><br/>(speedkick acb4f9a 근거)<br/> <br/><b>증폭</b> agent_mode 검색 1건 =<br/>최대 임베딩 22 · 벡터검색 22 · DB읽기 44 · LLM 1~2<br/>최적화 CoQ 설정 시의 상한 · 코드 유도값(미측정) · 일반 검색의 약 22배<br/>배포 기본값(LLM 미설정)에선 일반 검색 1회로 동작<br/><i>tools/sizing/README.md</i><br/> <br/><b>병목 관측</b> 파티션 316개 PostgreSQL — generic plan이 실행마다<br/>모든 자식 파티션을 락 → CPU 상한 고정 · HTTP 500<br/>중간 수정(자식 테이블 직접 DML)에서 128 동시 처리량 +20~30%<br/>최종적으로 #1548이 파티션 구조를 공유 테이블로 교체 <i>(#1546)</i><br/> <br/><b>upstream 용량 모델의 산정 대상</b><br/>API 서버 · 벡터스토어 머신+RAM · PostgreSQL 서버 ·<br/>임베딩/에이전트 GPU · 커넥션 수 <i>(tools/sizing)</i>"]
+
+    CAV["<b>단서</b> — 인프로세스 대기도 존재 (전부 무계측)<br/>캐시 miss 시 세션 write 락 안 cold open ·<br/>캐시 100 초과 시 idle evict → 재open ·<br/>세그먼트화/결과 조립 CPU<br/><i>부하가 외부에만 걸리는 것은 아니다</i>"]
+
+    C ==> OWN
+    OWN ==> AD
+    AD ==> P1
+    AD ==> P2
+    AD ==> P3
+    OWN ==> P1
+    P1 ==> BURDEN
+    P2 ==> BURDEN
+    P3 ==> BURDEN
+    OWN -.-> CAV
+
+    classDef own fill:#dde7f5,stroke:#2f4a7a,stroke-width:2px
+    classDef ad fill:#eef2f8,stroke:#6b7f9e,stroke-width:1.4px,stroke-dasharray:5 4
+    classDef ext fill:#e6f4f1,stroke:#1f7a6a,stroke-width:1.6px
+    classDef note fill:#fbeaea,stroke:#a33,stroke-width:1.3px
+    classDef caveat fill:#fdf3e3,stroke:#b3781f,stroke-width:1.3px
+    classDef cli fill:#efeaf7,stroke:#5b4a8a,stroke-width:1.4px
+    classDef mmbox fill:#f7f9fc,stroke:#2f4a7a,stroke-width:2px
+    classDef provbox fill:#f2fbf9,stroke:#1f7a6a,stroke-width:2px
+    class OWN own
+    class AD ad
+    class P1,P2,P3 ext
+    class BURDEN note
+    class CAV caveat
+    class C cli
+    class MMP mmbox
+    class PROV provbox

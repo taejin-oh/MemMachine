@@ -1,0 +1,81 @@
+# Qdrant 요청 트레이스와 사용자 필터 검증에 쓰는 설정.
+#
+# 이 파일은 스크립트와 같은 디렉터리에 두고, 그 디렉터리에서 스크립트를 실행한다.
+# 로그 경로가 상대 경로이므로 실행 위치가 로그 위치를 정한다.
+#
+# 포트는 재현 가이드의 컨테이너 설정과 맞춰 둔 값이다. 기본 포트(6333, 5432)를
+# 쓰지 않는 이유는 그 서버에서 이미 돌고 있을 수 있는 Qdrant/PostgreSQL 과
+# 충돌하지 않게 하기 위함이다.
+
+logging:
+  path: mm.log
+  level: error
+
+episode_store:
+  database: pg
+
+episodic_memory:
+  long_term_memory:
+    backend: event
+    embedder: openai_embedder
+    vector_store: event_vector_store
+    segment_store: pg
+  short_term_memory:
+    llm_model: openai_model
+    message_capacity: 500
+
+retrieval_agent:
+  llm_model: openai_model
+  reranker: my_reranker_id
+
+semantic_memory:
+  llm_model: openai_model
+  embedding_model: openai_embedder
+  database: pg
+  config_database: pg
+
+session_manager:
+  database: pg
+
+prompt:
+  default_project_categories: [profile_prompt]
+
+resources:
+  databases:
+    pg:
+      provider: postgres
+      config:
+        host: 127.0.0.1
+        port: 15432
+        user: postgres
+        password: mmtest
+        db_name: postgres
+    event_vector_store:
+      provider: qdrant
+      config:
+        host: 127.0.0.1
+        port: 16333
+        grpc_port: 16334
+        prefer_grpc: false
+        https: false
+  embedders:
+    # 실제로는 호출되지 않는다. 스크립트가 결정적 해시 임베더로 교체한다.
+    # 설정이 없으면 서버가 뜨지 않으므로 형식만 채워 둔다.
+    openai_embedder:
+      provider: openai
+      config:
+        model: "text-embedding-3-small"
+        api_key: "unused-stubbed-in-test"
+        base_url: "https://api.openai.com/v1"
+        dimensions: 1536
+  language_models:
+    # 마찬가지로 호출되지 않는다. 단기 기억을 끄고 실행하기 때문이다.
+    openai_model:
+      provider: openai-responses
+      config:
+        model: "gpt-4o-mini"
+        api_key: "unused-stubbed-in-test"
+        base_url: "https://api.openai.com/v1"
+  rerankers:
+    my_reranker_id:
+      provider: "identity"
