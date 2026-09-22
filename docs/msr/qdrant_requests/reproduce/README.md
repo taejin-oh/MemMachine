@@ -165,6 +165,8 @@ a8322a7 [vector store 1/13] Remove per-project filterable properties (speedkick)
 
 클론에 약 6초, 디스크 약 36MB가 든다.
 
+**재측정 시 기준 커밋.** 위 체크아웃과 6장의 확인 출력은 2026-09-15 측정 당시의 기록이다. 다시 측정할 때의 기준은 speedkick `8d7b832`(`8d7b832a1357af7de018fce6ea76ad190a336e0f`)이며, 계측 A 는 `trace_qdrant_requests.py` 대신 요청과 응답의 원문을 함께 기록하는 `trace_qdrant_requests_raw.py`(같은 폴더)를 쓴다. 이 스크립트의 기록 항목과 실행 환경 요건과 기대 횟수는 `../../qdrant_bottleneck/emulator_request_spec_2026-09-22.md` 9장에 있다. `a8322a7` 부터 `8d7b832` 사이에 Qdrant 요청 본문을 바꾼 커밋이 없으므로 8장의 구간별 요청 수는 그대로여야 하고, 6장의 확인 출력(qdrant-client 1.19.0)도 같다.
+
 ---
 
 ## 6. 의존성 설치

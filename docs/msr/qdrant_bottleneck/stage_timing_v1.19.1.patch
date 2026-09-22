@@ -1,0 +1,809 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 5d291ef..676b459 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -19,6 +19,9 @@ workspace = true
+ 
+ [features]
+ default = []
++# 단계별 계측(검색 S0~S8, 저장 W0~W8)을 켠다.
++# 계측 유무 빌드를 같은 부하로 비교해 왜곡을 확인하기 위한 스위치다.
++stage-timing = ["common/stage-timing"]
+ service_debug = ["parking_lot/deadlock_detection", "collection/testing"]
+ tracing = [
+     "api/tracing",
+diff --git a/lib/collection/src/collection_manager/collection_updater.rs b/lib/collection/src/collection_manager/collection_updater.rs
+index 2183ce4..8c8a1b4 100644
+--- a/lib/collection/src/collection_manager/collection_updater.rs
++++ b/lib/collection/src/collection_manager/collection_updater.rs
+@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
+ use std::sync::Arc;
+ 
+ use common::counter::hardware_counter::HardwareCounterCell;
++use common::stage_timing::{Stage, StageGuard};
+ use segment::types::SeqNumberType;
+ use shard::segment_holder::locked::LockedSegmentHolder;
+ use shard::update::*;
+@@ -53,12 +54,20 @@ impl CollectionUpdater {
+             // Allow only one update at a time, ensure no data races between segments.
+             // let _update_lock = self.update_lock.lock().unwrap();
+ 
+-            let _update_operation_lock = update_operation_lock.blocking_write();
++            // W3 전역 쓰기 락 대기
++            let _update_operation_lock = {
++                let _t = StageGuard::new(Stage::GlobalWriteLock);
++                update_operation_lock.blocking_write()
++            };
+             let _update_guard = update_tracker.update();
+             // Similar to `_update_operation_lock`, but used for operations inside segment holder
+             // E.g. optimization finalization may require update operation lock
+             // Needs to be acquired before locking segments.
+-            let _another_update_lock = segments.acquire_updates_lock();
++            // W4 세그먼트 홀더 락
++            let _another_update_lock = {
++                let _t = StageGuard::new(Stage::SegmentHolderLock);
++                segments.acquire_updates_lock()
++            };
+ 
+             let segments_guard = segments.read();
+ 
+diff --git a/lib/collection/src/collection_manager/segments_searcher.rs b/lib/collection/src/collection_manager/segments_searcher.rs
+index f3b355f..b96c3e4 100644
+--- a/lib/collection/src/collection_manager/segments_searcher.rs
++++ b/lib/collection/src/collection_manager/segments_searcher.rs
+@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
+ 
+ use ahash::AHashMap;
+ use common::counter::hardware_accumulator::HwMeasurementAcc;
++use common::stage_timing::{Stage, StageGuard};
+ use common::types::{DeferredBehavior, ScoreType};
+ use futures::stream::FuturesUnordered;
+ use futures::{FutureExt, TryStreamExt};
+@@ -93,6 +94,9 @@ impl SegmentsSearcher {
+         BatchResultAggregator,
+         AHashMap<SegmentOffset, Vec<BatchOffset>>,
+     ) {
++        // S7 세그먼트 결과 병합
++        let _t = StageGuard::new(Stage::SegmentMerge);
++
+         let number_segments = search_result.len();
+         let batch_size = limits.len();
+ 
+@@ -303,6 +307,9 @@ impl SegmentsSearcher {
+         // The second step of the search is to re-run the search without sampling on some segments
+         // Expected that this stage will be executed rarely
+         if !searches_to_rerun.is_empty() {
++            // S8 재검색
++            let _t = StageGuard::new(Stage::Rerun);
++
+             // TODO notify telemetry of failing sampling
+             // Ensure consistent order of segment ids
+             let searches_to_rerun: Vec<(SegmentOffset, Vec<BatchOffset>)> =
+@@ -659,7 +666,12 @@ fn execute_batch_search(
+     timeout: Duration,
+ ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
+     let locked_segment = segment.get();
+-    let Some(read_segment) = locked_segment.try_read_for(timeout) else {
++    // S0 세그먼트 읽기 잠금 대기
++    let read_segment_lock = {
++        let _t = StageGuard::new(Stage::SegmentReadLock);
++        locked_segment.try_read_for(timeout)
++    };
++    let Some(read_segment) = read_segment_lock else {
+         return Err(CollectionError::timeout(timeout, "batch search"));
+     };
+ 
+diff --git a/lib/collection/src/shards/local_shard/shard_ops.rs b/lib/collection/src/shards/local_shard/shard_ops.rs
+index 8f025c3..aef4fc5 100644
+--- a/lib/collection/src/shards/local_shard/shard_ops.rs
++++ b/lib/collection/src/shards/local_shard/shard_ops.rs
+@@ -3,6 +3,7 @@ use std::time::Duration;
+ 
+ use async_trait::async_trait;
+ use common::counter::hardware_accumulator::HwMeasurementAcc;
++use common::stage_timing::{Stage, StageGuard};
+ use common::types::DeferredBehavior;
+ use segment::data_types::facets::{FacetParams, FacetResponse};
+ use segment::data_types::order_by::OrderBy;
+@@ -118,12 +119,21 @@ impl LocalShard {
+         let pending_operations_count = self.update_queue_length();
+ 
+         let update_sender = self.update_sender.load();
+-        let channel_permit = update_sender.reserve().await?;
++        // W0 대기열 자리 확보
++        let channel_permit = {
++            let _t = StageGuard::new(Stage::QueueReserve);
++            update_sender.reserve().await
++        }?;
+ 
+         // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
+         //
+         // TODO: Refactor `lock_and_write`, so this is less terrible? :/
+-        let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
++        // W1 WAL 기록
++        let wal_write_result = {
++            let _t = StageGuard::new(Stage::WalWrite);
++            self.wal.lock_and_write(&mut operation).await
++        };
++        let (operation_id, _wal_lock) = match wal_write_result {
+             Ok(id_and_lock) => id_and_lock,
+ 
+             Err(shard::wal::WalError::ClockRejected) => {
+diff --git a/lib/collection/src/update_workers/update_worker.rs b/lib/collection/src/update_workers/update_worker.rs
+index d316c95..db8f72d 100644
+--- a/lib/collection/src/update_workers/update_worker.rs
++++ b/lib/collection/src/update_workers/update_worker.rs
+@@ -5,6 +5,7 @@ use std::time::Instant;
+ use cancel::CancellationToken;
+ use common::counter::hardware_accumulator::HwMeasurementAcc;
+ use common::save_on_disk::SaveOnDisk;
++use common::stage_timing::{Stage, StageGuard};
+ use segment::types::SeqNumberType;
+ use shard::operations::CollectionUpdateOperations;
+ use shard::payload_index_schema::PayloadIndexSchema;
+@@ -347,6 +348,8 @@ impl UpdateWorkers {
+     ) -> CollectionResult<usize> {
+         // If wait flag is set, explicitly flush WAL first
+         if wait {
++            // W2 WAL 확정
++            let _t = StageGuard::new(Stage::WalFlush);
+             wal.blocking_lock().flush().map_err(|err| {
+                 CollectionError::service_error(format!(
+                     "Can't flush WAL before operation {op_num} - {err}"
+diff --git a/lib/common/common/Cargo.toml b/lib/common/common/Cargo.toml
+index fd6fd37..65afe4d 100644
+--- a/lib/common/common/Cargo.toml
++++ b/lib/common/common/Cargo.toml
+@@ -14,6 +14,8 @@ workspace = true
+ 
+ [features]
+ testing = []
++# 단계별 계측(S0~S8, W0~W8)을 켠다. 끄면 계측 호출이 빈 코드로 컴파일된다.
++stage-timing = []
+ 
+ [dependencies]
+ ahash = { workspace = true }
+diff --git a/lib/common/common/src/lib.rs b/lib/common/common/src/lib.rs
+index c4a8a5a..b27307a 100644
+--- a/lib/common/common/src/lib.rs
++++ b/lib/common/common/src/lib.rs
+@@ -47,6 +47,7 @@ pub mod small_uint;
+ pub mod sort_utils;
+ pub mod sorted_slice;
+ pub mod stable_hash;
++pub mod stage_timing;
+ pub mod storage_version;
+ pub mod stored_bitmask;
+ pub mod stored_bitslice;
+diff --git a/lib/common/common/src/stage_timing.rs b/lib/common/common/src/stage_timing.rs
+new file mode 100644
+index 0000000..37fd046
+--- /dev/null
++++ b/lib/common/common/src/stage_timing.rs
+@@ -0,0 +1,345 @@
++//! 단계별 계측 (stage timing)
++//!
++//! 검색 9개 지점(S0~S8)과 저장 9개 지점(W0~W8)의 소요 시간을 누적한다.
++//! 계측 지점의 근거는 `docs/msr/qdrant_bottleneck/stage_isolation_2026-09-18.md` 에 있다.
++//!
++//! # 설계
++//!
++//! 요청마다 단계별 시간을 따로 남기지 않고 **단계별 총합과 호출 횟수만 누적한다.**
++//! 병목 지점을 가리는 데에는 단계별 총합이면 충분하고, 요청별 지연 분포는
++//! Qdrant 기본 기능으로 이미 얻기 때문이다. 요청 단위로 묶지 않으므로 호출 스택에
++//! 문맥을 실어 나를 필요가 없고, 그만큼 소스 변경이 작아진다.
++//!
++//! 반복이 많은 구간(S4, S5, W8)은 호출마다 원자적 연산을 하면 계측 비용이
++//! 측정 대상을 넘어선다. 그런 구간은 [`StageAccum`] 으로 지역 변수에 더한 뒤
++//! 루프를 빠져나올 때 한 번만 반영한다.
++//!
++//! # 끄고 켜기
++//!
++//! `stage-timing` 기능을 끄면 모든 호출이 빈 코드로 컴파일된다.
++//! 계측 유무 빌드를 같은 부하로 비교해 왜곡을 확인할 때 쓴다.
++//!
++//! ```text
++//! cargo build --release                          # 계측 없음
++//! cargo build --release --features stage-timing  # 계측 있음
++//! ```
++
++#[cfg(feature = "stage-timing")]
++use std::sync::atomic::{AtomicU64, Ordering};
++
++/// 계측 지점. 값은 [`STAGE_NAMES`] 의 첨자와 같아야 한다.
++#[derive(Copy, Clone, Debug, PartialEq, Eq)]
++#[repr(usize)]
++pub enum Stage {
++    // --- 검색 ---
++    /// S0 세그먼트 읽기 잠금 대기
++    SegmentReadLock = 0,
++    /// S1 카디널리티 추정
++    CardinalityEstimate = 1,
++    /// S2 필터 평가
++    FilterEval = 2,
++    /// S3 스코어러 준비
++    ScorerSetup = 3,
++    /// S4 거리 계산 (루프 내부, 누적)
++    DistanceCalc = 4,
++    /// S5 결과 수집과 정렬 (루프 내부, 누적)
++    ResultCollect = 5,
++    /// S6 후처리
++    PostProcess = 6,
++    /// S7 세그먼트 결과 병합
++    SegmentMerge = 7,
++    /// S8 재검색
++    Rerun = 8,
++
++    // --- 저장 ---
++    /// W0 대기열 자리 확보
++    QueueReserve = 9,
++    /// W1 WAL 기록
++    WalWrite = 10,
++    /// W2 WAL 확정 (기존 지표의 사각지대)
++    WalFlush = 11,
++    /// W3 전역 쓰기 락 대기 (기존 지표의 사각지대)
++    GlobalWriteLock = 12,
++    /// W4 세그먼트 홀더 락
++    SegmentHolderLock = 13,
++    /// W5 대상 세그먼트 선택
++    SegmentSelect = 14,
++    /// W6 벡터 저장
++    VectorWrite = 15,
++    /// W7 payload 저장
++    PayloadWrite = 16,
++    /// W8 색인 갱신 (필드별 누적)
++    IndexUpdate = 17,
++}
++
++/// 계측 지점 개수. 검색 9 + 저장 9.
++pub const STAGE_COUNT: usize = 18;
++
++/// 지표 이름. `Stage` 의 값 순서와 반드시 일치해야 한다.
++pub const STAGE_NAMES: [&str; STAGE_COUNT] = [
++    "s0_segment_read_lock",
++    "s1_cardinality_estimate",
++    "s2_filter_eval",
++    "s3_scorer_setup",
++    "s4_distance_calc",
++    "s5_result_collect",
++    "s6_post_process",
++    "s7_segment_merge",
++    "s8_rerun",
++    "w0_queue_reserve",
++    "w1_wal_write",
++    "w2_wal_flush",
++    "w3_global_write_lock",
++    "w4_segment_holder_lock",
++    "w5_segment_select",
++    "w6_vector_write",
++    "w7_payload_write",
++    "w8_index_update",
++];
++
++/// 단계 하나의 누적값.
++///
++/// 캐시 라인 하나를 통째로 차지하게 해 서로 다른 단계가 같은 라인을 두고
++/// 다투지 않도록 한다. S4 와 S5 는 호출 빈도가 높아 이 구분이 실제로 효과가 있다.
++#[cfg(feature = "stage-timing")]
++#[repr(align(64))]
++pub struct StageStat {
++    nanos: AtomicU64,
++    count: AtomicU64,
++}
++
++#[cfg(feature = "stage-timing")]
++impl StageStat {
++    const fn new() -> Self {
++        Self {
++            nanos: AtomicU64::new(0),
++            count: AtomicU64::new(0),
++        }
++    }
++}
++
++// 배열을 상수 하나로 반복 초기화한다. 인라인 const 표현식을 쓰지 않으므로
++// 오래된 툴체인에서도 컴파일된다.
++#[cfg(feature = "stage-timing")]
++#[allow(clippy::declare_interior_mutable_const)]
++const EMPTY_STAT: StageStat = StageStat::new();
++
++#[cfg(feature = "stage-timing")]
++static STATS: [StageStat; STAGE_COUNT] = [EMPTY_STAT; STAGE_COUNT];
++
++/// 단계 하나에 소요 시간을 더한다.
++///
++/// 호출 한 번에 원자적 덧셈 두 번이 든다. 요청당 한 번 호출되는 구간에 쓴다.
++/// 루프 안에서는 [`StageAccum`] 을 쓴다.
++#[inline(always)]
++pub fn record(stage: Stage, nanos: u64) {
++    #[cfg(feature = "stage-timing")]
++    {
++        let stat = &STATS[stage as usize];
++        stat.nanos.fetch_add(nanos, Ordering::Relaxed);
++        stat.count.fetch_add(1, Ordering::Relaxed);
++    }
++    #[cfg(not(feature = "stage-timing"))]
++    {
++        let _ = (stage, nanos);
++    }
++}
++
++/// 범위를 벗어날 때 자동으로 시간을 기록하는 가드.
++///
++/// 측정하려는 호출 바로 앞에 두고, 그 범위가 끝나면 기록된다.
++///
++/// ```ignore
++/// let _t = StageGuard::new(Stage::CardinalityEstimate);
++/// let estimate = payload_index.estimate_cardinality(filter, ..);
++/// ```
++pub struct StageGuard {
++    #[cfg(feature = "stage-timing")]
++    stage: Stage,
++    #[cfg(feature = "stage-timing")]
++    start: std::time::Instant,
++}
++
++impl StageGuard {
++    #[inline(always)]
++    pub fn new(stage: Stage) -> Self {
++        #[cfg(feature = "stage-timing")]
++        {
++            Self {
++                stage,
++                start: std::time::Instant::now(),
++            }
++        }
++        #[cfg(not(feature = "stage-timing"))]
++        {
++            let _ = stage;
++            Self {}
++        }
++    }
++}
++
++impl Drop for StageGuard {
++    #[inline(always)]
++    fn drop(&mut self) {
++        #[cfg(feature = "stage-timing")]
++        {
++            record(self.stage, self.start.elapsed().as_nanos() as u64);
++        }
++    }
++}
++
++/// 루프 안에서 쓰는 누적기.
++///
++/// 호출마다 지역 변수에 더하고, 범위를 벗어날 때 **한 번만** 전역에 반영한다.
++/// 호출 횟수는 실제 반복 횟수로 기록되므로 평균을 낼 수 있다.
++///
++/// ```ignore
++/// let mut acc = StageAccum::new(Stage::DistanceCalc);
++/// loop {
++///     acc.time(|| raw_scorer.score_points(&chunk, &mut buf));
++/// }
++/// // acc 가 범위를 벗어날 때 한 번 반영된다
++/// ```
++pub struct StageAccum {
++    #[cfg(feature = "stage-timing")]
++    stage: Stage,
++    #[cfg(feature = "stage-timing")]
++    nanos: u64,
++    #[cfg(feature = "stage-timing")]
++    count: u64,
++}
++
++impl StageAccum {
++    #[inline(always)]
++    pub fn new(stage: Stage) -> Self {
++        #[cfg(feature = "stage-timing")]
++        {
++            Self {
++                stage,
++                nanos: 0,
++                count: 0,
++            }
++        }
++        #[cfg(not(feature = "stage-timing"))]
++        {
++            let _ = stage;
++            Self {}
++        }
++    }
++
++    /// 클로저를 실행하고 걸린 시간을 지역 변수에 더한다.
++    #[inline(always)]
++    pub fn time<T>(&mut self, f: impl FnOnce() -> T) -> T {
++        #[cfg(feature = "stage-timing")]
++        {
++            let start = std::time::Instant::now();
++            let out = f();
++            self.nanos += start.elapsed().as_nanos() as u64;
++            self.count += 1;
++            out
++        }
++        #[cfg(not(feature = "stage-timing"))]
++        {
++            f()
++        }
++    }
++}
++
++impl Drop for StageAccum {
++    #[inline(always)]
++    fn drop(&mut self) {
++        #[cfg(feature = "stage-timing")]
++        {
++            if self.count > 0 {
++                let stat = &STATS[self.stage as usize];
++                stat.nanos.fetch_add(self.nanos, Ordering::Relaxed);
++                stat.count.fetch_add(self.count, Ordering::Relaxed);
++            }
++        }
++    }
++}
++
++/// 단계 하나의 관측값.
++#[derive(Debug, Clone, serde::Serialize)]
++pub struct StageSnapshot {
++    pub stage: &'static str,
++    pub total_nanos: u64,
++    pub count: u64,
++    /// 호출 한 번당 평균 소요 시간. 호출이 없으면 0 이다.
++    pub mean_nanos: u64,
++}
++
++/// 현재까지 누적된 값을 읽는다. 계측이 꺼져 있으면 빈 목록을 돌려준다.
++pub fn snapshot() -> Vec<StageSnapshot> {
++    #[cfg(feature = "stage-timing")]
++    {
++        (0..STAGE_COUNT)
++            .map(|i| {
++                let total_nanos = STATS[i].nanos.load(Ordering::Relaxed);
++                let count = STATS[i].count.load(Ordering::Relaxed);
++                StageSnapshot {
++                    stage: STAGE_NAMES[i],
++                    total_nanos,
++                    count,
++                    mean_nanos: total_nanos.checked_div(count).unwrap_or(0),
++                }
++            })
++            .collect()
++    }
++    #[cfg(not(feature = "stage-timing"))]
++    {
++        Vec::new()
++    }
++}
++
++/// 누적값을 모두 0 으로 되돌린다. 측정 조건을 바꿀 때마다 호출한다.
++pub fn reset() {
++    #[cfg(feature = "stage-timing")]
++    {
++        for stat in STATS.iter() {
++            stat.nanos.store(0, Ordering::Relaxed);
++            stat.count.store(0, Ordering::Relaxed);
++        }
++    }
++}
++
++/// 계측이 켜진 빌드인지 알려 준다. 측정 결과에 함께 남겨 빌드를 구분한다.
++pub const fn is_enabled() -> bool {
++    cfg!(feature = "stage-timing")
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn stage_names_match_enum_order() {
++        // 이름 배열과 열거값의 첨자가 어긋나면 지표가 조용히 뒤바뀐다.
++        assert_eq!(STAGE_NAMES.len(), STAGE_COUNT);
++        assert_eq!(Stage::SegmentReadLock as usize, 0);
++        assert_eq!(Stage::Rerun as usize, 8);
++        assert_eq!(Stage::QueueReserve as usize, 9);
++        assert_eq!(Stage::IndexUpdate as usize, STAGE_COUNT - 1);
++        assert_eq!(STAGE_NAMES[Stage::WalFlush as usize], "w2_wal_flush");
++        assert_eq!(
++            STAGE_NAMES[Stage::GlobalWriteLock as usize],
++            "w3_global_write_lock"
++        );
++    }
++
++    #[cfg(feature = "stage-timing")]
++    #[test]
++    fn accum_reports_each_iteration() {
++        reset();
++        {
++            let mut acc = StageAccum::new(Stage::DistanceCalc);
++            for _ in 0..5 {
++                acc.time(|| std::hint::black_box(1 + 1));
++            }
++        }
++        let snap = snapshot();
++        let s4 = &snap[Stage::DistanceCalc as usize];
++        assert_eq!(s4.count, 5, "루프 횟수가 그대로 기록되어야 한다");
++        reset();
++    }
++}
+diff --git a/lib/segment/src/index/hnsw_index/hnsw/read_view/search.rs b/lib/segment/src/index/hnsw_index/hnsw/read_view/search.rs
+index 86d6cd4..45116f9 100644
+--- a/lib/segment/src/index/hnsw_index/hnsw/read_view/search.rs
++++ b/lib/segment/src/index/hnsw_index/hnsw/read_view/search.rs
+@@ -1,5 +1,6 @@
+ use common::bitvec::BitSlice;
+ use common::counter::hardware_counter::HardwareCounterCell;
++use common::stage_timing::{Stage, StageGuard};
+ use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+ use common::universal_io::UniversalRead;
+ 
+@@ -223,9 +224,14 @@ where
+         vector_query_context: &VectorQueryContext,
+     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+         let is_stopped = vector_query_context.is_stopped();
+-        let batch_filtered_searcher =
+-            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
++        // S3 스코어러 준비
++        let batch_filtered_searcher = {
++            let _t = StageGuard::new(Stage::ScorerSetup);
++            self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?
++        };
+         let search_results = batch_filtered_searcher.peek_top_iter(filtered_points, &is_stopped)?;
++        // S6 후처리
++        let _t = StageGuard::new(Stage::PostProcess);
+         self.postprocess_plain_batch(
+             search_results,
+             query_vectors,
+@@ -323,20 +329,26 @@ where
+         let is_stopped = &vector_query_context.is_stopped();
+ 
+         // Assume query is already estimated to be small enough so we can iterate over all matched ids
+-        let query_cardinality = self
+-            .payload_index
+-            .estimate_cardinality(filter, hw_counter)?;
+-        let filtered_points: Vec<PointOffsetType> = self
+-            .payload_index
+-            .iter_filtered_points(
+-                filter,
+-                &query_cardinality,
+-                hw_counter,
+-                is_stopped,
+-                // No deferred filtering here since it's HNSW index.
+-                DeferredBehavior::WithDeferred,
+-            )
+-            .map(|it| it.collect())?;
++        // S1 카디널리티 추정
++        let query_cardinality = {
++            let _t = StageGuard::new(Stage::CardinalityEstimate);
++            self.payload_index
++                .estimate_cardinality(filter, hw_counter)?
++        };
++        // S2 필터 평가
++        let filtered_points: Vec<PointOffsetType> = {
++            let _t = StageGuard::new(Stage::FilterEval);
++            self.payload_index
++                .iter_filtered_points(
++                    filter,
++                    &query_cardinality,
++                    hw_counter,
++                    is_stopped,
++                    // No deferred filtering here since it's HNSW index.
++                    DeferredBehavior::WithDeferred,
++                )
++                .map(|it| it.collect())?
++        };
+         self.search_plain_batched(
+             vectors,
+             filtered_points.into_iter(),
+diff --git a/lib/segment/src/index/hnsw_index/point_scorer.rs b/lib/segment/src/index/hnsw_index/point_scorer.rs
+index 0d82141..8c85c5c 100644
+--- a/lib/segment/src/index/hnsw_index/point_scorer.rs
++++ b/lib/segment/src/index/hnsw_index/point_scorer.rs
+@@ -5,6 +5,7 @@ use common::bitvec::BitSlice;
+ use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
+ use common::counter::hardware_counter::HardwareCounterCell;
+ use common::generic_consts::Random;
++use common::stage_timing::{Stage, StageAccum};
+ use common::top_k::TopK;
+ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+ use smallvec::SmallVec;
+@@ -491,6 +492,10 @@ impl<'a> BatchFilteredSearcher<'a> {
+         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
+         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+ 
++        // S4, S5 는 같은 루프 안에 있어 누적기로 따로 모은다.
++        let mut acc_distance = StageAccum::new(Stage::DistanceCalc);
++        let mut acc_collect = StageAccum::new(Stage::ResultCollect);
++
+         loop {
+             check_process_stopped(is_stopped)?;
+ 
+@@ -514,14 +519,20 @@ impl<'a> BatchFilteredSearcher<'a> {
+ 
+             // Switching the loops improves batching performance, but slightly degrades single-query performance.
+             for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
+-                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+-
+-                for i in 0..chunk_size {
+-                    top_k.push(ScoredPointOffset {
+-                        idx: chunk[i],
+-                        score: scores_buffer[i],
+-                    });
+-                }
++                // S4 거리 계산
++                acc_distance.time(|| {
++                    raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size])
++                });
++
++                // S5 결과 수집·정렬
++                acc_collect.time(|| {
++                    for i in 0..chunk_size {
++                        top_k.push(ScoredPointOffset {
++                            idx: chunk[i],
++                            score: scores_buffer[i],
++                        });
++                    }
++                });
+             }
+         }
+ 
+diff --git a/lib/segment/src/index/struct_payload_index/payload_index.rs b/lib/segment/src/index/struct_payload_index/payload_index.rs
+index a731839..56bc56a 100644
+--- a/lib/segment/src/index/struct_payload_index/payload_index.rs
++++ b/lib/segment/src/index/struct_payload_index/payload_index.rs
+@@ -1,6 +1,7 @@
+ use std::path::PathBuf;
+ 
+ use common::counter::hardware_counter::HardwareCounterCell;
++use common::stage_timing::{Stage, StageAccum, StageGuard};
+ use common::types::PointOffsetType;
+ use serde_json::Value;
+ 
+@@ -150,19 +151,25 @@ impl PayloadIndex for StructPayloadIndex {
+         payload: &Payload,
+         hw_counter: &HardwareCounterCell,
+     ) -> OperationResult<()> {
+-        self.payload
+-            .borrow_mut()
+-            .overwrite(point_id, payload, hw_counter)?;
++        // W7 payload 저장
++        {
++            let _t = StageGuard::new(Stage::PayloadWrite);
++            self.payload
++                .borrow_mut()
++                .overwrite(point_id, payload, hw_counter)?;
++        }
+ 
++        // W8 색인 갱신 (필드별 누적)
++        let mut acc = StageAccum::new(Stage::IndexUpdate);
+         for (field, field_index) in &mut self.field_indexes {
+             let field_value = payload.get_value(field);
+             if !field_value.is_empty() {
+                 for index in field_index {
+-                    index.add_point(point_id, &field_value, hw_counter)?;
++                    acc.time(|| index.add_point(point_id, &field_value, hw_counter))?;
+                 }
+             } else {
+                 for index in field_index {
+-                    index.remove_point(point_id)?;
++                    acc.time(|| index.remove_point(point_id))?;
+                 }
+             }
+         }
+diff --git a/lib/segment/src/segment/segment_ops.rs b/lib/segment/src/segment/segment_ops.rs
+index 8e2fe4a..fc8959a 100644
+--- a/lib/segment/src/segment/segment_ops.rs
++++ b/lib/segment/src/segment/segment_ops.rs
+@@ -6,6 +6,7 @@ use common::bitvec::BitVec;
+ use common::counter::hardware_counter::HardwareCounterCell;
+ use common::fs::{atomic_save_json, read_json};
+ use common::generic_consts::Random;
++use common::stage_timing::{Stage, StageGuard};
+ use common::tar_unpack::tar_unpack_file;
+ use common::types::{DeferredBehavior, PointOffsetType};
+ use fs_err as fs;
+@@ -253,6 +254,8 @@ impl Segment {
+             let mut vector_index = vector_data.vector_index.borrow_mut();
+             match updated_vectors.get(vector_name) {
+                 Some(vector) => {
++                    // W6 벡터 저장
++                    let _t = StageGuard::new(Stage::VectorWrite);
+                     vector_index.update_vector(internal_id, Some(vector), hw_counter)?;
+                 }
+                 None => {
+diff --git a/lib/shard/src/update/points/upsert.rs b/lib/shard/src/update/points/upsert.rs
+index 66ea404..e18f77e 100644
+--- a/lib/shard/src/update/points/upsert.rs
++++ b/lib/shard/src/update/points/upsert.rs
+@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
+ use ahash::AHashMap;
+ use common::counter::hardware_counter::HardwareCounterCell;
+ use common::flags::feature_flags;
++use common::stage_timing::{Stage, StageGuard};
+ use parking_lot::RwLockWriteGuard;
+ use segment::common::operation_error::{OperationError, OperationResult};
+ use segment::data_types::named_vectors::NamedVectors;
+@@ -232,6 +233,11 @@ where
+ 
+     for ids_chunk in ids.chunks(UPDATE_OP_CHUNK_SIZE) {
+         // Update points in writable segments
++        //
++        // W5 계측을 여기에 두지 않는다. 이 호출은 넘겨받은 클로저 안에서 upsert_into 를
++        // 실행하므로 W6(벡터 저장), W7(payload 저장), W8(색인 갱신)을 통째로 품는다.
++        // 여기를 재면 단계가 겹쳐 단계별 합이 전체를 넘고, W5 가 언제나 최대값으로
++        // 나와 병목 지점 판정이 무너진다. W5 는 아래의 순수 선택 구간에서만 잰다.
+         let updated_points = segments.apply_points_with_conditional_move(
+             op_num,
+             ids_chunk,
+@@ -257,12 +263,14 @@ where
+             .filter(|x| !updated_points.contains(x));
+ 
+         {
+-            let default_write_segment =
+-                segments.smallest_appendable_segment().ok_or_else(|| {
+-                    OperationError::service_error(
+-                        "No appendable segments exist, expected at least one",
+-                    )
+-                })?;
++            // W5 대상 세그먼트 선택
++            let default_write_segment = {
++                let _t = StageGuard::new(Stage::SegmentSelect);
++                segments.smallest_appendable_segment()
++            }
++            .ok_or_else(|| {
++                OperationError::service_error("No appendable segments exist, expected at least one")
++            })?;
+ 
+             let segment_arc = default_write_segment.get();
+             let mut write_segment = segment_arc.write();
+diff --git a/src/actix/api/service_api.rs b/src/actix/api/service_api.rs
+index 4446818..bdf1ddd 100644
+--- a/src/actix/api/service_api.rs
++++ b/src/actix/api/service_api.rs
+@@ -257,6 +257,35 @@ async fn truncate_unapplied_wal(
+     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
+ }
+ 
++/// 단계별 계측값 조회 (검색 S0~S8, 저장 W0~W8)
++///
++/// `stage-timing` 기능이 꺼진 빌드에서는 `enabled` 가 false 이고 목록이 비어 있다.
++/// 측정 결과에 어느 빌드였는지 함께 남기기 위해 이 값을 같이 읽는다.
++#[get("/stage_timings")]
++async fn stage_timings() -> impl Responder {
++    #[derive(Serialize)]
++    struct StageTimingsResponse {
++        enabled: bool,
++        stages: Vec<common::stage_timing::StageSnapshot>,
++    }
++
++    HttpResponse::Ok().json(StageTimingsResponse {
++        enabled: common::stage_timing::is_enabled(),
++        stages: common::stage_timing::snapshot(),
++    })
++}
++
++/// 단계별 계측값을 0 으로 되돌린다.
++///
++/// 측정 조건을 바꿀 때마다 호출해야 직전 조건의 누적값이 섞이지 않는다.
++#[post("/stage_timings/reset")]
++async fn reset_stage_timings() -> impl Responder {
++    common::stage_timing::reset();
++    HttpResponse::Ok()
++        .content_type(ContentType::plaintext())
++        .body("stage timings reset")
++}
++
+ // Configure services
+ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
+     cfg.service(telemetry)
+@@ -267,7 +296,9 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
+         .service(readyz)
+         .service(get_logger_config)
+         .service(update_logger_config)
+-        .service(truncate_unapplied_wal);
++        .service(truncate_unapplied_wal)
++        .service(stage_timings)
++        .service(reset_stage_timings);
+ }
+ 
+ // Dedicated service for metrics
