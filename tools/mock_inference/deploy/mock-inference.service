@@ -1,0 +1,44 @@
+# systemd unit for the mock embedding/rerank server (design doc section 15, C9).
+#
+# Install: copy to /etc/systemd/system/mock-inference.service, then
+#   systemctl daemon-reload && systemctl enable --now mock-inference
+# Before use, set User, the venv and --vectors paths, and the load arguments
+# for the host: --target-rps, --cores, and --rps-per-worker (roughly 80% of
+# the RPS measured with --workers 1). User must be able to write the
+# directory holding <vectors>.state.json and .state.lock (the directory
+# --vectors lives in, unless --state-dir points elsewhere).
+#
+# This unit binds 0.0.0.0 with no authentication: anyone who can reach the
+# port can advance the stream or load the server. Narrow with --host or a
+# firewall on an untrusted network.
+#
+# The stream position lives in <vectors>.state.json next to the .npy, so it
+# survives restarts and reboots. To start a new test from row START, stop the
+# service, then run `python -m mock_inference reset --vectors <path>
+# [--state-dir ...]` once. serve no longer takes --reset and refuses to start
+# when the port is already bound, so it can't be used by mistake to rewind a
+# live stream.
+
+[Unit]
+Description=Mock OpenAI-embeddings / Cohere-rerank server serving dataset vectors
+After=network.target
+RequiresMountsFor=/data/vectors
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=mock
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/mock_venv/bin/python -m mock_inference serve \
+    --vectors /data/vectors/laion_100m.npy \
+    --target-rps 10000 \
+    --rps-per-worker 1000 \
+    --cores 0-11 \
+    --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

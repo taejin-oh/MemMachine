@@ -1,0 +1,42 @@
+# Dry-run config for checks/mm_resource_check.py.
+#
+# The resources/episodic_memory/retrieval_agent/semantic_memory sections are
+# design doc section 11 with MOCK_HOST = 127.0.0.1. The rest is only what
+# MemMachine's Configuration refuses to parse without: logging.path must be a
+# non-empty string, session_manager and episode_store must exist (empty is
+# fine), semantic_memory.config_database is a required field. No database is
+# configured and none is opened; ResourceManagerImpl connects lazily.
+#
+# In-house: copy this file, change the two base_url hosts and dimensions.
+
+logging:
+  path: mm_resource_check.log          # written in the current directory
+session_manager: {}
+episode_store: {}
+
+resources:
+  embedders:
+    mock_embedder:
+      provider: openai
+      config:
+        model: "mock-embed"
+        api_key: "mock"
+        base_url: "http://127.0.0.1:8000/v1"   # openai side: up to /v1
+        dimensions: 768                        # must equal the .npy dim; 1536 for msmarco
+  rerankers:
+    mock_reranker:
+      provider: cohere
+      config:
+        cohere_key: "mock"
+        model: "mock-rerank"
+        base_url: "http://127.0.0.1:8000"      # cohere side: host only, the SDK appends /v2/rerank
+
+episodic_memory:
+  long_term_memory:
+    embedder: mock_embedder
+    reranker: mock_reranker
+retrieval_agent:
+  reranker: mock_reranker
+semantic_memory:
+  embedding_model: mock_embedder
+  config_database: none                  # required by the parser, never opened
