@@ -58,8 +58,10 @@ async def main(args: argparse.Namespace) -> int:
     if args.health:
         after = httpx.get(args.health).json()
         leases, rest = divmod(after["next"] - before["next"], after["chunk"])
-        check("health: next advanced by 1..workers leases", rest == 0 and 1 <= leases <= after["workers"],
-              f"next {before['next']} -> {after['next']}, chunk {after['chunk']}, workers {after['workers']}")
+        # 0 is normal on a warm server: validation rows can come out of leases taken earlier.
+        check("health: next advanced by <=workers whole leases", rest == 0 and 0 <= leases <= after["workers"],
+              f"next {before['next']} -> {after['next']}, chunk {after['chunk']}, workers {after['workers']}"
+              + (" (0 = served from existing leases)" if leases == 0 else ""))
 
     if failures:
         print(f"FAIL mm_resource_check: {len(failures)} check(s) failed")
