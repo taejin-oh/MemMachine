@@ -1,0 +1,41 @@
+{
+  "_comment": "Format example for the demo script (design section 5.4). sessions: past chats loaded into Open WebUI and MemMachine with the given date; turns alternate user/assistant and are one minute apart. questions: what the staff types during the demo; every string in expected must appear in the top-k memories retrieved for that question (checked by scripts/demo_check.py). Dates carry the display device's time zone offset.",
+  "sessions": [
+    {
+      "title": "Peanut allergy and meal prep",
+      "date": "2026-11-03T19:12:00-08:00",
+      "turns": [
+        {"role": "user", "content": "Mia was diagnosed with a peanut allergy last year, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"},
+        {"role": "assistant", "content": "Of course. Keeping everything peanut-free, here are three lunch ideas: turkey and cheese roll-ups with apple slices, a sunflower-seed-butter and jam sandwich, and pasta salad with cherry tomatoes and mozzarella."},
+        {"role": "user", "content": "She also refuses anything with mushrooms, so leave those out too."},
+        {"role": "assistant", "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Mia."}
+      ]
+    },
+    {
+      "title": "Mia's birthday ideas",
+      "date": "2026-11-18T20:05:00-08:00",
+      "turns": [
+        {"role": "user", "content": "Mia turns 7 in January and she is obsessed with dinosaurs right now. Any ideas for her birthday party?"},
+        {"role": "assistant", "content": "A dinosaur dig party would suit her: bury toy fossils in a sandbox, serve food with dinosaur names, and give each guest a small explorer hat."}
+      ]
+    },
+    {
+      "title": "Weekend hosting",
+      "date": "2026-12-05T10:30:00-08:00",
+      "turns": [
+        {"role": "user", "content": "We usually host family gatherings at our place on Saturdays. My sister brings her twins, who are vegetarian."},
+        {"role": "assistant", "content": "Good to know. For Saturday gatherings I will plan dishes that work for the vegetarian twins as well as everyone else."}
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "text": "Can you plan a menu for Mia's birthday party this Saturday?",
+      "expected": ["peanut-free", "turns 7 in January", "vegetarian"]
+    },
+    {
+      "text": "What theme should we pick for Mia's party?",
+      "expected": ["dinosaurs"]
+    }
+  ]
+}
