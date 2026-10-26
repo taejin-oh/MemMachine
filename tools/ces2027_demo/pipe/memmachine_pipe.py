@@ -260,11 +260,15 @@ def memory_prompt_line(memory: dict) -> str:
 
 
 def format_date(created_at: str | None) -> str:
-    """ISO timestamp from MemMachine to 'Nov 3, 2026'; empty when missing or unparsable."""
+    """ISO timestamp from MemMachine to 'Nov 3, 2026' in the container's time zone (TZ in .env).
+
+    MemMachine stores UTC; converting keeps the list consistent with the chat
+    timestamps the browser shows in the display device's local time.
+    """
     if not created_at:
         return ""
     try:
-        moment = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        moment = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone()
     except ValueError:
         return ""
     return f"{moment.strftime('%b')} {moment.day}, {moment.year}"

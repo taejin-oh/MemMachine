@@ -76,6 +76,7 @@ services:
     restart: unless-stopped
     ports: ["${OPENWEBUI_PORT}:8080"]
     environment:
+      TZ: ${TZ}                            # the Pipe shows memory dates in this zone
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
       ENABLE_PERSISTENT_CONFIG: "false"    # these variables always win over the admin UI
       # Right-hand model: Open WebUI calls the LLM server directly, without memory.
