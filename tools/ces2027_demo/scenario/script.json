@@ -29,7 +29,7 @@
       "title": "Weekend hosting and the family",
       "date": "2026-11-16T10:30:00-08:00",
       "turns": [
-        {"role": "user", "content": "We host family gatherings at our place most Saturdays. My sister Dana always brings her twins, Leo and Sam, and the whole family of theirs is vegetarian."},
+        {"role": "user", "content": "We host family gatherings at our place most Saturdays. My sister Dana always brings her twins, Leo and Sam, and their whole family is vegetarian."},
         {"role": "assistant", "content": "Good to know. For Saturday gatherings I will make sure there is a full vegetarian main for Dana, Leo and Sam, not just side dishes."},
         {"role": "user", "content": "My father-in-law Frank also comes. He uses a wheelchair, so we keep the living room clear and eat at the big table rather than the patio."},
         {"role": "assistant", "content": "Noted. I will plan seating around the big table and keep activities on the ground floor so Frank can join everything."},
@@ -101,7 +101,7 @@
       "expected": ["whisky", "gardening"]
     },
     {
-      "text": "My right knee was sore again after yesterday's long run. What should I change this week?",
+      "text": "My right knee was sore again after Sunday's long run. What should I change this week?",
       "why": "needs the 12 km soreness pattern and the plan (chat 4) and the strength work on home-office days (chat 7)",
       "expected": ["12 km", "kettlebell"]
     }
