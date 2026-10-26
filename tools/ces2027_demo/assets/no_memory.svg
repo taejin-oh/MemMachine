@@ -1,3 +1,4 @@
+<!-- Source of no_memory.png (rendered at 192x192). Open WebUI accepts only raster avatars; re-render the PNG after editing this file. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
   <!-- Avatar of the no-memory model: the same mark in outline only, on grey. -->
   <circle cx="48" cy="48" r="48" fill="#6b7280"/>

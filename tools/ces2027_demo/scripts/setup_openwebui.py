@@ -14,6 +14,8 @@ Steps:
      ../assets, the same system prompt on the no-memory model, and the
      capability flags that stop Open WebUI from feeding past chats, notes or
      files to either model
+  5. staff account settings: no release-notes pop-up on first login, and an
+     empty personal system prompt so nothing extra reaches either model
 """
 
 import base64
@@ -36,9 +38,10 @@ def main() -> None:
     system_prompt = shared_system_prompt(env)
     install_pipe(ui, {"BASE_SYSTEM_PROMPT": system_prompt, "LLM_BASE_URLS": env["LLM_BASE_URLS"]})
 
-    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.svg", params={})
-    upsert_model(ui, env["LLM_MODEL_NAME"], f"{env['LLM_MODEL_NAME']} (no memory)", "no_memory.svg",
+    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png", params={})
+    upsert_model(ui, env["LLM_MODEL_NAME"], f"{env['LLM_MODEL_NAME']} (no memory)", "no_memory.png",
                  params={"system": system_prompt})
+    quiet_account(ui)
     print("done")
 
 
@@ -74,16 +77,25 @@ def install_pipe(ui: OpenWebUI, valves: dict) -> None:
     ui.set_valves(valves)
 
 
+def quiet_account(ui: OpenWebUI) -> None:
+    """Keep the demo screen clean: no "What's New" pop-up, no personal system prompt (design section 5.3)."""
+    settings = ui.call("GET", "/api/v1/users/user/settings") or {}
+    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": ""}
+    ui.call("POST", "/api/v1/users/user/settings/update", settings)
+    print("account settings: release notes off, personal system prompt empty")
+
+
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: dict) -> None:
     """Create or update a workspace model entry that overrides how a base model is shown and prompted."""
-    svg = (ASSETS_DIR / avatar).read_bytes()
+    # Open WebUI serves only raster avatars (SVG falls back to its logo), hence PNG.
+    png = (ASSETS_DIR / avatar).read_bytes()
     form = {
         "id": model_id,
         "base_model_id": None,
         "name": name,
         "meta": {
             "capabilities": NO_PAST_CONTEXT,
-            "profile_image_url": "data:image/svg+xml;base64," + base64.b64encode(svg).decode(),
+            "profile_image_url": "data:image/png;base64," + base64.b64encode(png).decode(),
         },
         "params": params,
         "is_active": True,
