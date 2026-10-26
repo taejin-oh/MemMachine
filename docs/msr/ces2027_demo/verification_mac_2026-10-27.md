@@ -111,4 +111,4 @@ headless Chromium(Playwright)으로 1600x1000에서 찍었다. Chrome 확장이 
 
 ## 5. 회사에서 확인할 것
 
-README의 "회사에서 확인할 것" 목록 그대로다. 실제 임베더로 적재했을 때 네 질문의 기대 문구가 top-5에 드는지, vLLM 두 대가 뜨고 `dimensions` 재시도가 동작하는지, 답이 수 초 안에 시작하는지, vLLM 로그에 `tools`가 없는지를 보고 `verification_<날짜>.md`로 남긴다.
+README의 "회사에서 확인할 것" 목록 그대로다. 실제 임베더로 적재했을 때 네 질문의 기대 문구가 top-5에 드는지, vLLM 두 대가 뜨고 `dimensions` 재시도가 동작하는지, 답이 수 초 안에 시작하는지, vLLM 로그에 `tools`가 없는지를 보고 `verification_company_<날짜>.md`로 남긴다. 순서는 [회사 실행서](company_runbook_2026-10-27.md)에 있다.

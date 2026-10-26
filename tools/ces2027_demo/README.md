@@ -47,6 +47,8 @@ python3 ../scripts/demo_check.py ../scenario/script.sample.json
 
 ## 회사와 부스에서 올리기
 
+회사에서 처음 올리는 사람(또는 Claude Code)은 git clone부터 검증 결과 push까지 한 단계씩 적은 [회사 실행서](../../docs/msr/ces2027_demo/company_runbook_2026-10-27.md)를 따른다. 아래는 그 요약이다.
+
 준비물은 서버마다 Docker와 Docker Compose(프로필을 지원하는 v2), GPU 서버에는 NVIDIA 드라이버와 NVIDIA Container Toolkit, 그리고 모델 가중치 디렉터리다. 브랜치를 pull한 뒤 서버마다 다음 순서로 한다.
 
 1. `deploy/.env.example`을 `.env`로 복사하고 부스 값을 적는다. 다른 서버의 IP(`DB_HOST`, `LLM_HOST`, `EMBED_HOST`, `APP_HOST`), 공개 포트(`OPENWEBUI_PORT=3000`, `MEMMACHINE_PORT=8080`), 시연 장비의 시간대(`TZ=America/Los_Angeles`), 모델 이름(`LLM_MODEL_NAME`), vLLM 이미지와 가중치 경로, GPU 번호와 메모리 비율이다. 회사 검증에서 H100 두 장이 한 서버에 있으면 `LLM_GPU=0`, `EMBED_GPU=1`로 두고 두 프로필을 같은 서버에서 올린다.
@@ -69,10 +71,10 @@ vLLM은 모델 적재에 몇 분이 걸린다. `docker compose ps`의 상태가 
 
 ## 회사에서 확인할 것
 
-Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다음을 보고, 결과를 `docs/msr/ces2027_demo/verification_<날짜>.md`에 적어 커밋한다.
+Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다음을 보고, 결과를 `docs/msr/ces2027_demo/verification_company_<날짜>.md`에 적어 커밋한다(틀은 실행서 8.1절).
 
 - [ ] `llm`과 `embed` 프로필이 뜨고 `curl http://llm:8000/v1/models`, `curl http://embed:8001/v1/models`가 모델을 보여 준다. 임베딩 모델이 자동 변환되지 않으면 `EMBED_EXTRA_ARGS=--convert embed`를 준다.
-- [ ] 첫 적재(`load_scenario.py`)가 성공한다. 임베딩 모델이 Matryoshka를 지원하지 않으면 vLLM이 `dimensions`가 붙은 첫 요청을 거절하고 MemMachine이 `dimensions` 없이 다시 보내는데, 이것이 실제로 되는지 MemMachine 로그로 본다.
+- [ ] 첫 적재(`load_scenario.py`)가 성공한다. 임베딩 모델이 Matryoshka를 지원하지 않으면 vLLM이 `dimensions`가 붙은 요청을 거절하고 MemMachine이 `dimensions` 없이 다시 보낸다. 이 재시도는 로그를 남기지 않으므로, `dimensions`를 붙인 `curl`이 거절되는지(실행서 6.2절)와 적재가 성공하는지로 확인한다.
 - [ ] `demo_check.py`가 전부 통과한다.
 - [ ] 비교 화면에서 왼쪽에 목록과 답, 오른쪽에 기억 없는 답이 나오고, 답이 수 초 안에 시작한다. 걸린 시간을 적는다.
 - [ ] vLLM 로그에 `tools`가 들어간 요청이 없다. 있으면 두 모델 항목의 `builtin_tools` 차단이 안 된 것이므로 설계 5.3절의 대안을 쓴다. `scripts/setup_openwebui.py`의 `upsert_model` 호출 두 곳의 `params=`에 `"function_calling": "legacy"`를 더하고 스크립트를 다시 실행한다.

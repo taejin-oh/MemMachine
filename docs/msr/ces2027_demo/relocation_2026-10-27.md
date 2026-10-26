@@ -17,7 +17,7 @@
 5. 서버마다 `docker compose --profile <역할> down`이 아니라 운영체제 종료를 쓴다. `down`을 하면 컨테이너가 지워져 부팅 때 자동으로 올라오지 않는다. 정상 종료 순서는 앱 서버, LLM 서버, 임베더 서버, DB 서버다.
 6. 전원을 끈 뒤 전원선과 네트워크선을 뽑고, 각 선과 포트에 서버 이름(`app`, `llm`, `embed`, `db`)을 적은 라벨을 붙인다. 스위치와 시연 장비도 함께 포장한다.
 7. 서버마다 부팅 때 Docker 데몬이 시작되도록 되어 있는지(`systemctl is-enabled docker`가 `enabled`), 그리고 끄기 직전에 모든 컨테이너가 `Up`인지 다시 확인한다. 끈 뒤 한 번 켜서 저절로 올라오고 검사 스크립트가 통과하는 것까지 보는 것이 가장 확실하다.
-8. 리허설 때 시연 장비의 시간대를 서울로 두었다면 앱 서버의 `.env`에서 `TZ=America/Los_Angeles`로 되돌리고 `docker compose --profile app up -d openwebui`를 실행한다. 목록의 날짜가 사이드바의 시각과 같은 시간대로 보여야 한다.
+8. 리허설 때 시연 장비의 시간대를 서울로 두었다면 앱 서버의 `.env`에서 `TZ=America/Los_Angeles`로 되돌리고 `docker compose --profile app up -d openwebui`를 실행한다. 목록의 날짜가 사이드바의 시각과 같은 시간대로 보여야 한다. 회사 검증 때 LLM 서버의 `.env`에 `LLM_EXTRA_ARGS=--enable-log-requests`를 넣었다면([회사 실행서](company_runbook_2026-10-27.md) 5.4절) 그 값을 비우고 `docker compose --profile llm up -d --force-recreate`로 LLM 서버를 다시 올린다. 프롬프트가 로그에 쌓이지 않게 하기 위해서다.
 
 ## 3. 미국에서 켜기
 
