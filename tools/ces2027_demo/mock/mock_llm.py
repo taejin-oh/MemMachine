@@ -22,6 +22,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import uuid
 from typing import AsyncIterator
@@ -162,13 +163,14 @@ def embed(text: str, dimensions: int) -> list[float]:
     """Bag-of-words hashing: each word adds 1 at a slot chosen by its hash.
 
     The same text always gives the same unit vector, and texts that share words
-    have a higher dot product. That is all the demo needs while developing.
+    have a higher dot product. It is lexical, not semantic: a question only
+    finds memories that reuse its words, so expected phrases in a demo script
+    are verified for real with the booth's embedding model (demo_check.py warns
+    instead of failing while this mock is the embedder).
     """
     vector = [0.0] * dimensions
-    for word in text.lower().split():
-        word = word.strip(".,;:!?\"'()")
-        if word:
-            digest = hashlib.md5(word.encode()).digest()
-            vector[int.from_bytes(digest[:4], "little") % dimensions] += 1.0
+    for word in re.findall(r"[a-z0-9]+", text.lower().replace("'s", "")):
+        digest = hashlib.md5(word.encode()).digest()
+        vector[int.from_bytes(digest[:4], "little") % dimensions] += 1.0
     norm = math.sqrt(sum(v * v for v in vector)) or 1.0
     return [v / norm for v in vector]

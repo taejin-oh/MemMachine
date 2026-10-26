@@ -23,20 +23,27 @@ from common import OpenWebUI, http_json, load_env, memmachine_url, openwebui_url
 failures = 0
 
 
-def report(ok: bool, what: str, detail: str = "") -> None:
+def report(ok: bool, what: str, detail: str = "", warn_only: bool = False) -> None:
+    """Print one result line. A failure counts unless warn_only, which prints WARN instead of FAIL."""
     global failures
-    failures += 0 if ok else 1
-    print(f"{'OK  ' if ok else 'FAIL'} {what}" + (f": {detail}" if detail else ""))
+    if ok:
+        label = "OK  "
+    elif warn_only:
+        label = "WARN"
+    else:
+        label = "FAIL"
+        failures += 1
+    print(f"{label} {what}" + (f": {detail}" if detail else ""))
 
 
-def check(what: str, probe):
-    """Run a probe; a return value or exception becomes the OK/FAIL line."""
+def check(what: str, probe, warn_only: bool = False):
+    """Run a probe; its return value or exception becomes the result line."""
     try:
         detail = probe()
         report(True, what, detail or "")
         return True
     except Exception as error:
-        report(False, what, str(error))
+        report(False, what, str(error), warn_only)
         return False
 
 
@@ -73,7 +80,12 @@ def main() -> None:
             return ", ".join(found)
         check(f"LLM server {url}", served_models)
     embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"  # port fixed by design section 4.1, as in memmachine.yml
-    check(f"embedding server {embed}", lambda: ", ".join(m["id"] for m in http_json("GET", f"{embed}/models")["data"]))
+    embed_models = []
+    check(f"embedding server {embed}", lambda: ", ".join(
+        embed_models.extend(m["id"] for m in http_json("GET", f"{embed}/models")["data"]) or embed_models))
+    # The development mock embeds by word overlap, so expected phrases can only be
+    # verified for real with the booth's embedding model; until then they warn.
+    mock_embedder = embed_models and all(m.startswith("mock-") for m in embed_models)
     check("MemMachine", lambda: json.dumps(http_json("GET", f"{memmachine}/api/v2/health")))
     check("Open WebUI", lambda: json.dumps(http_json("GET", f"{openwebui_url(env)}/health")))
     check("PostgreSQL port", lambda: port_open(script_host(env, "DB_HOST"), 5432))
@@ -93,7 +105,10 @@ def main() -> None:
     valves = ui.get_valves()
     project_id, top_k = valves["PROJECT_ID"], int(valves["TOP_K"])
     for question in script["questions"]:
-        check(f"top-{top_k} memories for '{question['text'][:50]}'", lambda q=question: expected_memories(memmachine, project_id, top_k, q))
+        check(f"top-{top_k} memories for '{question['text'][:50]}'",
+              lambda q=question: expected_memories(memmachine, project_id, top_k, q), warn_only=mock_embedder)
+    if mock_embedder:
+        print("     (mock embedder: expected phrases are matched by word overlap only; verify with the real embedder)")
 
     # 4. record mode off (while it is on, every question below would be stored as a memory)
     record_mode = bool(valves["RECORD_MEMORY"])
