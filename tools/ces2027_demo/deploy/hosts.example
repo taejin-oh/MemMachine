@@ -1,8 +1,8 @@
-# Lines for /etc/hosts on the display device and on any machine that runs the
-# scripts in ../scripts. Use the addresses chosen for the booth network (design
+# Lines for /etc/hosts on the display device, so its browser can open
+# http://app:3000. Use the addresses chosen for the booth network (design
 # section 4.1) and keep them identical to DB_HOST, LLM_HOST, EMBED_HOST and
-# APP_HOST in .env. Containers do not read this file; they get the same names
-# from docker-compose.yml (extra_hosts).
+# APP_HOST in .env. Neither the containers (extra_hosts in docker-compose.yml)
+# nor the scripts (IPs from .env) need this file.
 10.77.0.11  llm
 10.77.0.12  embed
 10.77.0.13  app

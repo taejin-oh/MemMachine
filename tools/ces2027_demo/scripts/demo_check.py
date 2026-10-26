@@ -72,17 +72,11 @@ def main() -> None:
     memmachine = memmachine_url(env)
 
     # 1. servers
-    llm_models = []
+    llm_models, embed_models = [], []
     for url in llm_urls_for_scripts(env):
-        def served_models(url=url):
-            found = [m["id"] for m in http_json("GET", f"{url}/models")["data"]]
-            llm_models.extend(found)
-            return ", ".join(found)
-        check(f"LLM server {url}", served_models)
+        check(f"LLM server {url}", lambda url=url: served_models(url, llm_models))
     embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"  # port fixed by design section 4.1, as in memmachine.yml
-    embed_models = []
-    check(f"embedding server {embed}", lambda: ", ".join(
-        embed_models.extend(m["id"] for m in http_json("GET", f"{embed}/models")["data"]) or embed_models))
+    check(f"embedding server {embed}", lambda: served_models(embed, embed_models))
     # The development mock embeds by word overlap, so expected phrases can only be
     # verified for real with the booth's embedding model; until then they warn.
     mock_embedder = embed_models and all(m.startswith("mock-") for m in embed_models)
@@ -120,6 +114,13 @@ def main() -> None:
     else:
         check("answer from the Pipe model", lambda: pipe_answer(ui, left, script["questions"][0]["text"]))
     finish()
+
+
+def served_models(base_url: str, into: list) -> str:
+    """Model ids an OpenAI-compatible server lists; also appended to `into` for later checks."""
+    found = [m["id"] for m in http_json("GET", f"{base_url}/models")["data"]]
+    into.extend(found)
+    return ", ".join(found)
 
 
 def expected_memories(memmachine: str, project_id: str, top_k: int, question: dict) -> str:

@@ -160,7 +160,7 @@ services:
     volumes:
       - ${LLM_MODEL_PATH}:/model:ro
     command: >
-      --model /model --served-model-name ${LLM_MODEL_NAME} --port 8000
+      /model --served-model-name ${LLM_MODEL_NAME} --port 8000
       --gpu-memory-utilization ${LLM_GPU_MEMORY} --max-model-len ${LLM_MAX_MODEL_LEN}
       ${LLM_EXTRA_ARGS}
     deploy:
@@ -191,7 +191,7 @@ services:
     volumes:
       - ${EMBED_MODEL_PATH}:/model:ro
     command: >
-      --model /model --served-model-name embed --port 8001 --runner pooling
+      /model --served-model-name embed --port 8001 --runner pooling
       --gpu-memory-utilization ${EMBED_GPU_MEMORY}
       ${EMBED_EXTRA_ARGS}
     deploy:
