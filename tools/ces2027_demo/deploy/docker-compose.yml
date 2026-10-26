@@ -6,7 +6,9 @@
 #       docker compose --profile app up -d
 #   booth db server (PostgreSQL + Qdrant):
 #       docker compose --profile db up -d
-#   booth llm and embed servers (vLLM): added in implementation step 3.
+#   booth llm server (vLLM, chat model) and embed server (vLLM, embedding model):
+#       docker compose --profile llm up -d
+#       docker compose --profile embed up -d
 #
 # Site values come from .env next to this file (see .env.example). Every
 # container restarts on boot (restart: unless-stopped), so a server that is
@@ -139,6 +141,70 @@ services:
     environment:
       MOCK_MODEL_NAMES: ${LLM_MODEL_NAME},mock-llm-b
     mem_limit: 256m
+
+  # vLLM for the chat model. Weights come from a local directory (no Hugging
+  # Face access); the served name is what Open WebUI shows and .env refers to.
+  # The host needs the NVIDIA container toolkit. Loading a model takes minutes,
+  # hence the long start_period.
+  llm:
+    profiles: [llm]
+    image: ${VLLM_IMAGE}
+    restart: unless-stopped
+    ipc: host                      # PyTorch shares tensors through shared memory
+    ports: ["8000:8000"]
+    environment:
+      HF_HUB_OFFLINE: "1"
+      CUDA_VISIBLE_DEVICES: ${LLM_GPU}
+    volumes:
+      - ${LLM_MODEL_PATH}:/model:ro
+    command: >
+      --model /model --served-model-name ${LLM_MODEL_NAME} --port 8000
+      --gpu-memory-utilization ${LLM_GPU_MEMORY} --max-model-len ${LLM_MAX_MODEL_LEN}
+      ${LLM_EXTRA_ARGS}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+
+  # vLLM for the embedding model, served under the fixed name "embed" that
+  # memmachine.yml refers to. Same image, pooling runner, port 8001.
+  embed:
+    profiles: [embed]
+    image: ${VLLM_IMAGE}
+    restart: unless-stopped
+    ipc: host
+    ports: ["8001:8001"]
+    environment:
+      HF_HUB_OFFLINE: "1"
+      CUDA_VISIBLE_DEVICES: ${EMBED_GPU}
+    volumes:
+      - ${EMBED_MODEL_PATH}:/model:ro
+    command: >
+      --model /model --served-model-name embed --port 8001 --runner pooling
+      --gpu-memory-utilization ${EMBED_GPU_MEMORY}
+      ${EMBED_EXTRA_ARGS}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
 
 volumes:
   postgres_data:
