@@ -106,6 +106,8 @@ services:
       ENABLE_TAGS_GENERATION: "false"
       ENABLE_SEARCH_QUERY_GENERATION: "false"
       ENABLE_RETRIEVAL_QUERY_GENERATION: "false"
+      # No sample prompt suggestions on the new-chat screen; staff type the script.
+      DEFAULT_PROMPT_SUGGESTIONS: "[]"
       # Features the demo does not use.
       ENABLE_WEB_SEARCH: "false"
       ENABLE_CODE_INTERPRETER: "false"
