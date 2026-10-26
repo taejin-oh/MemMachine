@@ -11,6 +11,9 @@ Nothing here is a language model. Sentences that share words get similar
 vectors, which is enough for top-k retrieval to look sensible while developing
 without a GPU. The booth replaces this process with vLLM by changing addresses
 in deploy/.env only.
+
+Test switch: a user message containing "[llm-error]" makes the chat endpoint
+answer HTTP 500, which exercises the Pipe's "LLM call failed" path.
 """
 
 import asyncio
@@ -24,7 +27,7 @@ import uuid
 from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("mock_llm")
@@ -69,7 +72,10 @@ async def chat_completions(request: Request):
         log.warning("request for %s carries tools: %s", body.get("model"), names)
 
     model = body.get("model", "mock")
-    answer = compose_answer(body.get("messages", []))
+    messages = body.get("messages", [])
+    if any("[llm-error]" in text_of(m) for m in messages if m.get("role") == "user"):
+        return JSONResponse(status_code=500, content={"error": "failure requested with [llm-error]"})
+    answer = compose_answer(messages)
     if body.get("stream"):
         return StreamingResponse(stream_chunks(model, answer), media_type="text/event-stream")
     return {
