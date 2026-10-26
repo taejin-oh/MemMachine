@@ -39,8 +39,8 @@ services:
     ports: ["6333:6333", "6334:6334"]
     volumes:
       - qdrant_data:/qdrant/storage
-    # The image has no shell or curl, so no healthcheck here;
-    # scripts/demo_check.py probes the port instead.
+    # The image has no shell or curl, so no healthcheck here; the check
+    # script (implementation step 2) probes the port instead.
     mem_limit: 512m
 
   memmachine:
@@ -81,11 +81,12 @@ services:
       ENABLE_PERSISTENT_CONFIG: "false"    # these variables always win over the admin UI
       # Right-hand model: Open WebUI calls the LLM server directly, without memory.
       ENABLE_OPENAI_API: "true"
-      OPENAI_API_BASE_URLS: http://llm:8000/v1
+      OPENAI_API_BASE_URLS: ${LLM_BASE_URLS}
       OPENAI_API_KEYS: dummy
       ENABLE_OLLAMA_API: "false"
       ENABLE_DIRECT_CONNECTIONS: "false"
-      # A new chat opens with both models selected (comparison view).
+      # A new chat opens with both models selected (comparison view). The left
+      # id is "<function id>.<model>", the function id being PIPE_ID in scripts/common.py.
       DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME},${LLM_MODEL_NAME}
       # Every Open WebUI path that could feed past context to a model is off
       # (design section 5.3).

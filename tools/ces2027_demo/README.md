@@ -34,11 +34,12 @@ Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한�
 
 ## 회사와 부스에서 올리기
 
-서버마다 `.env`에 다른 서버의 IP와 모델 이름을 적고, 서버 역할에 맞는 프로필로 올린다. vLLM 서버용 프로필은 구현 3단계에서 추가한다.
+서버마다 `.env`에 다른 서버의 IP, 공개 포트(`OPENWEBUI_PORT=3000`, `MEMMACHINE_PORT=8080`), 시연 장비의 시간대(`TZ=America/Los_Angeles`), 모델 이름과 주소를 적고, 서버 역할에 맞는 프로필로 올린다. 앱 서버에서는 올린 뒤 세팅 스크립트를 한 번 실행한다. vLLM 서버용 프로필은 구현 3단계에서 추가한다.
 
 ```bash
-docker compose --profile db up -d     # PostgreSQL + Qdrant
-docker compose --profile app up -d    # MemMachine + Open WebUI
+docker compose --profile db up -d     # DB 서버: PostgreSQL + Qdrant
+docker compose --profile app up -d    # 앱 서버: MemMachine + Open WebUI
+python3 ../scripts/setup_openwebui.py # 앱 서버에서 한 번. 계정, Pipe, 두 모델 항목
 ```
 
 임베딩 모델을 정하면 `deploy/memmachine.yml`의 `dimensions`를 그 모델의 차원으로 한 번 고친다. 그 뒤에는 바꾸지 않는다.

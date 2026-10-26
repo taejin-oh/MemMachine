@@ -67,10 +67,16 @@ class OpenWebUI:
         return http_json(method, self.base_url + path, body, self.token)
 
     def login(self, name: str, email: str, password: str) -> dict:
-        """Sign in as the staff account, creating it on the first run (the first sign-up becomes admin)."""
+        """Sign in as the staff account, creating it on the first run (the first sign-up becomes admin).
+
+        Open WebUI allows 15 sign-ins per e-mail in 3 minutes, so each script signs in once per run.
+        """
         try:
             user = self.call("POST", "/api/v1/auths/signin", {"email": email, "password": password})
-        except RuntimeError:
-            user = self.call("POST", "/api/v1/auths/signup", {"name": name, "email": email, "password": password})
+        except RuntimeError as signin_error:
+            try:
+                user = self.call("POST", "/api/v1/auths/signup", {"name": name, "email": email, "password": password})
+            except RuntimeError as signup_error:
+                raise SystemExit(f"sign-in failed: {signin_error}\nsign-up failed too: {signup_error}") from None
         self.token = user["token"]
         return user

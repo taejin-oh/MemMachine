@@ -9,7 +9,7 @@ Every step creates or updates, so running it twice is harmless.
 Steps:
   1. sign in as the staff account (created on the first run; first user = admin)
   2. install or update the Pipe function and switch it on
-  3. write the Pipe valve that comes from .env (the shared system prompt)
+  3. write the Pipe valves that come from .env (shared system prompt, LLM address)
   4. create or update the two model entries: display names, the same system
      prompt on the no-memory model, and the capability flags that stop Open
      WebUI from feeding past chats, notes or files to either model
@@ -31,7 +31,7 @@ def main() -> None:
         raise SystemExit("this account is not an admin: remove the openwebui_data volume and run again")
 
     system_prompt = shared_system_prompt(env)
-    install_pipe(ui, system_prompt)
+    install_pipe(ui, {"BASE_SYSTEM_PROMPT": system_prompt, "LLM_BASE_URLS": env["LLM_BASE_URLS"]})
 
     model = env["LLM_MODEL_NAME"]
     upsert_model(ui, f"{PIPE_ID}.{model}", f"MemMachine + {model}", params={})
@@ -47,8 +47,8 @@ def shared_system_prompt(env: dict[str, str]) -> str:
     return prompt
 
 
-def install_pipe(ui: OpenWebUI, system_prompt: str) -> None:
-    """Create or update the Pipe function from the source file, enable it, and set its valves."""
+def install_pipe(ui: OpenWebUI, valves: dict) -> None:
+    """Create or update the Pipe function from the source file, enable it, and set the given valves."""
     form = {
         "id": PIPE_ID,
         "name": "MemMachine",
@@ -68,8 +68,13 @@ def install_pipe(ui: OpenWebUI, system_prompt: str) -> None:
     if not function.get("is_active"):
         ui.call("POST", f"/api/v1/functions/id/{PIPE_ID}/toggle")
         print(f"function {PIPE_ID}: enabled")
-    # Valves not listed here keep the defaults written in memmachine_pipe.py.
-    ui.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {"BASE_SYSTEM_PROMPT": system_prompt})
+    set_valves(ui, valves)
+
+
+def set_valves(ui: OpenWebUI, changes: dict) -> None:
+    """Update some valves. The API replaces the whole set, so merge with what is stored to keep values set in the admin UI."""
+    stored = ui.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+    ui.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**stored, **changes})
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, params: dict) -> None:
