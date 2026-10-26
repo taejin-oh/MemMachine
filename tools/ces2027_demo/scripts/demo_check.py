@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from common import PIPE_ID, OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, script_host
+from common import OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, pipe_model_id, script_host
 
 failures = 0
 
@@ -50,8 +50,10 @@ def llm_urls_for_scripts(env: dict) -> list[str]:
     urls = []
     for url in env["LLM_BASE_URLS"].split(";"):
         parts = urlsplit(url.strip())
-        host = script_host(env, "LLM_HOST") if parts.hostname == "llm" else parts.hostname
-        urls.append(urlunsplit((parts.scheme, f"{host}:{parts.port}", parts.path, "", "")).rstrip("/"))
+        if not parts.netloc:
+            continue
+        netloc = parts.netloc.replace("llm", script_host(env, "LLM_HOST"), 1) if parts.hostname == "llm" else parts.netloc
+        urls.append(urlunsplit((parts.scheme, netloc, parts.path, "", "")).rstrip("/"))
     return urls
 
 
@@ -70,7 +72,7 @@ def main() -> None:
             llm_models.extend(found)
             return ", ".join(found)
         check(f"LLM server {url}", served_models)
-    embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"
+    embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"  # port fixed by design section 4.1, as in memmachine.yml
     check(f"embedding server {embed}", lambda: ", ".join(m["id"] for m in http_json("GET", f"{embed}/models")["data"]))
     check("MemMachine", lambda: json.dumps(http_json("GET", f"{memmachine}/api/v2/health")))
     check("Open WebUI", lambda: json.dumps(http_json("GET", f"{openwebui_url(env)}/health")))
@@ -79,34 +81,61 @@ def main() -> None:
 
     # 2. models in Open WebUI
     ui = OpenWebUI(openwebui_url(env))
-    ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])
-    left, right = f"{PIPE_ID}.{env['LLM_MODEL_NAME']}", env["LLM_MODEL_NAME"]
-    ids = {m["id"] for m in ui.call("GET", "/api/models")["data"]}
-    report(right in ids and left in ids, "both demo models listed in Open WebUI", f"{left}, {right}")
+    if not check("sign in to Open WebUI", lambda: ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])["email"]):
+        finish()
+    left, right = pipe_model_id(env), env["LLM_MODEL_NAME"]
+    check("both demo models listed in Open WebUI",
+          lambda: f"{left}, {right}" if {left, right} <= {m["id"] for m in ui.call("GET", "/api/models")["data"]}
+          else raise_error(f"missing: {left} or {right}"))
     report(right in llm_models, "chat model served by the LLM server", right)
 
     # 3. expected memories per question, in the project the Pipe searches
     valves = ui.get_valves()
-    project_id, top_k = valves.get("PROJECT_ID", "universal"), int(valves.get("TOP_K", 5))
+    project_id, top_k = valves["PROJECT_ID"], int(valves["TOP_K"])
     for question in script["questions"]:
-        result = http_json("POST", f"{memmachine}/api/v2/memories/search",
-                           {"project_id": project_id, "query": question["text"], "top_k": top_k})
-        texts = [e["content"] for e in result["content"]["episodic_memory"]["long_term_memory"]["episodes"]]
-        missing = [phrase for phrase in question["expected"] if not any(phrase in t for t in texts)]
-        report(not missing, f"top-{top_k} memories for '{question['text'][:50]}'",
-               f"missing {missing}" if missing else f"{len(texts)} retrieved from {project_id}")
+        check(f"top-{top_k} memories for '{question['text'][:50]}'", lambda q=question: expected_memories(memmachine, project_id, top_k, q))
 
-    # 4. record mode off
-    report(not valves.get("RECORD_MEMORY", False), "record mode (RECORD_MEMORY) is off")
+    # 4. record mode off (while it is on, every question below would be stored as a memory)
+    record_mode = bool(valves["RECORD_MEMORY"])
+    report(not record_mode, "record mode (RECORD_MEMORY) is off")
 
     # 5. one answer through the Pipe
-    question = script["questions"][0]["text"]
-    answer = ui.call("POST", "/api/chat/completions",
-                     {"model": left, "messages": [{"role": "user", "content": question}], "stream": False})
-    content = answer.get("choices", [{}])[0].get("message", {}).get("content", "")
-    report("Memories retrieved" in content and "failed" not in content, "answer from the Pipe model",
-           content.splitlines()[0] if content else json.dumps(answer)[:200])
+    if record_mode:
+        report(False, "answer from the Pipe model", "skipped: record mode would store the question")
+    else:
+        check("answer from the Pipe model", lambda: pipe_answer(ui, left, script["questions"][0]["text"]))
+    finish()
 
+
+def expected_memories(memmachine: str, project_id: str, top_k: int, question: dict) -> str:
+    result = http_json("POST", f"{memmachine}/api/v2/memories/search",
+                       {"project_id": project_id, "query": question["text"], "top_k": top_k})
+    texts = [e["content"] for e in result["content"]["episodic_memory"]["long_term_memory"]["episodes"]]
+    missing = [phrase for phrase in question["expected"] if not any(phrase in t for t in texts)]
+    if missing:
+        raise_error(f"missing {missing} among {len(texts)} retrieved from {project_id}")
+    return f"{len(texts)} retrieved from {project_id}"
+
+
+def pipe_answer(ui: OpenWebUI, model_id: str, question: str) -> str:
+    """The Pipe writes the memory list, a rule, then the answer; errors start with a fixed phrase."""
+    reply = ui.call("POST", "/api/chat/completions",
+                    {"model": model_id, "messages": [{"role": "user", "content": question}], "stream": False})
+    content = reply.get("choices", [{}])[0].get("message", {}).get("content", "")
+    for prefix in ("Memory search failed:", "LLM call failed:", "MemMachine pipe:"):
+        if prefix in content:
+            raise_error(content[content.index(prefix):][:200])
+    memory_list, _, answer = content.partition("\n---\n")
+    if not memory_list.startswith("**Memories retrieved") or not answer.strip():
+        raise_error(f"unexpected reply: {content[:200]!r}")
+    return answer.strip()[:80]
+
+
+def raise_error(message: str):
+    raise RuntimeError(message)
+
+
+def finish() -> None:
     print(f"\n{failures} failed" if failures else "\nall checks passed")
     sys.exit(1 if failures else 0)
 

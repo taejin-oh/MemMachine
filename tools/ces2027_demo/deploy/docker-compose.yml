@@ -41,8 +41,8 @@ services:
     ports: ["6333:6333", "6334:6334"]
     volumes:
       - qdrant_data:/qdrant/storage
-    # The image has no shell or curl, so no healthcheck here; the check
-    # script (implementation step 2) probes the port instead.
+    # The image has no shell or curl, so no healthcheck here;
+    # scripts/demo_check.py probes the port instead.
     mem_limit: 512m
 
   memmachine:
