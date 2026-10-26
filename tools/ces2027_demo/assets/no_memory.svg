@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- Avatar of the no-memory model: the same mark in outline only, on grey. -->
+  <circle cx="48" cy="48" r="48" fill="#6b7280"/>
+  <path d="M48 22c-9 0-16 6-16 14 0 2 0 4 1 6-5 2-8 6-8 11 0 7 6 13 14 13h18c8 0 14-6 14-13 0-5-3-9-8-11 1-2 1-4 1-6 0-8-7-14-16-14z" fill="none" stroke="#ffffff" stroke-width="3"/>
+  <path d="M30 66L66 30" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+</svg>

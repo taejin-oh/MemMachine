@@ -12,6 +12,7 @@ from pathlib import Path
 DEMO_DIR = Path(__file__).resolve().parent.parent  # tools/ces2027_demo
 ENV_FILE = DEMO_DIR / "deploy" / ".env"
 PIPE_FILE = DEMO_DIR / "pipe" / "memmachine_pipe.py"
+ASSETS_DIR = DEMO_DIR / "assets"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
 
 
