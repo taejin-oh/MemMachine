@@ -12,7 +12,10 @@ tools/ces2027_demo/
   pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 기억 검색, 목록 출력, 답변
   mock/                       개발용 LLM과 임베더 mock (Mac에서만 쓴다)
   scripts/setup_openwebui.py  계정, Pipe 설치, Valve, 두 모델의 표시 설정
+  scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
+  scripts/demo_check.py       전원을 켠 뒤 준비 상태를 한 번에 검사
   scripts/common.py           스크립트 공통 (.env 읽기, Open WebUI API 호출)
+  scenario/script.sample.json 대본 형식 예시
 ```
 
 컨테이너는 다른 서버를 고정 이름 `db`, `llm`, `embed`로 부른다. 이름과 실제 주소의 대응은 `.env`에만 있으므로, 장소를 옮길 때 고치는 파일은 `.env` 하나다.
@@ -28,9 +31,16 @@ docker compose --profile local up -d --build
 python3 ../scripts/setup_openwebui.py
 ```
 
-브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 계정으로 들어가면 새 채팅에 두 모델이 선택되어 있다. 질문을 보내면 왼쪽에 "Memories retrieved" 목록과 답이, 오른쪽에 기억 없는 답이 나온다. 아직 기억을 넣기 전이라 목록은 비어 있다.
+이어서 대본의 과거 세션을 넣고 준비 상태를 검사한다.
 
-Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다.
+```bash
+python3 ../scripts/load_scenario.py ../scenario/script.sample.json
+python3 ../scripts/demo_check.py ../scenario/script.sample.json
+```
+
+브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 계정으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 "Memories retrieved" 목록과 답이, 오른쪽에 기억 없는 답이 나온다.
+
+적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다.
 
 ## 회사와 부스에서 올리기
 
@@ -40,6 +50,8 @@ Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한�
 docker compose --profile db up -d     # DB 서버: PostgreSQL + Qdrant
 docker compose --profile app up -d    # 앱 서버: MemMachine + Open WebUI
 python3 ../scripts/setup_openwebui.py # 앱 서버에서 한 번. 계정, Pipe, 두 모델 항목
+python3 ../scripts/load_scenario.py ../scenario/script.json   # 실제 대본
+python3 ../scripts/demo_check.py ../scenario/script.json
 ```
 
 임베딩 모델을 정하면 `deploy/memmachine.yml`의 `dimensions`를 그 모델의 차원으로 한 번 고친다. 그 뒤에는 바꾸지 않는다.
