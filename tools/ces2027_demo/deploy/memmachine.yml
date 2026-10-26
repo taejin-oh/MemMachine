@@ -1,0 +1,65 @@
+# MemMachine server configuration for the CES 2027 demo (design section 5.1).
+#
+# The same file is used on the Mac (mock embedder) and in the booth (vLLM
+# embedder) because every dependency is addressed by a fixed host name:
+#   db     PostgreSQL :5432 and Qdrant :6333      (deploy/.env -> DB_HOST)
+#   embed  OpenAI-compatible embedding API :8001   (deploy/.env -> EMBED_HOST)
+# docker-compose.yml maps those names to the real addresses with extra_hosts.
+#
+# MemMachine resolves $ENV only in `password` and `api_key` fields, so host
+# names and ports are written literally here. The one value that depends on
+# the chosen embedding model is `dimensions` below: set it once when the
+# embedding model is decided, before any memory is stored.
+
+logging:
+  path: memmachine.log        # relative to /app inside the container
+  level: info
+
+# Episode texts and session records live in PostgreSQL.
+episode_store:
+  database: postgres
+session_manager:
+  database: postgres
+
+# Semantic (profile) memory is not used by the demo. The parser requires the
+# section, so it is present but disabled.
+semantic_memory:
+  enabled: false
+  config_database: postgres
+
+episodic_memory:
+  long_term_memory:
+    backend: event            # VectorStore + SegmentStore; no Neo4j, no LLM
+    embedder: embed
+    vector_store: qdrant
+    segment_store: postgres
+    # reranker is omitted on purpose: results are ordered by embedding score.
+  # short_term_memory stays off (the default); nothing calls an LLM on write.
+
+resources:
+  databases:
+    postgres:
+      provider: postgres
+      config:
+        host: db
+        port: 5432
+        user: memmachine
+        password: $POSTGRES_PASSWORD    # passed in by docker-compose.yml
+        db_name: memmachine
+    qdrant:
+      provider: qdrant
+      config:
+        host: db
+        port: 6333
+        grpc_port: 6334
+        prefer_grpc: false
+        https: false
+  embedders:
+    embed:
+      provider: openai
+      config:
+        model: embed            # vLLM is started with --served-model-name embed
+        api_key: dummy          # vLLM and the mock accept any key
+        base_url: http://embed:8001/v1
+        dimensions: 384         # must equal the embedding model's output size
+        max_input_length: 2048

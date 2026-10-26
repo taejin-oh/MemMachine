@@ -1,0 +1,144 @@
+# CES 2027 demo stack. One file for every site; a profile picks the services.
+#
+#   Mac (everything, with the mock instead of vLLM):
+#       docker compose --profile local up -d --build
+#   booth app server (MemMachine + Open WebUI):
+#       docker compose --profile app up -d
+#   booth db server (PostgreSQL + Qdrant):
+#       docker compose --profile db up -d
+#   booth llm and embed servers (vLLM): added in implementation step 3.
+#
+# Site values come from .env next to this file (see .env.example). Every
+# container restarts on boot (restart: unless-stopped), so a server that is
+# powered off and on again brings its services back without any command.
+
+services:
+
+  postgres:
+    profiles: [local, db]
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: memmachine
+      POSTGRES_USER: memmachine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memmachine -d memmachine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+
+  qdrant:
+    profiles: [local, db]
+    image: qdrant/qdrant:v1.19.0
+    restart: unless-stopped
+    ports: ["6333:6333", "6334:6334"]
+    volumes:
+      - qdrant_data:/qdrant/storage
+    # The image has no shell or curl, so no healthcheck here;
+    # scripts/demo_check.py probes the port instead.
+    mem_limit: 512m
+
+  memmachine:
+    profiles: [local, app]
+    build:
+      context: ../../..              # repository root, built with its Dockerfile
+      args:
+        EXTRAS: "--extra qdrant"     # the Qdrant client is an optional extra
+    image: memmachine-ces2027:local
+    restart: unless-stopped
+    ports: ["${MEMMACHINE_PORT}:8080"]
+    environment:
+      MEMORY_CONFIG: /app/memmachine.yml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # referenced from memmachine.yml
+      MEMMACHINE_WORKERS: "1"
+      LOG_LEVEL: INFO
+    volumes:
+      - ./memmachine.yml:/app/memmachine.yml:ro
+    extra_hosts:
+      - "db:${DB_HOST}"
+      - "embed:${EMBED_HOST}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    mem_limit: 1g
+
+  openwebui:
+    profiles: [local, app]
+    image: ghcr.io/open-webui/open-webui:v0.12.4
+    restart: unless-stopped
+    ports: ["${OPENWEBUI_PORT}:8080"]
+    environment:
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      ENABLE_PERSISTENT_CONFIG: "false"    # these variables always win over the admin UI
+      # Right-hand model: Open WebUI calls the LLM server directly, without memory.
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URLS: http://llm:8000/v1
+      OPENAI_API_KEYS: dummy
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_DIRECT_CONNECTIONS: "false"
+      # A new chat opens with both models selected (comparison view).
+      DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME},${LLM_MODEL_NAME}
+      # Every Open WebUI path that could feed past context to a model is off
+      # (design section 5.3).
+      ENABLE_MEMORIES: "false"
+      USER_PERMISSIONS_FEATURES_MEMORIES: "false"
+      ENABLE_NOTES: "false"
+      USER_PERMISSIONS_FEATURES_NOTES: "false"
+      ENABLE_FOLDERS: "false"
+      ENABLE_CALENDAR: "false"
+      ENABLE_AUTOMATIONS: "false"
+      ENABLE_CONTEXT_COMPACTION: "false"
+      # No background LLM calls (titles, tags, follow-ups, query rewriting).
+      ENABLE_TITLE_GENERATION: "false"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_TAGS_GENERATION: "false"
+      ENABLE_SEARCH_QUERY_GENERATION: "false"
+      ENABLE_RETRIEVAL_QUERY_GENERATION: "false"
+      # Features the demo does not use.
+      ENABLE_WEB_SEARCH: "false"
+      ENABLE_CODE_INTERPRETER: "false"
+      ENABLE_CODE_EXECUTION: "false"
+      ENABLE_COMMUNITY_SHARING: "false"
+      ENABLE_EVALUATION_ARENA_MODELS: "false"
+      # Offline: no Hugging Face downloads, no version check, no local
+      # embedding model for document retrieval.
+      OFFLINE_MODE: "true"
+      HF_HUB_OFFLINE: "1"
+      BYPASS_EMBEDDING_AND_RETRIEVAL: "true"
+      RAG_EMBEDDING_ENGINE: openai
+    volumes:
+      - openwebui_data:/app/backend/data
+    extra_hosts:
+      - "llm:${LLM_HOST}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    mem_limit: 1536m
+
+  # Development stand-in for both vLLM servers. It listens on one port and is
+  # published twice so that llm:8000 and embed:8001 both reach it.
+  mock:
+    profiles: [local]
+    build: ../mock
+    image: ces2027-mock:local
+    restart: unless-stopped
+    ports: ["8000:8000", "8001:8000"]
+    environment:
+      MOCK_MODEL_NAMES: ${LLM_MODEL_NAME},mock-llm-b
+    mem_limit: 256m
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  openwebui_data:
