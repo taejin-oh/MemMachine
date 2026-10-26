@@ -15,6 +15,16 @@ PIPE_FILE = DEMO_DIR / "pipe" / "memmachine_pipe.py"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
 
 
+def pipe_model_id(env: dict[str, str]) -> str:
+    """Id of the left (memory) model in Open WebUI."""
+    return f"{PIPE_ID}.{env['LLM_MODEL_NAME']}"
+
+
+def pipe_model_name(env: dict[str, str]) -> str:
+    """Display name of the left (memory) model."""
+    return f"MemMachine + {env['LLM_MODEL_NAME']}"
+
+
 def load_env(path: Path = ENV_FILE) -> dict[str, str]:
     """Parse KEY=VALUE lines, the same format docker compose reads. Quotes around a value are removed."""
     if not path.exists():
@@ -92,8 +102,13 @@ class OpenWebUI:
         return user
 
     def get_valves(self) -> dict:
-        return self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+        """The Pipe's effective valves: the defaults from its Valves class, overridden by what is stored."""
+        spec = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves/spec") or {}
+        defaults = {name: field.get("default") for name, field in spec.get("properties", {}).items()}
+        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+        return {**defaults, **stored}
 
     def set_valves(self, changes: dict) -> None:
-        """Update some Pipe valves. The API replaces the whole set, so merge with what is stored to keep values set in the admin UI."""
-        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**self.get_valves(), **changes})
+        """Update some Pipe valves. The API replaces the whole stored set, so merge with it to keep values set in the admin UI."""
+        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**stored, **changes})

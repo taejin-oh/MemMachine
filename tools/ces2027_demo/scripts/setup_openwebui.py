@@ -15,7 +15,7 @@ Steps:
      WebUI from feeding past chats, notes or files to either model
 """
 
-from common import PIPE_FILE, PIPE_ID, OpenWebUI, load_env, openwebui_url
+from common import PIPE_FILE, PIPE_ID, OpenWebUI, load_env, openwebui_url, pipe_model_id, pipe_model_name
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -33,9 +33,8 @@ def main() -> None:
     system_prompt = shared_system_prompt(env)
     install_pipe(ui, {"BASE_SYSTEM_PROMPT": system_prompt, "LLM_BASE_URLS": env["LLM_BASE_URLS"]})
 
-    model = env["LLM_MODEL_NAME"]
-    upsert_model(ui, f"{PIPE_ID}.{model}", f"MemMachine + {model}", params={})
-    upsert_model(ui, model, f"{model} (no memory)", params={"system": system_prompt})
+    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), params={})
+    upsert_model(ui, env["LLM_MODEL_NAME"], f"{env['LLM_MODEL_NAME']} (no memory)", params={"system": system_prompt})
     print("done")
 
 

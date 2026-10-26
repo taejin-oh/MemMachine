@@ -22,7 +22,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from common import PIPE_ID, OpenWebUI, http_json, load_env, memmachine_url, openwebui_url
+from common import OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, pipe_model_id, pipe_model_name
 
 TURN_SPACING = timedelta(minutes=1)
 
@@ -31,29 +31,39 @@ def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: load_scenario.py <script.json>")
     script = json.loads(Path(sys.argv[1]).read_text())
+    sessions = [timed_turns(session) for session in script["sessions"]]  # validates before anything is touched
     env = load_env()
-    model_id = f"{PIPE_ID}.{env['LLM_MODEL_NAME']}"
-    model_name = f"MemMachine + {env['LLM_MODEL_NAME']}"
 
     ui = OpenWebUI(openwebui_url(env))
     ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])
 
     project_id = f"ces-{datetime.now():%Y%m%d-%H%M%S}"
     ui.set_valves({"PROJECT_ID": project_id})
-    ui.call("DELETE", "/api/v1/chats/")
+    if not ui.call("DELETE", "/api/v1/chats/"):
+        raise SystemExit("Open WebUI could not delete the previous chats")
     print(f"project {project_id}: Pipe valve set, previous chats deleted")
 
-    for session in script["sessions"]:
-        turns = timed_turns(session)
-        chat_id = import_chat(ui, session["title"], turns, model_id, model_name)
+    for session, turns in zip(script["sessions"], sessions):
+        chat_id = import_chat(ui, session["title"], turns, pipe_model_id(env), pipe_model_name(env))
         store_episodes(memmachine_url(env), project_id, chat_id, turns)
         print(f"session '{session['title']}': {len(turns)} turns, chat {chat_id}")
     print("done. Reload the browser to see the chats.")
 
 
 def timed_turns(session: dict) -> list[dict]:
-    """The session's turns with a datetime each: the session date, plus one minute per turn."""
+    """The session's turns with a datetime each: the session date, plus one minute per turn.
+
+    Checks the script first, so a mistake stops the run before any chat is deleted.
+    """
+    title = session.get("title", "?")
     start = datetime.fromisoformat(session["date"])
+    if start.tzinfo is None:
+        raise SystemExit(f"session '{title}': the date needs a UTC offset such as -08:00")
+    if not session["turns"]:
+        raise SystemExit(f"session '{title}': no turns")
+    for turn in session["turns"]:
+        if turn.get("role") not in ("user", "assistant"):
+            raise SystemExit(f"session '{title}': role must be user or assistant, not {turn.get('role')!r}")
     return [{**turn, "time": start + index * TURN_SPACING} for index, turn in enumerate(session["turns"])]
 
 
