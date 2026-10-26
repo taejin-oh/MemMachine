@@ -12,11 +12,12 @@
 
 1. 마지막 리허설을 끝낸 상태 그대로 둔다. 적재 도구를 다시 실행하지 않는다. 실행하면 새 프로젝트가 만들어지고 사이드바의 채팅이 지워졌다가 다시 들어가므로, 다시 실행했다면 검사 스크립트까지 다시 돌린다.
 2. 앱 서버에서 `python3 scripts/demo_check.py scenario/script.json`이 전부 통과하는지 마지막으로 본다. 출력을 복사해 둔다.
-3. 각 서버의 `deploy/.env`와 `/etc/hosts`를 USB 메모리에 복사해 둔다. 서버가 고장 나 교체할 때 필요하다.
-4. DB 서버에서 볼륨을 백업한다. 컨테이너를 멈춘 뒤 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine tar czf /b/postgres_data.tgz -C /d .`과 같은 명령으로 PostgreSQL과 Qdrant 볼륨을 tar로 떠서 USB 메모리에 둔다. 앱 서버의 `deploy_openwebui_data`도 같은 방법으로 뜬다. 적재는 몇 초면 다시 할 수 있지만, 볼륨을 되돌리는 쪽이 사이드바의 채팅 ID까지 그대로 유지한다.
+3. USB 메모리에 복구 재료를 모은다. 각 서버의 `deploy/.env`와 `/etc/hosts`, 브랜치 clone 전체, 그리고 설계 6.3절대로 `docker save`로 뜬 이미지 tar(Open WebUI, pgvector, Qdrant, vLLM, 브랜치에서 빌드한 MemMachine, 백업용 alpine)다. 인터넷이 없는 부스에서 서버를 교체하려면 이것이 전부 있어야 한다.
+4. DB 서버에서 볼륨을 백업한다. `docker compose --profile db stop`으로 멈춘 뒤 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine tar czf /b/postgres_data.tgz -C /d .`과 같은 명령으로 PostgreSQL과 Qdrant 볼륨을 tar로 떠서 USB 메모리에 둔다. 앱 서버의 `deploy_openwebui_data`도 같은 방법으로 뜬다. 백업이 끝나면 반드시 `docker compose --profile db up -d`(앱 서버는 `--profile app`)로 다시 올리고 `docker compose ps`에서 모두 `Up`인지 확인한다. 손으로 멈춘 컨테이너는 `restart: unless-stopped`가 부팅 때 되살리지 않으므로, 멈춘 채 끄면 미국에서 아무것도 올라오지 않는다. 적재는 몇 초면 다시 할 수 있지만, 볼륨을 되돌리는 쪽이 사이드바의 채팅 ID까지 그대로 유지한다.
 5. 서버마다 `docker compose --profile <역할> down`이 아니라 운영체제 종료를 쓴다. `down`을 하면 컨테이너가 지워져 부팅 때 자동으로 올라오지 않는다. 정상 종료 순서는 앱 서버, LLM 서버, 임베더 서버, DB 서버다.
 6. 전원을 끈 뒤 전원선과 네트워크선을 뽑고, 각 선과 포트에 서버 이름(`app`, `llm`, `embed`, `db`)을 적은 라벨을 붙인다. 스위치와 시연 장비도 함께 포장한다.
-7. 서버마다 부팅 때 Docker 데몬이 시작되도록 되어 있는지 확인해 둔다(`systemctl is-enabled docker`가 `enabled`).
+7. 서버마다 부팅 때 Docker 데몬이 시작되도록 되어 있는지(`systemctl is-enabled docker`가 `enabled`), 그리고 끄기 직전에 모든 컨테이너가 `Up`인지 다시 확인한다. 끈 뒤 한 번 켜서 저절로 올라오고 검사 스크립트가 통과하는 것까지 보는 것이 가장 확실하다.
+8. 리허설 때 시연 장비의 시간대를 서울로 두었다면 앱 서버의 `.env`에서 `TZ=America/Los_Angeles`로 되돌리고 `docker compose --profile app up -d openwebui`를 실행한다. 목록의 날짜가 사이드바의 시각과 같은 시간대로 보여야 한다.
 
 ## 3. 미국에서 켜기
 

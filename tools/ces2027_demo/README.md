@@ -6,16 +6,19 @@ Open WebUI의 모델 비교 화면에서 같은 질문에 대해 왼쪽은 MemMa
 
 ```
 tools/ces2027_demo/
-  deploy/docker-compose.yml   전체 스택. 프로필(local, app, db)로 장소를 고른다
+  deploy/docker-compose.yml   전체 스택. 프로필(local, db, app, llm, embed)로 장소와 서버를 고른다
   deploy/.env.example         장소별 값. .env로 복사해서 쓴다
   deploy/memmachine.yml       MemMachine 설정. 모든 장소에서 같다
+  deploy/hosts.example        시연 화면 장비의 /etc/hosts 예시
   pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 기억 검색, 목록 출력, 답변
   mock/                       개발용 LLM과 임베더 mock (Mac에서만 쓴다)
   scripts/setup_openwebui.py  계정, Pipe 설치, Valve, 두 모델의 표시 설정
   scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
   scripts/demo_check.py       전원을 켠 뒤 준비 상태를 한 번에 검사
   scripts/common.py           스크립트 공통 (.env 읽기, Open WebUI API 호출)
+  scenario/script.json        부스 대본
   scenario/script.sample.json 대본 형식 예시
+  assets/                     두 모델의 아바타 (SVG 원본과 PNG)
 ```
 
 컨테이너는 다른 서버를 고정 이름 `db`, `llm`, `embed`로 부른다. 이름과 실제 주소의 대응은 `.env`에만 있으므로, 장소를 옮길 때 고치는 파일은 `.env` 하나다.
@@ -48,7 +51,7 @@ python3 ../scripts/demo_check.py ../scenario/script.sample.json
 
 1. `deploy/.env.example`을 `.env`로 복사하고 부스 값을 적는다. 다른 서버의 IP(`DB_HOST`, `LLM_HOST`, `EMBED_HOST`, `APP_HOST`), 공개 포트(`OPENWEBUI_PORT=3000`, `MEMMACHINE_PORT=8080`), 시연 장비의 시간대(`TZ=America/Los_Angeles`), 모델 이름(`LLM_MODEL_NAME`), vLLM 이미지와 가중치 경로, GPU 번호와 메모리 비율이다. 회사 검증에서 H100 두 장이 한 서버에 있으면 `LLM_GPU=0`, `EMBED_GPU=1`로 두고 두 프로필을 같은 서버에서 올린다.
 2. 임베딩 모델을 정했으면 `deploy/memmachine.yml`의 `dimensions`를 그 모델의 차원으로 고친다. 기억을 넣은 뒤에는 바꾸지 않는다.
-3. 스크립트를 돌리는 장비와 시연 화면 장비의 `/etc/hosts`에 `deploy/hosts.example`의 줄을 넣는다.
+3. 시연 화면 장비의 `/etc/hosts`에 `deploy/hosts.example`의 줄을 넣는다. 브라우저가 `http://app:3000`을 찾기 위해서이며, 스크립트는 `.env`의 IP를 쓴다.
 4. 서버 역할에 맞는 프로필로 올린다. MemMachine 이미지는 앱 서버에서 브랜치로부터 빌드된다.
 
 ```bash
@@ -72,6 +75,6 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 첫 적재(`load_scenario.py`)가 성공한다. 임베딩 모델이 Matryoshka를 지원하지 않으면 vLLM이 `dimensions`가 붙은 첫 요청을 거절하고 MemMachine이 `dimensions` 없이 다시 보내는데, 이것이 실제로 되는지 MemMachine 로그로 본다.
 - [ ] `demo_check.py`가 전부 통과한다.
 - [ ] 비교 화면에서 왼쪽에 목록과 답, 오른쪽에 기억 없는 답이 나오고, 답이 수 초 안에 시작한다. 걸린 시간을 적는다.
-- [ ] vLLM 로그에 `tools`가 들어간 요청이 없다. 있으면 두 모델 항목의 `builtin_tools` 차단이 안 된 것이므로 설계 5.3절의 대안(`params.function_calling=legacy`)을 쓴다.
+- [ ] vLLM 로그에 `tools`가 들어간 요청이 없다. 있으면 두 모델 항목의 `builtin_tools` 차단이 안 된 것이므로 설계 5.3절의 대안을 쓴다. `scripts/setup_openwebui.py`의 `upsert_model` 호출 두 곳의 `params=`에 `"function_calling": "legacy"`를 더하고 스크립트를 다시 실행한다.
 - [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`가 보이고, 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보이는지 확인한다. 그렇다면 모델을 바꾸거나 Pipe에서 처리한다.
