@@ -29,6 +29,16 @@ def load_env(path: Path = ENV_FILE) -> dict[str, str]:
     return values
 
 
+def script_host(env: dict[str, str], key: str) -> str:
+    """Address of a server for a script running outside Docker.
+
+    docker-compose.yml accepts 'host-gateway' in .env to mean 'this machine';
+    outside Docker that is simply 127.0.0.1.
+    """
+    host = env[key]
+    return "127.0.0.1" if host == "host-gateway" else host
+
+
 def openwebui_url(env: dict[str, str]) -> str:
     """Open WebUI as seen from a script running outside Docker."""
     return f"http://{env['APP_HOST']}:{env['OPENWEBUI_PORT']}"
@@ -80,3 +90,10 @@ class OpenWebUI:
                 raise SystemExit(f"sign-in failed: {signin_error}\nsign-up failed too: {signup_error}") from None
         self.token = user["token"]
         return user
+
+    def get_valves(self) -> dict:
+        return self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+
+    def set_valves(self, changes: dict) -> None:
+        """Update some Pipe valves. The API replaces the whole set, so merge with what is stored to keep values set in the admin UI."""
+        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**self.get_valves(), **changes})

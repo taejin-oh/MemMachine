@@ -68,13 +68,7 @@ def install_pipe(ui: OpenWebUI, valves: dict) -> None:
     if not function.get("is_active"):
         ui.call("POST", f"/api/v1/functions/id/{PIPE_ID}/toggle")
         print(f"function {PIPE_ID}: enabled")
-    set_valves(ui, valves)
-
-
-def set_valves(ui: OpenWebUI, changes: dict) -> None:
-    """Update some valves. The API replaces the whole set, so merge with what is stored to keep values set in the admin UI."""
-    stored = ui.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
-    ui.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**stored, **changes})
+    ui.set_valves(valves)
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, params: dict) -> None:
