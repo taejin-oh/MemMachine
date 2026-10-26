@@ -48,7 +48,11 @@ class Pipe:
         )
         LLM_BASE_URLS: str = Field(
             default="http://llm:8000/v1",
-            description="OpenAI-compatible LLM servers, separated by ';'.",
+            description="OpenAI-compatible LLM servers, separated by ';'. Set by setup_openwebui.py from .env.",
+        )
+        PROJECT_ID: str = Field(
+            default="universal",
+            description="MemMachine project to search. load_scenario.py writes a fresh id here on every load.",
         )
         LLM_API_KEY: str = Field(default="dummy", description="Sent as a Bearer token; vLLM ignores it.")
         TOP_K: int = Field(default=5, description="How many memories to retrieve and show.")
@@ -56,13 +60,12 @@ class Pipe:
             default=False,
             description="Store every turn in MemMachine (record mode, design appendix D). Keep OFF during the demo.",
         )
-        MODEL_NAME_PREFIX: str = Field(default="MemMachine + ", description="Prefix of the model names this pipe lists.")
         SHOW_SESSION_INFO: bool = Field(default=True, description="Show the date and session title of each memory.")
         BASE_SYSTEM_PROMPT: str = Field(
             default="You are a helpful assistant. Answer briefly and concretely.",
             description="Set by setup_openwebui.py from .env; the no-memory model gets the same text.",
         )
-        REQUEST_TIMEOUT: int = Field(default=60, description="Seconds allowed for each MemMachine and LLM call.")
+        REQUEST_TIMEOUT: int = Field(default=60, description="Seconds allowed for a MemMachine or LLM response.")
 
     def __init__(self):
         self.valves = self.Valves()
@@ -73,17 +76,18 @@ class Pipe:
     async def pipes(self) -> list[dict]:
         """One entry per chat model on each LLM server; Open WebUI calls this when it refreshes its model list."""
         entries = []
-        async with httpx.AsyncClient(timeout=self.valves.REQUEST_TIMEOUT) as client:
-            for base_url in self._base_urls():
+        async with self._client() as client:
+            for index, base_url in enumerate(self._base_urls()):
                 try:
                     response = await client.get(f"{base_url}/models", headers=self._llm_headers())
                     response.raise_for_status()
                     for model in response.json().get("data", []):
                         self._model_urls[model["id"]] = base_url
-                        entries.append({"id": model["id"], "name": self.valves.MODEL_NAME_PREFIX + model["id"]})
+                        # setup_openwebui.py gives the demo model its final display name.
+                        entries.append({"id": model["id"], "name": f"MemMachine + {model['id']}"})
                 except Exception as error:
                     # Show the problem in the model dropdown instead of hiding it.
-                    entries.append({"id": "error", "name": f"MemMachine pipe: cannot reach {base_url} ({error})"})
+                    entries.append({"id": f"error-{index}", "name": f"MemMachine pipe: cannot reach {base_url} ({error})"})
         return entries
 
     # --- one request ----------------------------------------------------------
@@ -139,9 +143,14 @@ class Pipe:
         llm_messages = [{"role": "system", "content": prompt}] + [m for m in messages if m.get("role") != "system"]
 
         answer_parts = []
-        async for token in self._stream(base_url, model_id, llm_messages):
-            answer_parts.append(token)
-            yield token
+        try:
+            async for token in self._stream(base_url, model_id, llm_messages):
+                answer_parts.append(token)
+                yield token
+        except Exception as error:
+            # Same rule as for memory: a visible error beats a card that stops silently.
+            yield f"\n\nLLM call failed: {error}"
+            return
 
         if self.valves.RECORD_MEMORY:
             try:
@@ -153,19 +162,17 @@ class Pipe:
 
     async def _search(self, query: str) -> list[dict]:
         """Top-k episodes for the query, each with the date and session title filled in."""
-        payload = {"query": query, "top_k": self.valves.TOP_K}
-        async with httpx.AsyncClient(timeout=self.valves.REQUEST_TIMEOUT) as client:
+        payload = {"project_id": self.valves.PROJECT_ID, "query": query, "top_k": self.valves.TOP_K}
+        async with self._client() as client:
             response = await client.post(f"{self.valves.MEMMACHINE_URL}/api/v2/memories/search", json=payload)
-        if response.status_code == 404 and "Project does not exist" in response.text:
-            return []  # nothing stored yet; the first write creates the project
-        response.raise_for_status()
+        response.raise_for_status()  # a project with nothing stored yet answers 200 with no episodes
 
         content = response.json().get("content") or {}
         episodes = ((content.get("episodic_memory") or {}).get("long_term_memory") or {}).get("episodes") or []
 
         titles: dict[str, str | None] = {}  # chat id -> title, looked up once per chat
         memories = []
-        for episode in episodes[: self.valves.TOP_K]:
+        for episode in episodes:
             session_id = (episode.get("metadata") or {}).get("session_id")
             if session_id and session_id not in titles:
                 chat = await Chats.get_chat_by_id(session_id)
@@ -185,12 +192,13 @@ class Pipe:
         now = datetime.now().astimezone().isoformat()
         metadata = {"session_id": chat_id} if chat_id else {}
         payload = {
+            "project_id": self.valves.PROJECT_ID,
             "messages": [
                 {"content": question, "producer": "user", "role": "user", "timestamp": now, "metadata": metadata},
                 {"content": answer, "producer": "assistant", "role": "assistant", "timestamp": now, "metadata": metadata},
-            ]
+            ],
         }
-        async with httpx.AsyncClient(timeout=self.valves.REQUEST_TIMEOUT) as client:
+        async with self._client() as client:
             response = await client.post(f"{self.valves.MEMMACHINE_URL}/api/v2/memories", json=payload)
         response.raise_for_status()
 
@@ -199,11 +207,13 @@ class Pipe:
     async def _stream(self, base_url: str, model_id: str, messages: list[dict]) -> AsyncGenerator[str, None]:
         """Yield the content tokens of a streaming chat completion."""
         payload = {"model": model_id, "messages": messages, "stream": True}
-        async with httpx.AsyncClient(timeout=self.valves.REQUEST_TIMEOUT) as client:
+        async with self._client() as client:
             async with client.stream(
                 "POST", f"{base_url}/chat/completions", json=payload, headers=self._llm_headers()
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    await response.aread()  # the body holds vLLM's reason, e.g. context length
+                    raise RuntimeError(f"HTTP {response.status_code} from {base_url}: {response.text[:300]}")
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -217,10 +227,15 @@ class Pipe:
     async def _complete(self, base_url: str, model_id: str, messages: list[dict]) -> str:
         """Non-streaming chat completion; only used for background tasks."""
         payload = {"model": model_id, "messages": messages, "stream": False}
-        async with httpx.AsyncClient(timeout=self.valves.REQUEST_TIMEOUT) as client:
+        async with self._client() as client:
             response = await client.post(f"{base_url}/chat/completions", json=payload, headers=self._llm_headers())
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+
+    def _client(self) -> httpx.AsyncClient:
+        """HTTP client with a short connect timeout: Open WebUI calls pipes() on every model-list refresh,
+        so an unreachable LLM server must fail in seconds, not in REQUEST_TIMEOUT."""
+        return httpx.AsyncClient(timeout=httpx.Timeout(self.valves.REQUEST_TIMEOUT, connect=5))
 
     def _base_urls(self) -> list[str]:
         return [url.strip().rstrip("/") for url in self.valves.LLM_BASE_URLS.split(";") if url.strip()]
@@ -268,7 +283,7 @@ def format_date(created_at: str | None) -> str:
     if not created_at:
         return ""
     try:
-        moment = datetime.fromisoformat(created_at.replace("Z", "+00:00")).astimezone()
+        moment = datetime.fromisoformat(created_at).astimezone()
     except ValueError:
         return ""
     return f"{moment.strftime('%b')} {moment.day}, {moment.year}"
