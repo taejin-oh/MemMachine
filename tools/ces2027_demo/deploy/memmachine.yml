@@ -54,6 +54,9 @@ resources:
         grpc_port: 6334
         prefer_grpc: false
         https: false
+        # Required by the published image (main lineage); unknown to the
+        # branch's server code, which ignores it. One file works on both.
+        collection_registry: postgres
   embedders:
     embed:
       provider: openai
@@ -61,5 +64,10 @@ resources:
         model: embed            # vLLM is started with --served-model-name embed
         api_key: dummy          # vLLM and the mock accept any key
         base_url: http://embed:8001/v1
-        dimensions: 384         # must equal the embedding model's output size
+        # Must equal the embedding model's output size. MemMachine creates the
+        # vector collection with this value and sends it as `dimensions` in
+        # every embedding request; if the server rejects that parameter the
+        # silent retry returns the model's native size, and a mismatch fails
+        # the first load (company runbook, section 6.2).
+        dimensions: 384
         max_input_length: 2048
