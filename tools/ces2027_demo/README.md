@@ -1,6 +1,6 @@
 # CES 2027 MemMachine 비교 데모
 
-Open WebUI의 모델 비교 화면에서 같은 질문에 대해 왼쪽은 MemMachine의 기억을 검색해 보여 주고 답하고, 오른쪽은 같은 LLM이 기억 없이 답하는 데모다. Open WebUI와 MemMachine 서버의 소스는 고치지 않는다. 설계와 근거는 [설계 문서](../../docs/msr/ces2027_demo/design_2026-10-26.md)에 있다.
+Open WebUI의 모델 비교 화면에서 같은 질문에 대해 왼쪽은 MemMachine의 기억을 검색해 보여 주고 답하고, 오른쪽은 같은 LLM이 기억 없이 답하는 데모다. Open WebUI와 MemMachine 서버의 소스는 고치지 않는다. 설계와 근거는 [설계 문서](../../docs/msr/ces2027_demo/design_2026-10-26.md)에 있다. 전체 구조의 요약은 [아키텍처 문서](../../docs/msr/ces2027_demo/architecture_2026-10-27.md)에 있다.
 
 ## 구성
 
