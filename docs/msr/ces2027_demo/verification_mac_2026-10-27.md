@@ -218,3 +218,7 @@ mock 로그의 `carries tools` 경고는 이 절의 화면 확인에서 보낸 �
 - `img/09_booth_after_new_chat.png`: New Chat을 누른 뒤. 사이드바는 과거 채팅 일곱 개 그대로이고 질문 채팅은 남지 않았다.
 
 두 줄은 1600px 너비 창의 비교 화면 기준이다. 시연 장비에서 한 줄에 들어가는 글자 수가 다르면 Valve `MEMORY_PREVIEW_CHARS`로 맞춘다.
+
+### 7.4 아바타
+
+두 모델의 아바타를 추상적인 뇌 모양에서 MemMachine 로고 마크로 바꿨다(`assets/memmachine.svg`, `assets/no_memory.svg`; 마크는 `docs/logo/memmachine-logo-white.png`를 그대로 넣는다). 왼쪽은 브랜드 파랑 원 위의 흰 마크, 오른쪽은 회색 원 위에 흐리게 한 같은 마크에 사선을 그은 것이다. 28px, 64px, 128px와 밝은 배경과 어두운 배경에서 본 모습이 `img/12_avatars.png`에 있다. 28px에서는 마크의 선이 가늘어 파란 원과 사선 그은 회색 원으로 구별되고, 새 채팅 화면의 64px에서는 마크가 읽힌다. 7.3절의 캡처는 이 아바타로 다시 찍은 것이다.
