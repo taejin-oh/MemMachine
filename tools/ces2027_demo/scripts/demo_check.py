@@ -144,7 +144,7 @@ def pipe_answer(ui: OpenWebUI, model_id: str, question: str) -> str:
         if prefix in content:
             raise_error(content[content.index(prefix):][:200])
     memory_list, _, answer = content.partition("\n---\n")
-    if not memory_list.startswith("**Memories retrieved") or not answer.strip():
+    if "**Memories retrieved" not in memory_list or not answer.strip():
         raise_error(f"unexpected reply: {content[:200]!r}")
     return answer.strip()[:80]
 
