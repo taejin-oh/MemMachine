@@ -17,8 +17,10 @@ Steps:
   5. create the booth account if it is missing: a regular user, so that the
      USER_PERMISSIONS_* variables in docker-compose.yml apply to it and it
      sees only these two models (Open WebUI never restricts an admin)
-  6. settings of both accounts: no release-notes pop-up on first login, and an
-     empty personal system prompt so nothing extra reaches either model
+  6. settings of both accounts: no release-notes pop-up on first login, an
+     empty personal system prompt so nothing extra reaches either model, and
+     temporary chats by default so nothing a visitor types is saved and the
+     sidebar keeps showing only the loaded past chats
 """
 
 import base64
@@ -101,11 +103,12 @@ def ensure_booth_account(ui: OpenWebUI, env: dict[str, str]) -> OpenWebUI:
 
 
 def quiet_account(ui: OpenWebUI, email: str) -> None:
-    """Keep the demo screen clean: no "What's New" pop-up, no personal system prompt (design section 5.3)."""
+    """Keep the demo screen clean and the sidebar fixed (design section 5.3): no "What's New" pop-up,
+    no personal system prompt, and every new chat temporary so that a visitor's questions are never saved."""
     settings = ui.call("GET", "/api/v1/users/user/settings") or {}
-    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": ""}
+    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": "", "temporaryChatByDefault": True}
     ui.call("POST", "/api/v1/users/user/settings/update", settings)
-    print(f"account settings of {email}: release notes off, personal system prompt empty")
+    print(f"account settings of {email}: release notes off, personal system prompt empty, new chats temporary")
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: dict) -> None:

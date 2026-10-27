@@ -117,6 +117,9 @@ services:
       # by scripts/setup_openwebui.py). These permissions apply to it and leave
       # only the chat itself; Open WebUI never restricts an admin (design
       # section 5.3). Chat delete and import stay on: the load script needs them.
+      # Temporary chats stay allowed: the setup script makes them the default,
+      # so a visitor's questions are never saved and the sidebar keeps only the
+      # loaded past chats (TEMPORARY_ENFORCED would block the load script's import).
       ENABLE_SIGNUP: "false"                          # the first sign-up (the admin) is exempt
       USER_PERMISSIONS_CHAT_MULTIPLE_MODELS: "true"   # the comparison view
       USER_PERMISSIONS_CHAT_FILE_UPLOAD: "false"
@@ -127,7 +130,7 @@ services:
       USER_PERMISSIONS_CHAT_CONTROLS: "false"
       USER_PERMISSIONS_CHAT_SYSTEM_PROMPT: "false"
       USER_PERMISSIONS_CHAT_PARAMS: "false"
-      USER_PERMISSIONS_CHAT_TEMPORARY: "false"
+      USER_PERMISSIONS_CHAT_TEMPORARY: "true"
       USER_PERMISSIONS_CHAT_SHARE: "false"
       USER_PERMISSIONS_CHAT_EXPORT: "false"
       USER_PERMISSIONS_CHAT_EDIT: "false"
