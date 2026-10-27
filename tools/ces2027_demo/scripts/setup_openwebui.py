@@ -11,10 +11,13 @@ Steps:
   2. install or update the Pipe function and switch it on
   3. write the Pipe valves that come from .env (shared system prompt, LLM address)
   4. create or update the two model entries: display names, avatars from
-     ../assets, the same system prompt on the no-memory model, and the
-     capability flags that stop Open WebUI from feeding past chats, notes or
-     files to either model
-  5. staff account settings: no release-notes pop-up on first login, and an
+     ../assets, the same system prompt on the no-memory model, the capability
+     flags that stop Open WebUI from feeding past chats, notes or files to
+     either model, and read access for every account
+  5. create the booth account if it is missing: a regular user, so that the
+     USER_PERMISSIONS_* variables in docker-compose.yml apply to it and it
+     sees only these two models (Open WebUI never restricts an admin)
+  6. settings of both accounts: no release-notes pop-up on first login, and an
      empty personal system prompt so nothing extra reaches either model
 """
 
@@ -25,6 +28,10 @@ from common import ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, load_env, openwebu
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
 NO_PAST_CONTEXT = {"builtin_tools": False, "file_upload": False}
+# Lets every account, in particular the booth account, see a model entry.
+# Without a grant only admins see it. Grants have their own endpoint; the
+# model update endpoint leaves them untouched.
+PUBLIC_READ = [{"principal_type": "user", "principal_id": "*", "permission": "read"}]
 
 
 def main() -> None:
@@ -41,7 +48,9 @@ def main() -> None:
     upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png", params={})
     upsert_model(ui, env["LLM_MODEL_NAME"], f"{env['LLM_MODEL_NAME']} (no memory)", "no_memory.png",
                  params={"system": system_prompt})
-    quiet_account(ui)
+    booth = ensure_booth_account(ui, env)
+    quiet_account(ui, env["ADMIN_EMAIL"])
+    quiet_account(booth, env["BOOTH_EMAIL"])
     print("done")
 
 
@@ -77,12 +86,26 @@ def install_pipe(ui: OpenWebUI, valves: dict) -> None:
     ui.set_valves(valves)
 
 
-def quiet_account(ui: OpenWebUI) -> None:
+def ensure_booth_account(ui: OpenWebUI, env: dict[str, str]) -> OpenWebUI:
+    """Create the booth account (a regular user) when it does not exist yet; return a client signed in as it."""
+    booth = OpenWebUI(ui.base_url)
+    try:
+        booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
+        print(f"booth account {env['BOOTH_EMAIL']}: exists")
+    except RuntimeError:
+        ui.call("POST", "/api/v1/auths/add", {"name": env["BOOTH_NAME"], "email": env["BOOTH_EMAIL"],
+                                              "password": env["BOOTH_PASSWORD"], "role": "user"})
+        booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
+        print(f"booth account {env['BOOTH_EMAIL']}: created")
+    return booth
+
+
+def quiet_account(ui: OpenWebUI, email: str) -> None:
     """Keep the demo screen clean: no "What's New" pop-up, no personal system prompt (design section 5.3)."""
     settings = ui.call("GET", "/api/v1/users/user/settings") or {}
     settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": ""}
     ui.call("POST", "/api/v1/users/user/settings/update", settings)
-    print("account settings: release notes off, personal system prompt empty")
+    print(f"account settings of {email}: release notes off, personal system prompt empty")
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: dict) -> None:
@@ -107,6 +130,7 @@ def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: d
     else:
         ui.call("POST", "/api/v1/models/create", form)
         print(f"model {model_id}: created as '{name}'")
+    ui.call("POST", "/api/v1/models/model/access/update", {"id": model_id, "access_grants": PUBLIC_READ})
 
 
 if __name__ == "__main__":

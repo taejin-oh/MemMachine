@@ -5,7 +5,7 @@
 Prints one line per check and exits with a non-zero code if any failed:
   1. the LLM server(s), the embedding server, MemMachine, Open WebUI and the
      two database ports answer,
-  2. Open WebUI lists the chat model and its MemMachine counterpart,
+  2. the booth account sees the chat model and its MemMachine counterpart in Open WebUI,
   3. for every question in the script, the expected phrases are among the
      top-k memories that MemMachine retrieves from the loaded project,
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
@@ -89,9 +89,11 @@ def main() -> None:
     ui = OpenWebUI(openwebui_url(env))
     if not check("sign in to Open WebUI", lambda: ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])["email"]):
         finish()
+    booth = OpenWebUI(openwebui_url(env))
+    check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
     left, right = pipe_model_id(env), env["LLM_MODEL_NAME"]
-    check("both demo models listed in Open WebUI",
-          lambda: f"{left}, {right}" if {left, right} <= {m["id"] for m in ui.call("GET", "/api/models")["data"]}
+    check("both demo models visible to the booth account",
+          lambda: f"{left}, {right}" if {left, right} <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
           else raise_error(f"missing: {left} or {right}"))
     report(right in llm_models, "chat model served by the LLM server", right)
 

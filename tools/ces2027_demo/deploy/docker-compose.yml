@@ -113,6 +113,27 @@ services:
       ENABLE_RETRIEVAL_QUERY_GENERATION: "false"
       # No sample prompt suggestions on the new-chat screen; staff type the script.
       DEFAULT_PROMPT_SUGGESTIONS: "[]"
+      # The booth screen signs in as a regular account (BOOTH_* in .env, created
+      # by scripts/setup_openwebui.py). These permissions apply to it and leave
+      # only the chat itself; Open WebUI never restricts an admin (design
+      # section 5.3). Chat delete and import stay on: the load script needs them.
+      ENABLE_SIGNUP: "false"                          # the first sign-up (the admin) is exempt
+      USER_PERMISSIONS_CHAT_MULTIPLE_MODELS: "true"   # the comparison view
+      USER_PERMISSIONS_CHAT_FILE_UPLOAD: "false"
+      USER_PERMISSIONS_CHAT_WEB_UPLOAD: "false"
+      USER_PERMISSIONS_CHAT_STT: "false"
+      USER_PERMISSIONS_CHAT_TTS: "false"
+      USER_PERMISSIONS_CHAT_CALL: "false"
+      USER_PERMISSIONS_CHAT_CONTROLS: "false"
+      USER_PERMISSIONS_CHAT_SYSTEM_PROMPT: "false"
+      USER_PERMISSIONS_CHAT_PARAMS: "false"
+      USER_PERMISSIONS_CHAT_TEMPORARY: "false"
+      USER_PERMISSIONS_CHAT_SHARE: "false"
+      USER_PERMISSIONS_CHAT_EXPORT: "false"
+      USER_PERMISSIONS_CHAT_EDIT: "false"
+      USER_PERMISSIONS_CHAT_DELETE_MESSAGE: "false"
+      USER_PERMISSIONS_CHAT_RATE_RESPONSE: "false"
+      USER_PERMISSIONS_CHAT_CONTINUE_RESPONSE: "false"
       # Features the demo does not use.
       ENABLE_WEB_SEARCH: "false"
       ENABLE_CODE_INTERPRETER: "false"

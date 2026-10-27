@@ -6,7 +6,7 @@ Every run starts from scratch:
   1. a fresh MemMachine project named ces-<date>-<time> is chosen and written
      to the Pipe valve PROJECT_ID, so the left card searches only this load
      (MemMachine cannot reuse a deleted project, so old ones just stay unused),
-  2. all chats of the staff account are deleted,
+  2. all chats of the booth account (the one the booth screen signs in as) are deleted,
   3. each session of the script is imported as one chat with the script's date
      and one-minute spacing between turns, so the sidebar and the message
      timestamps show the past exactly as written,
@@ -34,17 +34,19 @@ def main() -> None:
     sessions = [timed_turns(session) for session in script["sessions"]]  # validates before anything is touched
     env = load_env()
 
-    ui = OpenWebUI(openwebui_url(env))
-    ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])
+    admin = OpenWebUI(openwebui_url(env))  # only an admin may write the Pipe valve
+    admin.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])
+    booth = OpenWebUI(openwebui_url(env))  # the chats must belong to the account the booth screen uses
+    booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
 
     project_id = f"ces-{datetime.now():%Y%m%d-%H%M%S}"
-    ui.set_valves({"PROJECT_ID": project_id})
-    if not ui.call("DELETE", "/api/v1/chats/"):
+    admin.set_valves({"PROJECT_ID": project_id})
+    if not booth.call("DELETE", "/api/v1/chats/"):
         raise SystemExit("Open WebUI could not delete the previous chats")
-    print(f"project {project_id}: Pipe valve set, previous chats deleted")
+    print(f"project {project_id}: Pipe valve set, previous chats of {env['BOOTH_EMAIL']} deleted")
 
     for session, turns in zip(script["sessions"], sessions):
-        chat_id = import_chat(ui, session["title"], turns, pipe_model_id(env), pipe_model_name(env))
+        chat_id = import_chat(booth, session["title"], turns, pipe_model_id(env), pipe_model_name(env))
         store_episodes(memmachine_url(env), project_id, chat_id, turns)
         print(f"session '{session['title']}': {len(turns)} turns, chat {chat_id}")
     print("done. Reload the browser to see the chats.")
