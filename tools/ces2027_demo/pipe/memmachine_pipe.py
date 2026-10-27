@@ -113,7 +113,8 @@ class Pipe:
             await self.pipes()  # fills the map again after an Open WebUI restart
         base_url = self._model_urls.get(model_id)
         if base_url is None:
-            return f"MemMachine pipe: unknown model {model_id}"
+            return (f"MemMachine pipe: {model_id} is not offered by {self.valves.LLM_BASE_URLS} "
+                    "(server unreachable or model name changed)")
 
         if __task__:
             # Background tasks (title generation and the like) are switched off
@@ -139,6 +140,7 @@ class Pipe:
             memories = await self._search(question)
         except Exception as error:
             # Fail loudly: answering without memory would make both sides look alike.
+            await send_status(emit, "Memory search failed", done=True)
             yield f"Memory search failed: {error}"
             return
         await send_status(emit, f"Retrieved {len(memories)} memories", done=True)
@@ -269,7 +271,8 @@ def render_memory_list(memories: list[dict], show_session_info: bool, preview_ch
 
 
 def preview(text: str, max_chars: int) -> str:
-    """The text cut at a word boundary to max_chars, ending with '...'. 0 means the whole text."""
+    """The text on one line, cut at a word boundary to max_chars and ended with '...'. 0 means no cut."""
+    text = " ".join(text.split())  # a line break inside the callout would end the blockquote
     if max_chars <= 0 or len(text) <= max_chars:
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "..."

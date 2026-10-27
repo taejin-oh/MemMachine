@@ -66,6 +66,8 @@ def timed_turns(session: dict) -> list[dict]:
     for turn in session["turns"]:
         if turn.get("role") not in ("user", "assistant"):
             raise SystemExit(f"session '{title}': role must be user or assistant, not {turn.get('role')!r}")
+        if not isinstance(turn.get("content"), str) or not turn["content"].strip():
+            raise SystemExit(f"session '{title}': every turn needs a non-empty content string")
     return [{**turn, "time": start + index * TURN_SPACING} for index, turn in enumerate(session["turns"])]
 
 

@@ -95,8 +95,13 @@ def ensure_booth_account(ui: OpenWebUI, env: dict[str, str]) -> OpenWebUI:
         booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
         print(f"booth account {env['BOOTH_EMAIL']}: exists")
     except RuntimeError:
-        ui.call("POST", "/api/v1/auths/add", {"name": env["BOOTH_NAME"], "email": env["BOOTH_EMAIL"],
-                                              "password": env["BOOTH_PASSWORD"], "role": "user"})
+        try:
+            ui.call("POST", "/api/v1/auths/add", {"name": env["BOOTH_NAME"], "email": env["BOOTH_EMAIL"],
+                                                  "password": env["BOOTH_PASSWORD"], "role": "user"})
+        except RuntimeError as error:
+            # The usual cause: the account exists but BOOTH_PASSWORD in .env was changed afterwards.
+            raise SystemExit(f"booth account {env['BOOTH_EMAIL']} could not be created; if it already exists, "
+                             f"BOOTH_PASSWORD in .env does not match it: {error}") from None
         booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
         print(f"booth account {env['BOOTH_EMAIL']}: created")
     return booth

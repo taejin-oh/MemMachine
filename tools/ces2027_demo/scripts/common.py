@@ -88,7 +88,7 @@ class OpenWebUI:
         return http_json(method, self.base_url + path, body, self.token)
 
     def signin(self, email: str, password: str) -> dict:
-        """Sign in as an existing account. Open WebUI allows 15 sign-ins per e-mail in 3 minutes, so each script signs in once per run."""
+        """Sign in as an existing account. Open WebUI allows 15 sign-ins per e-mail in 3 minutes, so each script signs in once per account per run."""
         user = self.call("POST", "/api/v1/auths/signin", {"email": email, "password": password})
         self.token = user["token"]
         return user

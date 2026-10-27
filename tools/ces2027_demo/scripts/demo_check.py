@@ -87,7 +87,8 @@ def main() -> None:
 
     # 2. models in Open WebUI
     ui = OpenWebUI(openwebui_url(env))
-    if not check("sign in to Open WebUI", lambda: ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])["email"]):
+    # signin, not login: a check must never create the admin account on a fresh volume.
+    if not check("sign in to Open WebUI", lambda: ui.signin(env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])["email"]):
         finish()
     booth = OpenWebUI(openwebui_url(env))
     check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
