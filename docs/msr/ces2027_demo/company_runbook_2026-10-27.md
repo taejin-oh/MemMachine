@@ -38,6 +38,7 @@ Claude Code 세션 하나는 서버 한 대에서 돈다. 5장과 6장의 절 �
 - 서버 네 대(부스와 같은 모양). 네 IP가 모두 다르다. GPU 번호는 둘 다 `0`이다.
 - GPU 서버 한 대에 H100 두 장, 다른 서버 한 대에 `db`와 `app`. `EMBED_IP`와 `LLM_IP`가 같고, `DB_IP`와 `APP_IP`가 같다. GPU 번호는 `LLM_GPU=0`, `EMBED_GPU=1`이다.
 - 서버 한 대에 전부. 네 IP가 모두 같다. H100이 두 장이면 `LLM_GPU=0`, `EMBED_GPU=1`, 한 장이면 둘 다 `0`이고 메모리 비율을 5.4절의 주석대로 나눈다.
+- vLLM 두 대를 운영자가 compose 밖에서 이미 띄워 둔 경우(2026년 10월 회사 검증이 이 모양이었다). `<EMBED_IP>`와 `<LLM_IP>`는 그 서버의 IP이고, `embed`와 `llm` 프로필은 올리지 않는다. 운영자가 지켜야 할 조건은 2.4절에 있다.
 
 ### 2.2 모델
 
@@ -56,6 +57,20 @@ Claude Code 세션 하나는 서버 한 대에서 돈다. 5장과 6장의 절 �
 |---|---|---|
 | 스태프 계정 비밀번호 | `<ADMIN_PASSWORD>` | 사람이 정한다. 따옴표, 역슬래시, 공백 없이. 보고서와 커밋에 적지 않는다 |
 | `WEBUI_SECRET_KEY` | 명령으로 생성 | 5.4절에서 `openssl`로 만들어 `.env`에만 넣는다. 화면에 출력하지 않는다 |
+
+### 2.4 이미 떠 있는 vLLM을 쓸 때
+
+운영자가 vLLM을 systemd 같은 것으로 상시 서빙하고 데모가 그것을 그대로 쓰는 모양이다. 데모 쪽 파일은 모델 서버의 포트와 이름을 고정값으로 쓰므로, 운영자의 서버가 아래 조건을 지켜야 한다. 조건이 어긋나면 데모 파일을 고치지 말고 운영자에게 서버 쪽을 맞춰 달라고 한다.
+
+| 조건 | 왜 | 어긋나면 보이는 것 |
+|---|---|---|
+| 채팅 vLLM이 포트 8000에서 모델 ID `<LLM_MODEL_NAME>`으로 응답한다 | `.env`의 `LLM_MODEL_NAME`이 Open WebUI의 모델 ID가 된다 | 검사의 `both demo models listed` 또는 `chat model served` 줄이 `FAIL` |
+| 임베딩 vLLM이 포트 8001에서 모델 ID `embed`로 응답하고 `--runner pooling`으로 떠 있다 | `memmachine.yml`이 `embed`라는 이름과 8001을 고정값으로 쓴다. `--served-model-name`은 이름을 여러 개 받으므로 별명으로 더하면 된다 | MemMachine 404, 적재 500, 검사의 `embedding server` 줄 끝이 `embed`가 아님 |
+| 임베딩 서버가 `dimensions` 인자를 받아들인다 | 6.2절. 받지 않으면 첫 적재가 500으로 끝난다 | 6.2절의 마지막 `curl`이 오류 |
+| 채팅 모델이 Qwen3 계열이면 `--default-chat-template-kwargs '{"enable_thinking": false}'`로 떠 있다 | 생각을 먼저 출력하면 왼쪽 카드가 답 직전까지 빈 채로 보인다 | 6.3절의 `REASONING yes` |
+| 가능하면 채팅 vLLM에 `--enable-log-requests`가 있다 | 7.3절이 요청 로그로 내장 도구 차단을 확인한다 | 없으면 7.3절은 "미판정"으로 보고한다 |
+
+이 모양에서는 5.2절과 5.3절의 llm, embed 명령, 6.2절과 6.3절의 `docker compose ... up` 명령을 건너뛰고 그 절의 `curl`만 실행한다. 작업표의 `<LLM_MODEL_PATH>`, `<EMBED_MODEL_PATH>`, `<LLM_GPU>`, `<EMBED_GPU>`는 compose 해석을 위해 아무 값이나 채운다(예: `/models/llm`, `0`). `<DIM>`은 6.2절의 `LEN`으로 정한다.
 
 ## 3. 에이전트 규칙
 
@@ -135,7 +150,7 @@ cd ~/ces2027/MemMachine && git log -1 --oneline && ls tools/ces2027_demo && test
 
 ## 5. 서버마다 준비
 
-5장은 역할이 있는 서버마다 한다. 서버가 한 대면 한 번, 네 대면 네 번이다. 서버마다 4장대로 clone을 두는 것이 가장 단순하다. GPU 서버는 compose 파일과 `.env`만 쓰고, 앱 서버는 MemMachine 이미지를 빌드하므로 저장소 전체가 필요하다.
+5장은 역할이 있는 서버마다 한다. 서버가 한 대면 한 번, 네 대면 네 번이다. 서버마다 4장대로 clone을 두는 것이 가장 단순하다. GPU 서버는 compose 파일과 `.env`만 쓰고, 앱 서버는 스크립트와 대본도 쓴다. 어느 쪽이든 4.1절의 얕은 clone이면 충분하다.
 
 ### 5.1 프로그램 확인
 
@@ -149,7 +164,7 @@ docker --version && docker compose version && python3 --version && docker ps >/d
 
 **다르면** 프로그램이 없으면 사람에게 설치를 부탁한다. Python 패키지는 필요 없다(스크립트는 표준 라이브러리만 쓴다). `permission denied while trying to connect to the Docker daemon socket`이면 이 계정이 `docker` 그룹에 없는 것이다. `sudo`로 돌리지 말고 멈춰서 사람에게 그룹 추가를 부탁한다.
 
-### 5.2 GPU 확인 (embed, llm 역할 서버만)
+### 5.2 GPU 확인 (embed, llm 역할 서버만. 운영자 서빙이면 건너뛴다)
 
 **하는 일** 컨테이너에서 GPU가 보이는지 본다.
 
@@ -163,7 +178,7 @@ nvidia-smi -L && docker run --rm --gpus all --entrypoint nvidia-smi vllm/vllm-op
 
 ### 5.3 모델 가중치와 임베딩 차원
 
-**하는 일** 가중치 디렉터리가 맞는지 보고, 임베딩 차원을 읽어 MemMachine 설정에 적는다. 역할마다 명령이 다르다. 이 서버에 없는 역할의 명령은 건너뛴다.
+**하는 일** 가중치 디렉터리가 맞는지 보고, 임베딩 차원을 읽어 MemMachine 설정에 적는다. 역할마다 명령이 다르다. 이 서버에 없는 역할의 명령은 건너뛴다. 운영자 서빙(2.4절)이면 llm과 embed 명령을 건너뛰고 `<DIM>`은 6.2절의 `LEN`으로 정한 뒤 app 명령만 한다.
 
 llm 역할 서버에서:
 
@@ -238,6 +253,14 @@ sed -i "s|^WEBUI_SECRET_KEY=GENERATE|WEBUI_SECRET_KEY=$(openssl rand -hex 32)|" 
 sed -i 's/^LLM_MAX_MODEL_LEN=.*/LLM_MAX_MODEL_LEN=4096/' ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env && grep -n '^LLM_MAX_MODEL_LEN=' ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env
 ```
 
+채팅 모델이 Qwen3 계열이면(이름에 `Qwen3`가 들어가면) 생각(thinking)을 끄는 인자를 더한다. 끄지 않으면 6.3절에서 `REASONING yes`가 나오고 왼쪽 카드가 답 직전까지 비어 보인다.
+
+```bash
+sed -i "s|^LLM_EXTRA_ARGS=.*|LLM_EXTRA_ARGS=--enable-log-requests --default-chat-template-kwargs '{\"enable_thinking\": false}'|" ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env && grep -n '^LLM_EXTRA_ARGS=' ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env
+```
+
+**나와야 하는 것** `LLM_EXTRA_ARGS=--enable-log-requests --default-chat-template-kwargs '{"enable_thinking": false}'` 한 줄.
+
 ### 5.5 compose 문법 확인
 
 **하는 일** `.env`의 값으로 compose가 해석되는지 본다. 어느 프로필이든 같은 `.env`를 읽으므로 모든 서버에서 `app`으로 확인하면 된다.
@@ -252,7 +275,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile ap
 
 ## 6. 올리기
 
-순서는 `db`, `embed`, `llm`, `app`이다. 각 절은 그 역할이 있는 서버에서 실행한다. 한 서버에 여러 역할이 있으면 그 서버에서 절을 이어서 한다.
+순서는 `db`, `embed`, `llm`, `app`이다. 각 절은 그 역할이 있는 서버에서 실행한다. 한 서버에 여러 역할이 있으면 그 서버에서 절을 이어서 한다. 운영자 서빙(2.4절)이면 6.2절과 6.3절의 `docker compose ... up` 명령을 건너뛰고 `curl`부터 한다. `curl`은 IP로 부르므로 어느 서버에서 실행해도 된다.
 
 ### 6.1 db
 
@@ -271,7 +294,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile db
 **하는 일** 임베딩 모델을 vLLM으로 올리고 출력 길이가 `<DIM>`과 같은지 본다. 모델 적재에 몇 분 걸린다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile embed up -d --wait --wait-timeout 900 && curl -s http://localhost:8001/v1/models | python3 -c "import json,sys; print('models', [m['id'] for m in json.load(sys.stdin)['data']])"
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile embed up -d --wait --wait-timeout 900 && curl -s http://<EMBED_IP>:8001/v1/models | python3 -c "import json,sys; print('models', [m['id'] for m in json.load(sys.stdin)['data']])"
 ```
 
 **나와야 하는 것** `models ['embed']`.
@@ -285,27 +308,33 @@ sed -i 's/^EMBED_EXTRA_ARGS=.*/EMBED_EXTRA_ARGS=--convert embed/' ~/ces2027/MemM
 이어서 길이를 확인한다.
 
 ```bash
-curl -s http://localhost:8001/v1/embeddings -H 'Content-Type: application/json' -d '{"model":"embed","input":"hello"}' | python3 -c "import json,sys; print('LEN', len(json.load(sys.stdin)['data'][0]['embedding']))"
+curl -s http://<EMBED_IP>:8001/v1/embeddings -H 'Content-Type: application/json' -d '{"model":"embed","input":"hello"}' | python3 -c "import json,sys; print('LEN', len(json.load(sys.stdin)['data'][0]['embedding']))"
 ```
 
-**나와야 하는 것** `LEN <DIM>`. 5.3절의 `<DIM>`과 같아야 한다.
+**나와야 하는 것** `LEN <DIM>`. 5.3절의 `<DIM>`과 같아야 한다. 운영자 서빙이라 `<DIM>`이 아직 없으면 이 숫자가 `<DIM>`이다.
 
 **다르면** 숫자가 다르면 이 숫자가 맞는 값이다. 앱 서버에서 5.3절의 `sed` 명령을 이 숫자로 다시 실행한다.
 
-마지막으로 `dimensions` 인자 지원 여부를 기록한다. MemMachine은 임베딩 요청에 `dimensions`를 붙이고, 모델이 거절하면 그 인자 없이 다시 보낸다(설계 부록 A.21). 어느 쪽이든 동작하며 보고서에 적기만 한다.
+마지막으로 `dimensions` 인자를 붙인 요청이 성공하는지 본다. 이것은 통과 조건이다. MemMachine은 벡터 컬렉션을 설정의 `dimensions`로 만들고 임베딩 요청마다 같은 값을 `dimensions`로 붙인다. 서버가 그 인자를 거절하면 MemMachine은 인자 없이 조용히 다시 보내는데, 그 결과는 모델 기본 길이라서 설정값과 다르면 첫 적재가 `dimensionality ... does not match`로 실패한다. vLLM은 모델 `config.json`에 `is_matryoshka`나 `matryoshka_dimensions`가 있을 때만 이 인자를 받는다(Qwen3-Embedding에는 없다).
 
 ```bash
-curl -s http://localhost:8001/v1/embeddings -H 'Content-Type: application/json' -d '{"model":"embed","input":"hello","dimensions":<DIM>}' | head -c 300; echo
+curl -s http://<EMBED_IP>:8001/v1/embeddings -H 'Content-Type: application/json' -d '{"model":"embed","input":"hello","dimensions":<DIM>}' | python3 -c "import json,sys; r=json.load(sys.stdin); print('DIM-OK', len(r['data'][0]['embedding'])) if 'data' in r else print('DIM-REJECTED', str(r)[:200])"
 ```
 
-**나와야 하는 것** 둘 중 하나다. `"object":"list"`로 시작하는 정상 응답이면 "dimensions 지원"으로, `matryoshka`나 `dimensions`가 들어간 오류면 "dimensions 미지원, MemMachine이 재시도"로 보고서에 적는다. 이 재시도는 로그를 남기지 않으므로 6.4절의 적재가 성공하는 것이 그 증거다.
+**나와야 하는 것** `DIM-OK <DIM>`.
+
+**다르면** `DIM-REJECTED`면 둘 중 하나를 한다. 모델 카드가 출력 차원을 줄여도 된다고 하면(Qwen3-Embedding은 32에서 4096까지 된다) 임베딩 서버에 `--hf-overrides '{"is_matryoshka": true}'`를 더한다. compose로 띄웠으면 아래 명령이고, 운영자 서빙이면 운영자에게 부탁한다. 그렇지 않은 모델이면 `<DIM>`을 바로 위 `LEN`의 숫자로 바꾸고 5.3절의 `sed`를 다시 한다. 어느 쪽이든 이 `curl`을 다시 실행해 `DIM-OK`를 본 뒤 넘어간다. 기억을 이미 넣은 뒤에는 바꿀 수 없다.
+
+```bash
+sed -i "s|^EMBED_EXTRA_ARGS=.*|EMBED_EXTRA_ARGS=--hf-overrides '{\"is_matryoshka\": true}'|" ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env && cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile embed up -d --force-recreate --wait --wait-timeout 900
+```
 
 ### 6.3 llm
 
 **하는 일** 채팅 모델을 vLLM으로 올리고 한 문장 답을 받아 본다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile llm up -d --wait --wait-timeout 900 && curl -s http://localhost:8000/v1/models | python3 -c "import json,sys; print('models', [m['id'] for m in json.load(sys.stdin)['data']])"
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile llm up -d --wait --wait-timeout 900 && curl -s http://<LLM_IP>:8000/v1/models | python3 -c "import json,sys; print('models', [m['id'] for m in json.load(sys.stdin)['data']])"
 ```
 
 **나와야 하는 것** `models ['<LLM_MODEL_NAME>']`.
@@ -319,22 +348,26 @@ sed -i 's/^LLM_MAX_MODEL_LEN=.*/LLM_MAX_MODEL_LEN=4096/' ~/ces2027/MemMachine/to
 이어서 답을 받아 본다.
 
 ```bash
-curl -s http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<LLM_MODEL_NAME>","messages":[{"role":"user","content":"Say hello in one short sentence."}],"max_tokens":64}' | python3 -c "import json,sys; m=json.load(sys.stdin)['choices'][0]['message']; print('CONTENT', repr(m.get('content'))); print('REASONING', 'yes' if m.get('reasoning_content') else 'no')"
+curl -s http://<LLM_IP>:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"<LLM_MODEL_NAME>","messages":[{"role":"user","content":"Say hello in one short sentence."}],"max_tokens":64}' | python3 -c "import json,sys; m=json.load(sys.stdin)['choices'][0]['message']; print('CONTENT', repr(m.get('content'))); print('REASONING', 'yes' if m.get('reasoning_content') else 'no')"
 ```
 
 **나와야 하는 것** `CONTENT '...'`에 인사 문장, `REASONING no`.
 
-**다르면** `REASONING yes`이거나 `CONTENT`가 비어 있으면 생각(reasoning)을 먼저 출력하는 모델이다. 그대로 두면 왼쪽 카드가 한동안 비어 보인다. 사람에게 알리고 모델을 바꿀지 정하게 한다. 바꾸지 않기로 하면 보고서에 적는다.
+**다르면** `REASONING yes`이거나 `CONTENT`가 비어 있으면 생각(reasoning)을 먼저 출력하는 모델이다. 그대로 두면 왼쪽 카드가 답 직전까지 비어 보인다. Qwen3 계열이면 5.4절 끝의 `sed`로 thinking을 끄고 아래 명령으로 다시 올린 뒤 이 `curl`을 다시 한다(운영자 서빙이면 2.4절의 인자를 운영자에게 부탁한다). 다른 모델이면 사람에게 알리고 모델을 바꿀지 정하게 한다. 바꾸지 않기로 하면 보고서에 적는다.
+
+```bash
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile llm up -d --force-recreate --wait --wait-timeout 900
+```
 
 ### 6.4 app
 
-**하는 일** MemMachine과 Open WebUI를 올리고, 계정과 Pipe와 두 모델을 만들고, 대본을 적재하고, 검사한다. MemMachine 이미지는 브랜치에서 빌드하므로 처음에는 10분 안팎 걸리고 인터넷이 필요하다.
+**하는 일** MemMachine과 Open WebUI를 올리고, 계정과 Pipe와 두 모델을 만들고, 대본을 적재하고, 검사한다. MemMachine은 브랜치에서 빌드하지 않고 공개 이미지 `memmachine/memmachine:0.4.1-dev1`을 쓴다. 처음에는 이미지 둘을 내려받으므로 인터넷이 필요하고 몇 분 걸린다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile app up -d --build --wait && docker compose --profile app ps --format 'table {{.Service}}\t{{.Status}}'
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile app up -d --wait && docker compose --profile app ps --format 'table {{.Service}}\t{{.Status}}' && docker inspect --format '{{index .RepoDigests 0}}' memmachine/memmachine:0.4.1-dev1
 ```
 
-**나와야 하는 것** `memmachine`과 `openwebui`가 `Up ... (healthy)`.
+**나와야 하는 것** `memmachine`과 `openwebui`가 `Up ... (healthy)`, 마지막 줄에 `memmachine/memmachine@sha256:...`. 이 digest를 보고서에 적는다. 이미지를 받을 수 없어 다른 방법으로 넣었으면(USB 메모리의 tar를 `docker load` 등) 태그가 같으면 그대로 쓰인다.
 
 **다르면** `memmachine`이 `unhealthy`나 재시작을 반복하면 `cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose logs --tail 100 memmachine`을 본다. `connection refused`나 `could not connect`가 DB 주소와 함께 나오면 `.env`의 `DB_HOST`와 6.1절을 본다. `dimension`이 들어간 오류면 5.3절의 값이 6.2절의 `LEN`과 다른 것이다. 고친 뒤 MemMachine만 다시 올린다.
 
@@ -447,18 +480,18 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo && TOKEN=$(curl -s http://<APP_IP>:30
 
 ### 7.3 vLLM 요청 로그
 
-**하는 일** 두 모델 항목이 내장 도구를 보내지 않는지, 왼쪽 프롬프트에만 기억이 들어가는지 LLM 서버의 요청 로그로 본다. 5.4절에서 켠 `--enable-log-requests` 덕에 프롬프트가 로그에 남는다. LLM 역할 서버에서 실행한다.
+**하는 일** 두 모델 항목이 내장 도구를 보내지 않는지, 왼쪽 프롬프트에만 기억이 들어가는지 LLM 서버의 요청 로그로 본다. 5.4절에서 켠 `--enable-log-requests` 덕에 프롬프트가 로그에 남는다. LLM 역할 서버에서 실행한다. 운영자 서빙(2.4절)이면 운영자 vLLM에 `--enable-log-requests`가 있는지 묻고, 있으면 그 로그 파일이나 `journalctl -u <유닛 이름>` 출력에 아래와 같은 `grep`을 건다. 없으면 이 절은 판정할 수 없다. 보고서 4장에 "미판정: 운영자 vLLM에 요청 로그 없음"이라 적고, 대신 7.1절에서 오른쪽 답에 과거 사실이 없고 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는 것으로 간접 확인한 결과를 적는다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools $(docker compose logs llm 2>&1 | grep -c -E 'search_chats|view_chat')" && echo "memory-block $(docker compose logs llm 2>&1 | grep -c 'memories retrieved from the user')"
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools $(docker compose logs llm 2>&1 | grep -c -E 'search_chats|view_chat|ask_user')" && echo "memory-block $(docker compose logs llm 2>&1 | grep -c 'memories retrieved from the user')"
 ```
 
 **나와야 하는 것** `tools 0`과 `memory-block 1` 이상(6.4절 검사의 질문 하나와 7.1절, 7.2절에서 왼쪽 모델로 보낸 질문 수의 합).
 
-**다르면** `tools`가 0이 아니면 Open WebUI의 내장 도구(`search_chats`, `view_chat`)가 모델까지 간 것이다. `scripts/setup_openwebui.py`의 `upsert_model` 호출 두 곳의 `params=` 인자에 `"function_calling": "legacy"`를 더하고 스크립트를 다시 실행한 뒤(설계 5.3절의 대안) 7.2절의 측정을 한 번 더 돌리고, 그 뒤의 로그만 센다. 로그는 지난 줄을 계속 가지고 있으므로 전체를 다시 세면 0이 되지 않는다.
+**다르면** `tools`가 0이 아니면 Open WebUI의 내장 도구(`search_chats`, `view_chat`, `ask_user` 등)가 모델까지 간 것이다. 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 보이는 것도 같은 증상이다. `scripts/setup_openwebui.py`의 `upsert_model` 호출 두 곳의 `params=` 인자에 `"function_calling": "legacy"`를 더하고 스크립트를 다시 실행한 뒤(설계 5.3절의 대안) 7.2절의 측정을 한 번 더 돌리고, 그 뒤의 로그만 센다. 로그는 지난 줄을 계속 가지고 있으므로 전체를 다시 세면 0이 되지 않는다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker compose logs --since 5m llm 2>&1 | grep -c -E 'search_chats|view_chat')"
+cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker compose logs --since 5m llm 2>&1 | grep -c -E 'search_chats|view_chat|ask_user')"
 ```
 
 `tools-recent 0`이면 통과다. `memory-block`이 0이면 7.1절에서 왼쪽 모델로 질문을 보냈는지 본다. 문자열 `memories retrieved from the user`는 Pipe가 왼쪽 프롬프트에 넣는 기억 블록 머리글의 일부다(`pipe/memmachine_pipe.py`의 `MEMORY_BLOCK_HEADER`).
@@ -476,8 +509,10 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker
 
 - 날짜: <날짜>
 - 환경: <서버 수와 모양(2.1절 중 어느 것), GPU 종류와 장수, OS, Docker와 Compose 버전>
-- 모델: 채팅 <LLM_MODEL_NAME> (<LLM_MODEL_PATH>), 임베딩 <EMBED_MODEL> (<EMBED_MODEL_PATH>, 차원 <DIM>, dimensions 인자 <지원 | 미지원이라 MemMachine이 재시도>)
-- 대상 커밋: `msr_ces2027_demo` 브랜치의 `<4.3절의 해시>`
+- 모델: 채팅 <LLM_MODEL_NAME> (<LLM_MODEL_PATH>), 임베딩 <EMBED_MODEL> (<EMBED_MODEL_PATH>, 차원 <DIM>, dimensions 인자 <그대로 통과 | is_matryoshka override로 통과 | 기본 길이를 DIM으로>)
+- 서빙: <compose의 llm, embed 프로필 | 운영자 서빙(2.4절), 채팅 인자 <있으면 enable_thinking, 요청 로그 여부>>
+- 브랜치 커밋: `msr_ces2027_demo`의 `<4.3절의 해시>` (데모 도구와 문서)
+- MemMachine 이미지: `memmachine/memmachine:0.4.1-dev1` (`<6.4절의 digest>`)
 - 방법: [회사 실행서](company_runbook_2026-10-27.md) 4장부터 7장까지 순서대로 따랐다.
 
 ## 1. 요약
@@ -499,7 +534,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker
 ## 4. 요청 로그
 
 ```
-<7.3절의 두 줄>
+<7.3절의 두 줄 | 미판정: 운영자 vLLM에 요청 로그 없음. 간접 확인 결과 한 줄>
 ```
 
 ## 5. 화면
@@ -557,7 +592,7 @@ cd ~/ces2027/MemMachine && git push origin msr_ces2027_demo
 환경: <2.1절의 모양, GPU, 모델 이름과 차원>
 검사: <all checks passed | FAIL 줄 그대로>
 시간: <7.2절 두 줄>
-요청 로그: <7.3절 두 줄>
+요청 로그: <7.3절 두 줄 | 미판정과 이유>
 고친 것: <없음 | 파일과 한 줄 이유>
 사람이 정할 것: <없음 | 항목>
 ```
@@ -572,11 +607,15 @@ cd ~/ces2027/MemMachine && git push origin msr_ces2027_demo
 | `could not select device driver "nvidia"` | NVIDIA Container Toolkit 없음 | 사람에게 설치를 부탁한다 |
 | vLLM 로그 `CUDA out of memory` | 같은 GPU에 다른 프로세스, 또는 메모리 비율 합이 1을 넘음 | `nvidia-smi`로 점유를 보고 5.4절의 `sed` 꼴로 `LLM_GPU`, `EMBED_GPU`, 메모리 비율을 고친 뒤 6.2절 또는 6.3절의 `--force-recreate` 명령으로 다시 올린다 |
 | 임베더 로그에 pooling 또는 runner 관련 오류 | 모델이 임베딩 모델로 자동 인식되지 않음 | 6.2절 "다르면"의 `--convert embed` 명령 |
+| 적재 중 MemMachine 500, 로그에 `column ... does not exist` | PostgreSQL 볼륨에 다른 MemMachine 이미지(예: 브랜치에서 빌드한 것)가 만든 테이블이 남아 있음 | 멈추고 사람에게 알린다. 사람이 db 역할 서버에서 `docker compose --profile db down -v`로 볼륨을 비우고 6.1절부터 다시 한다. 에이전트는 볼륨을 지우지 않는다(3장) |
 | 적재 중 MemMachine 500, 로그에 `dimensionality ... does not match` | `memmachine.yml`의 `dimensions`가 실제 출력 길이와 다름 | 6.2절의 `LEN` 값으로 5.3절의 `sed`를 다시 하고 6.4절의 MemMachine 다시 올리기 명령 뒤 적재를 다시 한다 |
-| 검사의 `embedding server` 줄 끝이 `embed`가 아니다 | compose가 아닌 다른 vLLM이 8001을 쓰고 있음 | 그 프로세스를 멈추고 6.2절을 다시 한다 |
-| `docker compose --profile app up --build`가 패키지 내려받기에서 실패 | 앱 서버에 인터넷이 없거나 프록시 필요 | 사람에게 네트워크를 확인한다. 부스용 오프라인 준비물은 [이전 절차서](relocation_2026-10-27.md) 2장 |
+| 검사의 `embedding server` 줄 끝이 `embed`가 아니다 | compose가 아닌 다른 vLLM이 8001을 쓰고 있거나, 운영자 서빙에 `embed` 별명이 없음 | 전자면 그 프로세스를 멈추고 6.2절을 다시 한다. 후자면 운영자에게 2.4절의 별명을 부탁한다 |
+| 6.2절 마지막 `curl`이 `DIM-REJECTED` | 모델 설정에 Matryoshka 표시가 없어 vLLM이 `dimensions`를 거절 | 6.2절 "다르면"의 두 방법 중 하나. 그냥 두면 첫 적재가 500으로 끝난다 |
+| `docker compose --profile app up`이 이미지 내려받기에서 실패 | 앱 서버에 인터넷이 없거나 프록시 필요 | 사람에게 네트워크를 확인한다. 다른 곳에서 `docker save`로 뜬 tar를 `docker load`해도 된다. 부스용 오프라인 준비물은 [이전 절차서](relocation_2026-10-27.md) 2장 |
+| 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 뜬다 | 내장 도구가 모델까지 감 | 7.3절의 대안(`function_calling: legacy`) |
 | 왼쪽 카드에 `LLM call failed: HTTP 400 ... maximum context length` | 프롬프트가 `LLM_MAX_MODEL_LEN`을 넘음 | 5.4절의 `sed` 꼴로 값을 늘리고 6.3절의 `--force-recreate` 명령으로 LLM 서버만 다시 올린다 |
 | `sign-in failed ... HTTP 429` | 3분에 15번 넘게 로그인 | 3분 기다린다 |
 | 오른쪽 답에 과거 사실이 들어감 | 내장 도구 차단이 풀림 | 7.3절의 대안(`function_calling: legacy`) |
+| 왼쪽 카드가 답 직전까지 비어 있다 | 생각(thinking)을 먼저 출력하는 모델 | 5.4절 끝의 `sed`로 thinking을 끄고 6.3절의 `--force-recreate` 명령. 운영자 서빙이면 2.4절 |
 | 사이드바에 "in a month", 읽지 않음 점 | 대본 날짜가 오늘보다 미래 | 정상. 시연 날짜에는 월별로 묶인다 |
 | MemMachine 로그의 `No module named 'spacy'` | 쓰지 않는 선택 모듈 | 무시한다 |
