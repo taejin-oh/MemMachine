@@ -65,7 +65,7 @@ Claude Code 세션 하나는 서버 한 대에서 돈다. 5장과 6장의 절 �
 
 | 조건 | 왜 | 어긋나면 보이는 것 |
 |---|---|---|
-| 채팅 vLLM이 포트 8000에서 모델 ID `<LLM_MODEL_NAME>`으로 응답한다 | `.env`의 `LLM_MODEL_NAME`이 Open WebUI의 모델 ID가 된다 | 검사의 `both demo models listed` 또는 `chat model served` 줄이 `FAIL` |
+| 채팅 vLLM이 포트 8000에서 모델 ID `<LLM_MODEL_NAME>`으로 응답한다 | `.env`의 `LLM_MODEL_NAME`이 Open WebUI의 모델 ID가 된다 | 검사의 `both demo models visible to the booth account` 또는 `chat model served` 줄이 `FAIL` |
 | 임베딩 vLLM이 포트 8001에서 모델 ID `embed`로 응답하고 `--runner pooling`으로 떠 있다 | `memmachine.yml`이 `embed`라는 이름과 8001을 고정값으로 쓴다. `--served-model-name`은 이름을 여러 개 받으므로 별명으로 더하면 된다 | MemMachine 404, 적재 500, 검사의 `embedding server` 줄 끝이 `embed`가 아님 |
 | 임베딩 서버가 `dimensions` 인자를 받아들인다 | 6.2절. 받지 않으면 첫 적재가 500으로 끝난다 | 6.2절의 마지막 `curl`이 오류 |
 | 채팅 모델이 Qwen3 계열이면 `--default-chat-template-kwargs '{"enable_thinking": false}'`로 떠 있다 | 생각을 먼저 출력하면 왼쪽 카드가 답 직전까지 빈 채로 보인다 | 6.3절의 `REASONING yes` |
@@ -393,12 +393,13 @@ function memmachine_pipe: created
 function memmachine_pipe: enabled
 model memmachine_pipe.<LLM_MODEL_NAME>: created as 'MemMachine + <LLM_MODEL_NAME>'
 model <LLM_MODEL_NAME>: created as '<LLM_MODEL_NAME> (no memory)'
+booth account visitor@demo.local: created
 account settings of staff@demo.local: release notes off, personal system prompt empty, new chats temporary
 account settings of visitor@demo.local: release notes off, personal system prompt empty, new chats temporary
 done
 ```
 
-두 번째 실행부터는 `created`가 `updated`로 바뀐다.
+두 번째 실행부터는 `created`가 `updated`로, 부스 계정 줄은 `exists`로 바뀐다.
 
 **다르면** `sign-in failed ... HTTP 429`면 3분 기다린다. `this account is not an admin`이면 다른 계정이 먼저 가입한 것이다. 이때만 Open WebUI의 데이터 볼륨을 지우고 다시 올린 뒤 세 스크립트를 처음부터 다시 한다. 기억이 든 DB는 건드리지 않는다.
 
@@ -410,7 +411,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile ap
 cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/load_scenario.py scenario/script.json
 ```
 
-**나와야 하는 것** `project ces-<날짜>-<시각>: Pipe valve set, previous chats deleted`, 세션 일곱 줄(`session '...': N turns, chat ...`), `done. Reload the browser to see the chats.`
+**나와야 하는 것** `project ces-<날짜>-<시각>: Pipe valve set, previous chats of visitor@demo.local deleted`, 세션 일곱 줄(`session '...': N turns, chat ...`), `done. Reload the browser to see the chats.`
 
 **다르면** HTTP 500이면 `cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose logs --tail 100 memmachine`에서 임베딩 오류를 본다. `dimension`이 들어 있으면 5.3절과 6.2절의 값이 다른 것이고, `connection`이 들어 있으면 `EMBED_HOST`가 틀린 것이다. 고친 뒤 바로 위의 MemMachine 다시 올리기 명령을 실행하고 적재를 다시 실행한다. 적재는 매번 처음부터 다시 한다.
 
@@ -560,16 +561,16 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker
 cd ~/ces2027/MemMachine && git status --short
 ```
 
-**나와야 하는 것** 다음 중에서만 나온다. `docs/msr/ces2027_demo/verification_company_<날짜>.md`(새 파일), `docs/msr/ces2027_demo/img/company_*.png`(있으면), `tools/ces2027_demo/deploy/memmachine.yml`(차원), `tools/ces2027_demo/scenario/script.json`(기대 문구를 고쳤으면), `tools/ces2027_demo/scripts/setup_openwebui.py`(7.3절의 대안을 썼으면). `.env`는 나오지 않는다(gitignore).
+**나와야 하는 것** 다음 중에서만 나온다. `docs/msr/ces2027_demo/verification_company_<날짜>.md`(새 파일), `docs/msr/ces2027_demo/img/company_*.png`(있으면), `tools/ces2027_demo/deploy/memmachine.yml`(차원), `tools/ces2027_demo/scenario/script.json`(기대 문구를 고쳤으면). `.env`는 나오지 않는다(gitignore).
 
 **다르면** 그 밖의 파일이 보이면 사람에게 묻는다. `.env`가 보이면 절대 add하지 않는다.
 
 ### 8.3 커밋
 
-**하는 일** 8.2절의 `git status`에 보인 파일을 모두 이름으로 적어 add하고 커밋한다. 아래 명령은 다섯 파일을 모두 적은 예이며, `git status`에 없는 파일은 명령에서 뺀다. 제목은 영어 한 줄, 본문은 한국어 한 문단 뒤에 영어 한 문단이다.
+**하는 일** 8.2절의 `git status`에 보인 파일을 모두 이름으로 적어 add하고 커밋한다. 아래 명령은 여섯 파일을 모두 적은 예이며, `git status`에 없는 파일은 명령에서 뺀다. 제목은 영어 한 줄, 본문은 한국어 한 문단 뒤에 영어 한 문단이다.
 
 ```bash
-cd ~/ces2027/MemMachine && git add docs/msr/ces2027_demo/verification_company_<날짜>.md docs/msr/ces2027_demo/img/company_01_new_chat.png docs/msr/ces2027_demo/img/company_02_comparison.png docs/msr/ces2027_demo/img/company_03_past_chat.png tools/ces2027_demo/deploy/memmachine.yml tools/ces2027_demo/scenario/script.json tools/ces2027_demo/scripts/setup_openwebui.py && git commit -m "Docs: Add the company verification record for the CES 2027 demo" -m "회사에서 실제 vLLM(<LLM_MODEL_NAME>, <EMBED_MODEL>)로 올려 검사 스크립트가 통과한 기록이다. 임베딩 차원을 <DIM>으로 고정했다. <고친 것이 있으면 한 문장>." -m "Verification record from the company run with real vLLM servers (<LLM_MODEL_NAME>, <EMBED_MODEL>); every check passed. The embedding dimension is fixed at <DIM>. <One sentence per other change, if any>."
+cd ~/ces2027/MemMachine && git add docs/msr/ces2027_demo/verification_company_<날짜>.md docs/msr/ces2027_demo/img/company_01_new_chat.png docs/msr/ces2027_demo/img/company_02_comparison.png docs/msr/ces2027_demo/img/company_03_past_chat.png tools/ces2027_demo/deploy/memmachine.yml tools/ces2027_demo/scenario/script.json && git commit -m "Docs: Add the company verification record for the CES 2027 demo" -m "회사에서 실제 vLLM(<LLM_MODEL_NAME>, <EMBED_MODEL>)로 올려 검사 스크립트가 통과한 기록이다. 임베딩 차원을 <DIM>으로 고정했다. <고친 것이 있으면 한 문장>." -m "Verification record from the company run with real vLLM servers (<LLM_MODEL_NAME>, <EMBED_MODEL>); every check passed. The embedding dimension is fixed at <DIM>. <One sentence per other change, if any>."
 ```
 
 **나와야 하는 것** `[msr_ces2027_demo <해시>] Docs: Add the company verification record ...`와 바뀐 파일 수.

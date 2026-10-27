@@ -43,7 +43,7 @@ python3 ../scripts/demo_check.py ../scenario/script.sample.json
 
 브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 본문 두 줄)과 답이, 오른쪽에 기억 없는 답이 나온다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다.
 
-적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
+적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
 ## 회사와 부스에서 올리기
 

@@ -37,7 +37,7 @@
 | `top-5 memories`가 `FAIL` | Pipe의 Valve `PROJECT_ID`가 마지막 적재의 프로젝트인지(검사 출력의 `retrieved from` 뒤) | DB 볼륨을 되돌렸다면 그때의 프로젝트 ID와 Valve가 맞는지 본다. 맞지 않으면 적재 도구를 다시 실행한다 |
 | `record mode`가 `FAIL` | 관리자 화면의 Functions > MemMachine > Valves | `RECORD_MEMORY`를 끈다 |
 | 브라우저에 모델이 "Model not found"로 나온다 | LLM 서버가 켜진 뒤 모델 목록이 아직 갱신되지 않았다 | 브라우저를 새로 고친다 |
-| 새 채팅 위에 "Temporary Chat" 표시가 없다 | 부스 계정의 설정이 바뀌었거나 누가 화면 오른쪽 위의 임시 채팅 단추를 껐다 | 세팅 스크립트를 다시 실행하고 브라우저를 새로 고친다 |
+| 새 채팅 위에 "Temporary Chat" 표시가 없다 | 누가 화면 오른쪽 위의 임시 채팅 단추를 껐거나 부스 계정의 설정이 바뀌었다 | 먼저 New Chat을 누른다. 그래도 표시가 없으면 세팅 스크립트를 다시 실행하고 브라우저를 새로 고친다 |
 | 왼쪽 카드에 `Memory search failed` | 앱 서버에서 MemMachine 로그 | DB 서버 연결을 본다. 검사 스크립트의 `PostgreSQL port`, `Qdrant port` |
 | 왼쪽 카드에 `LLM call failed`, 오른쪽도 답이 없다 | LLM 서버 로그 | vLLM이 재시작 중이면 기다린다. 문맥 길이 오류면 `.env`의 `LLM_MAX_MODEL_LEN`을 늘리고 LLM 서버만 다시 올린다 |
 | 서버 한 대가 켜지지 않는다 | 전원과 디스크 | 예비 장비에 USB 메모리의 `.env`, `/etc/hosts`, 볼륨 백업을 넣고 같은 역할의 프로필로 올린다. 브랜치는 앱 서버의 clone을 복사한다 |
