@@ -55,7 +55,8 @@ Claude Code 세션 하나는 서버 한 대에서 돈다. 5장과 6장의 절 �
 
 | 항목 | 값 | 비고 |
 |---|---|---|
-| 스태프 계정 비밀번호 | `<ADMIN_PASSWORD>` | 사람이 정한다. 따옴표, 역슬래시, 공백 없이. 보고서와 커밋에 적지 않는다 |
+| 스태프 계정 비밀번호 | `<ADMIN_PASSWORD>` | 사람이 정한다. 따옴표, 역슬래시, 공백 없이. 보고서와 커밋에 적지 않는다. 스크립트만 쓴다 |
+| 부스 계정 비밀번호 | `<BOOTH_PASSWORD>` | 같은 규칙. 7.1절의 화면 확인과 부스 화면이 이 계정(`visitor@demo.local`)으로 들어간다 |
 | `WEBUI_SECRET_KEY` | 명령으로 생성 | 5.4절에서 `openssl`로 만들어 `.env`에만 넣는다. 화면에 출력하지 않는다 |
 
 ### 2.4 이미 떠 있는 vLLM을 쓸 때
@@ -237,6 +238,9 @@ EMBED_EXTRA_ARGS=
 ADMIN_NAME=Demo Staff
 ADMIN_EMAIL=staff@demo.local
 ADMIN_PASSWORD=<ADMIN_PASSWORD>
+BOOTH_NAME=Visitor
+BOOTH_EMAIL=visitor@demo.local
+BOOTH_PASSWORD=<BOOTH_PASSWORD>
 WEBUI_SECRET_KEY=GENERATE
 DEMO_DATE=2027-01-06
 BASE_SYSTEM_PROMPT=You are a helpful assistant. Answer briefly and concretely.
@@ -423,7 +427,8 @@ OK   Open WebUI: {"status": true}
 OK   PostgreSQL port: <DB_IP>:5432
 OK   Qdrant port: <DB_IP>:6333
 OK   sign in to Open WebUI: staff@demo.local
-OK   both demo models listed in Open WebUI: memmachine_pipe.<LLM_MODEL_NAME>, <LLM_MODEL_NAME>
+OK   sign in as the booth account: visitor@demo.local
+OK   both demo models visible to the booth account: memmachine_pipe.<LLM_MODEL_NAME>, <LLM_MODEL_NAME>
 OK   chat model served by the LLM server: <LLM_MODEL_NAME>
 OK   top-5 memories for 'Can you plan the menu for Mia's birthday party thi': 5 retrieved from ces-...
 OK   top-5 memories for 'I am in Tokyo next week. How do I keep my training': 5 retrieved from ces-...
@@ -451,9 +456,9 @@ EOF
 
 ### 7.1 브라우저
 
-**하는 일** 관객이 보는 화면을 사람이 확인한다. 사람이 쓰는 PC의 브라우저로 `http://<APP_IP>:3000`을 열고 `staff@demo.local`과 작업표의 비밀번호로 들어간다. 사이드바가 접혀 있으면 왼쪽 위 단추로 펼친다.
+**하는 일** 관객이 보는 화면을 사람이 확인한다. 사람이 쓰는 PC의 브라우저로 `http://<APP_IP>:3000`을 열고 `visitor@demo.local`과 작업표의 부스 계정 비밀번호로 들어간다. 스태프 계정으로 들어가면 Open WebUI가 관리자에게는 기능을 숨기지 않아 첨부와 마이크 단추가 보이므로, 화면 확인은 부스 계정으로 한다. 사이드바가 접혀 있으면 왼쪽 위 단추로 펼친다.
 
-**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory)` 이름. 대본의 네 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 날짜, 세션 제목이 붙은 목록 다음에 답이, 오른쪽에 기억 없는 답이 나온다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다.
+**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory)` 이름. 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 두 모델만 있다. 대본의 네 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 날짜, 세션 제목이 붙은 목록 다음에 답이, 오른쪽에 기억 없는 답이 나온다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다.
 
 1. Can you plan the menu for Mia's birthday party this Saturday?
 2. I am in Tokyo next week. How do I keep my training on track while I am there?
@@ -488,7 +493,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools $(docker compos
 
 **나와야 하는 것** `tools 0`과 `memory-block 1` 이상(6.4절 검사의 질문 하나와 7.1절, 7.2절에서 왼쪽 모델로 보낸 질문 수의 합).
 
-**다르면** `tools`가 0이 아니면 Open WebUI의 내장 도구(`search_chats`, `view_chat`, `ask_user` 등)가 모델까지 간 것이다. 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 보이는 것도 같은 증상이다. `scripts/setup_openwebui.py`의 `upsert_model` 호출 두 곳의 `params=` 인자에 `"function_calling": "legacy"`를 더하고 스크립트를 다시 실행한 뒤(설계 5.3절의 대안) 7.2절의 측정을 한 번 더 돌리고, 그 뒤의 로그만 센다. 로그는 지난 줄을 계속 가지고 있으므로 전체를 다시 세면 0이 되지 않는다.
+**다르면** `tools`가 0이 아니면 Open WebUI의 내장 도구(`search_chats`, `view_chat`, `ask_user` 등)가 모델까지 간 것이다. 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 보이는 것도 같은 증상이다. 세팅 도구가 만든 항목이 적용된 모델에는 도구가 갈 수 없으므로(설계 5.3절), 항목이 없는 모델로 채팅했거나 세팅 도구가 실행되기 전이었던 것이다. 세팅 도구를 다시 실행하고 부스 계정으로 두 모델만 쓴 뒤 7.2절의 측정을 한 번 더 돌리고, 그 뒤의 로그만 센다. 로그는 지난 줄을 계속 가지고 있으므로 전체를 다시 세면 0이 되지 않는다.
 
 ```bash
 cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker compose logs --since 5m llm 2>&1 | grep -c -E 'search_chats|view_chat|ask_user')"
@@ -612,10 +617,10 @@ cd ~/ces2027/MemMachine && git push origin msr_ces2027_demo
 | 검사의 `embedding server` 줄 끝이 `embed`가 아니다 | compose가 아닌 다른 vLLM이 8001을 쓰고 있거나, 운영자 서빙에 `embed` 별명이 없음 | 전자면 그 프로세스를 멈추고 6.2절을 다시 한다. 후자면 운영자에게 2.4절의 별명을 부탁한다 |
 | 6.2절 마지막 `curl`이 `DIM-REJECTED` | 모델 설정에 Matryoshka 표시가 없어 vLLM이 `dimensions`를 거절 | 6.2절 "다르면"의 두 방법 중 하나. 그냥 두면 첫 적재가 500으로 끝난다 |
 | `docker compose --profile app up`이 이미지 내려받기에서 실패 | 앱 서버에 인터넷이 없거나 프록시 필요 | 사람에게 네트워크를 확인한다. 다른 곳에서 `docker save`로 뜬 tar를 `docker load`해도 된다. 부스용 오프라인 준비물은 [이전 절차서](relocation_2026-10-27.md) 2장 |
-| 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 뜬다 | 내장 도구가 모델까지 감 | 7.3절의 대안(`function_calling: legacy`) |
+| 채팅 화면에 "ask_user 결과 보기" 같은 도구 블록이 뜬다 | 세팅 도구의 항목이 없는 모델로 채팅함 | 세팅 도구를 다시 실행하고 부스 계정으로 두 모델만 쓴다(7.3절) |
 | 왼쪽 카드에 `LLM call failed: HTTP 400 ... maximum context length` | 프롬프트가 `LLM_MAX_MODEL_LEN`을 넘음 | 5.4절의 `sed` 꼴로 값을 늘리고 6.3절의 `--force-recreate` 명령으로 LLM 서버만 다시 올린다 |
 | `sign-in failed ... HTTP 429` | 3분에 15번 넘게 로그인 | 3분 기다린다 |
-| 오른쪽 답에 과거 사실이 들어감 | 내장 도구 차단이 풀림 | 7.3절의 대안(`function_calling: legacy`) |
+| 오른쪽 답에 과거 사실이 들어감 | 내장 도구 차단이 풀림 | 세팅 도구를 다시 실행하고 부스 계정으로 두 모델만 쓴다(7.3절) |
 | 왼쪽 카드가 답 직전까지 비어 있다 | 생각(thinking)을 먼저 출력하는 모델 | 5.4절 끝의 `sed`로 thinking을 끄고 6.3절의 `--force-recreate` 명령. 운영자 서빙이면 2.4절 |
 | 사이드바에 "in a month", 읽지 않음 점 | 대본 날짜가 오늘보다 미래 | 정상. 시연 날짜에는 월별로 묶인다 |
 | MemMachine 로그의 `No module named 'spacy'` | 쓰지 않는 선택 모듈 | 무시한다 |
