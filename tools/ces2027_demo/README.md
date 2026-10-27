@@ -41,7 +41,7 @@ python3 ../scripts/load_scenario.py ../scenario/script.sample.json
 python3 ../scripts/demo_check.py ../scenario/script.sample.json
 ```
 
-브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 "Memories retrieved" 목록과 답이, 오른쪽에 기억 없는 답이 나온다.
+브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 본문 두 줄)과 답이, 오른쪽에 기억 없는 답이 나온다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다.
 
 적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
@@ -82,3 +82,5 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 두 모델만 있다.
 - [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`가 보이고, 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
+- [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 두 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 80).
+- [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다.

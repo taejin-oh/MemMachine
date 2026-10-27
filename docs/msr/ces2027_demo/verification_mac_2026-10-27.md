@@ -185,3 +185,36 @@ mock 로그의 `carries tools` 경고는 이 절의 화면 확인에서 보낸 �
 
 세팅 도구를 고치면서 알게 된 것 하나를 적어 둔다. 모델 항목 갱신 API(`/api/v1/models/model/update`)는 읽기 권한(`access_grants`)을 건드리지 않는다. 권한은 `/api/v1/models/model/access/update`로 따로 넣어야 하며, 세팅 도구는 생성과 갱신 뒤에 항상 이 호출을 한다.
 
+
+## 7. 기억 목록 두 줄, NOTE 블록, 임시 채팅 (2026-10-28 추가)
+
+2026-10-28에 세 가지 요청(기억 목록이 자리를 너무 차지하니 기억마다 두 줄로, 기억 기반 답에 색을 입힐 수 있는지, 관객이 바뀔 때의 자동 초기화)을 반영하고 Mac에서 확인했다.
+
+### 7.1 Open WebUI가 메시지 안에서 그릴 수 있는 것
+
+시험용 채팅을 가져와서 어떤 마크업이 살아남는지 봤다(`img/10_markup_probe.png`, `img/11_alert_types.png`). 결과는 다음과 같다.
+
+- `<span style>`, `<font color>`, `<mark>`, Tailwind 클래스를 단 `<span>`, `<div style>`는 모두 글자 그대로 보인다. Open WebUI가 메시지의 HTML 토큰을 이스케이프하기 때문이다. 따라서 답이나 목록의 글자 색을 Pipe가 바꿀 수는 없다.
+- GitHub식 알림 블록 `> [!NOTE]`는 파란 세로 띠와 "NOTE" 제목으로, `[!TIP]`은 초록, `[!IMPORTANT]`는 보라, `[!WARNING]`은 노랑, `[!CAUTION]`은 빨강으로 그려진다. 제목 글자는 종류마다 고정이고 마커 뒤에 쓴 글은 본문으로 들어간다. 모르는 종류(`[!MEMORY]`)는 보통 인용으로 그려진다. 블록 안의 번호 목록과 굵은 글씨는 정상이다.
+- `<details>`는 접힌 상자로, `<details type="reasoning">`은 "Thought for less than a second"로 그려진다. 둘 다 기억을 숨기므로 쓰지 않는다.
+
+그래서 기억 목록을 `> [!NOTE]` 블록으로 감쌌다(Pipe 0.2.0). 답의 색은 바꾸지 않는다.
+
+### 7.2 임시 채팅
+
+관객의 질문이 사이드바에 쌓이지 않게 하는 방법 둘을 시험했다.
+
+- `USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED=true`: 질문은 저장되지 않고 사이드바도 그대로지만, 그 상태에서 부스 계정의 채팅 가져오기가 `HTTP 403`으로 막힌다(`models/chats.py`의 `require_chat_creation_permission`). 적재 도구가 동작하지 않으므로 쓰지 않는다. `ENABLE_PERSISTENT_CONFIG=false`에서는 `Config.get`이 환경 변수 값만 돌려주므로 관리자 API로 잠시 푸는 것도 안 된다.
+- 계정 설정 `ui.temporaryChatByDefault=true`(권한 `USER_PERMISSIONS_CHAT_TEMPORARY`는 허용): 로그인 직후, 질문 뒤, New Chat 뒤, 새로 고침 뒤, 과거 채팅을 열었다 New Chat으로 돌아온 뒤 모두 "Temporary Chat" 표시가 있고 채팅 수는 7개 그대로였다. 가져오기도 정상이다. 세팅 도구가 두 계정에 이 설정을 쓴다.
+
+화면 오른쪽 위에 임시 채팅을 끄는 단추가 하나 생긴다. 관객이 누르면 그 채팅은 저장되지만 New Chat을 누르면 다시 임시 채팅으로 돌아온다. 사이드바에 남은 채팅은 적재 도구를 다시 실행하면 지워진다.
+
+### 7.3 최종 확인
+
+세팅, 적재, 검사 스크립트를 다시 실행해 전부 통과했다(mock 임베더의 기대 문구 WARN은 6장과 같다). 부스 계정 화면의 캡처는 다음과 같다.
+
+- `img/07_booth_new_chat_temporary.png`: 새 채팅. 두 모델이 선택되어 있고 위에 "Temporary Chat" 표시가 있다.
+- `img/08_booth_comparison_callout.png`: 첫 질문의 비교 화면. 왼쪽은 파란 NOTE 블록 안에 기억 다섯 개가 본문 두 줄씩(80자에서 단어 경계로 자르고 "...") 나오고 구분선 아래에 답이 있다. 목록 항목의 높이는 네 개가 73px(날짜 줄 하나와 본문 두 줄)이고, 세션 제목이 길어 날짜 줄이 둘로 접힌 하나가 98px이었다.
+- `img/09_booth_after_new_chat.png`: New Chat을 누른 뒤. 사이드바는 과거 채팅 일곱 개 그대로이고 질문 채팅은 남지 않았다.
+
+두 줄은 1600px 너비 창의 비교 화면 기준이다. 시연 장비에서 한 줄에 들어가는 글자 수가 다르면 Valve `MEMORY_PREVIEW_CHARS`로 맞춘다.
