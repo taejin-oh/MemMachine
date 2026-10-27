@@ -112,3 +112,76 @@ headless Chromium(Playwright)으로 1600x1000에서 찍었다. Chrome 확장이 
 ## 5. 회사에서 확인할 것
 
 README의 "회사에서 확인할 것" 목록 그대로다. 실제 임베더로 적재했을 때 네 질문의 기대 문구가 top-5에 드는지, vLLM 두 대가 뜨고 `dimensions` 재시도가 동작하는지, 답이 수 초 안에 시작하는지, vLLM 로그에 `tools`가 없는지를 보고 `verification_company_<날짜>.md`로 남긴다. 순서는 [회사 실행서](company_runbook_2026-10-27.md)에 있다.
+
+## 6. 부스 계정 화면 (2026-10-27 추가)
+
+같은 날 저녁, 부스 화면을 일반 계정으로 바꾼 뒤 다시 검증했다. 바뀐 것은 세 가지다. 세팅 도구가 부스 계정 `visitor@demo.local`(일반 사용자)을 만들고 두 모델 항목에 모든 계정의 읽기 권한을 준다. compose의 `USER_PERMISSIONS_CHAT_*`와 `ENABLE_SIGNUP=false`가 이 계정에 적용된다. 적재 도구는 채팅을 부스 계정 소유로 넣고, 검사 도구는 부스 계정으로 두 모델이 보이는지 본다. Open WebUI는 관리자에게 어떤 기능 제한도 적용하지 않으므로 관리자 계정(`staff@demo.local`)은 스크립트 전용이 됐다(설계 5.3절).
+
+### 6.1 명령과 출력
+
+`docker compose --profile local up -d --wait openwebui`로 환경 변수를 반영한 뒤 세 스크립트를 순서대로 실행했다. `WARN` 세 줄은 2.2절과 같은 이유다.
+
+```
+== 17:44:30 setup
+signed in as staff@demo.local (admin)
+function memmachine_pipe: updated
+model memmachine_pipe.mock-llm-a: updated as 'MemMachine + mock-llm-a'
+model mock-llm-a: updated as 'mock-llm-a (no memory)'
+booth account visitor@demo.local: exists
+account settings of staff@demo.local: release notes off, personal system prompt empty
+account settings of visitor@demo.local: release notes off, personal system prompt empty
+done
+== 17:44:31 load
+project ces-20261027-174431: Pipe valve set, previous chats of visitor@demo.local deleted
+session 'Peanut allergy and school lunches': 6 turns, chat b65f4358-...
+session 'Planning Mia's 7th birthday': 6 turns, chat 5fa5c210-...
+session 'Weekend hosting and the family': 6 turns, chat 006c3e3c-...
+session 'Half marathon training plan': 6 turns, chat bbc8d430-...
+session 'Tokyo work trip in January': 6 turns, chat 64ec35ec-...
+session 'Learning Spanish for Rosa': 6 turns, chat 7effcb92-...
+session 'Home office and back pain': 4 turns, chat 8bb8bdb0-...
+done. Reload the browser to see the chats.
+== 17:44:31 check
+OK   LLM server http://127.0.0.1:8000/v1: mock-llm-a, mock-llm-b
+OK   embedding server http://127.0.0.1:8001/v1: mock-llm-a, mock-llm-b
+OK   MemMachine: {"status": "healthy", "service": "memmachine", "version": "0.4.1.dev1"}
+OK   Open WebUI: {"status": true}
+OK   PostgreSQL port: 127.0.0.1:5432
+OK   Qdrant port: 127.0.0.1:6333
+OK   sign in to Open WebUI: staff@demo.local
+OK   sign in as the booth account: visitor@demo.local
+OK   both demo models visible to the booth account: memmachine_pipe.mock-llm-a, mock-llm-a
+OK   chat model served by the LLM server: mock-llm-a
+WARN top-5 memories for 'Can you plan the menu for Mia's birthday party thi': missing ['dinosaurs', 'vegetarian'] among 5 retrieved from ces-20261027-174431
+OK   top-5 memories for 'I am in Tokyo next week. How do I keep my training': 5 retrieved from ces-20261027-174431
+WARN top-5 memories for 'What gifts should I bring for Kenji and for Rosa?': missing ['whisky', 'gardening'] among 5 retrieved from ces-20261027-174431
+WARN top-5 memories for 'My right knee was sore again after Sunday's long r': missing ['kettlebell'] among 5 retrieved from ces-20261027-174431
+     (mock embedder: expected phrases are matched by word overlap only; verify with the real embedder)
+OK   record mode (RECORD_MEMORY) is off
+OK   answer from the Pipe model: (mock, with memory) Using 5 memories. The first one says: [Nov 23, 2026 | Half m
+
+all checks passed
+```
+
+mock 로그의 `carries tools` 경고는 이 절의 화면 확인에서 보낸 질문까지 포함해 0건이다.
+
+### 6.2 화면
+
+부스 계정으로 들어간 새 채팅 화면. 입력창에는 `+` 단추, 모델 선택, 보내기 단추만 있다. 마이크, 음성 통화, 컨트롤 패널 단추가 없고, 사이드바에는 새 채팅, 검색, 과거 채팅 목록, 계정 메뉴만 있다.
+
+![부스 계정 새 채팅](img/04_booth_new_chat.png)
+
+비교 화면. 관리자 계정일 때와 같은 모양이며, 답 아래에는 복사, 포크, 재생성 아이콘과 시각만 남는다. 재생성은 시연 중 답이 나쁠 때 쓰려고 일부러 켜 두었다.
+
+![부스 계정 비교 화면](img/05_booth_comparison.png)
+
+`+` 단추를 누른 모습. 첨부 관련 항목(Upload Files, Capture, Attach Webpage, Attach Files, Attach Knowledge, Reference Chats)은 모두 비활성이고 "Compare text"만 활성이다. 이 항목은 브라우저 안에서 글 두 개의 차이를 보여 주는 기능이라 모델에 아무것도 보내지 않는다. 프론트엔드가 `chat.compare` 권한 키를 보지만 v0.12.4 백엔드에는 그 키가 없어 끄는 설정이 없다.
+
+![부스 계정 + 메뉴](img/06_booth_plus_menu.png)
+
+### 6.3 남는 것과 사라진 것
+
+사라진 것은 첨부(업로드 가능한 항목), 마이크, 음성 통화, 컨트롤 패널, 개인 시스템 프롬프트, 임시 채팅, 공유, 내보내기, 메시지 수정과 삭제와 평가와 이어쓰기, 가입 링크다. 남는 것은 `+` 단추(메뉴는 열리지만 Compare text 외에는 비활성), 답 아래의 복사, 포크, 재생성, "Merge Responses" 아이콘, 사이드바의 검색과 채팅 메뉴다. 이들을 숨기는 설정은 v0.12.4에서 찾지 못했다. 시연 중에는 누르지 않는 규칙으로 둔다.
+
+세팅 도구를 고치면서 알게 된 것 하나를 적어 둔다. 모델 항목 갱신 API(`/api/v1/models/model/update`)는 읽기 권한(`access_grants`)을 건드리지 않는다. 권한은 `/api/v1/models/model/access/update`로 따로 넣어야 하며, 세팅 도구는 생성과 갱신 뒤에 항상 이 호출을 한다.
+
