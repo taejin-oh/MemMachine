@@ -288,3 +288,36 @@ OK   container qdrant: running
 ```
 2026-10-28 09:34:18 FAIL container mock: running (unhealthy), restarted by the monitor
 ```
+
+## 9. 오른쪽 카드의 "No memory used", 답 길이 제한, 한 줄 미리보기, 와이드 모드 (2026-10-28 추가)
+
+오른쪽(기억 없음) 모델을 같은 Pipe가 제공하게 바꾸고(ID `memmachine_pipe.<모델>--no-memory`), 답 위에 회색 한 줄 "No memory used. This model answers without MemMachine."를 쓰게 했다(Valve `SHOW_NO_MEMORY_NOTE`). 두 모델 공통의 Valve `MAX_TOKENS`(300)와 80단어 안의 답을 요구하는 기본 시스템 프롬프트를 두었고, 기억 미리보기 기본값을 60자로 줄였으며, 세팅 스크립트가 두 계정에 와이드 모드를 켠다. Mac에서 세팅, 적재, 검사가 전부 통과했고 1600px 화면에서 한 줄 길이를 쟀다. 답 길이는 mock이 프롬프트를 따르지 않으므로 회사에서 실제 모델로 확인한다.
+
+### 9.1 검사 출력
+
+검사 스크립트에 기억 없는 모델의 답 확인이 추가되었다. 마지막 세 줄은 다음과 같다.
+
+```
+OK   answer from the Pipe model: (mock, with memory) Using 5 memories. The first one says: [Nov 4, 2026 | Peanut
+OK   answer from the no-memory model: (mock, no memory) I know nothing about you, so here is a generic answer to "Can
+
+all checks passed
+```
+
+### 9.2 한 줄 측정
+
+부스 계정으로 1600px 창에서 첫 질문을 보내고 기억 목록 항목(`li`)의 높이를 쟀다. 한 줄은 약 24.5px이고, 항목은 날짜 줄 하나와 본문이므로 49px이면 본문 한 줄, 73px이면 두 줄이다.
+
+| 화면 모드 | `MEMORY_PREVIEW_CHARS` | 항목 높이 |
+|---|---|---|
+| 일반 | 60 | 73px(본문 두 줄) |
+| 일반 | 50 | 73px |
+| 일반 | 40 | 49px(본문 한 줄) |
+| 와이드 | 60 | 49px |
+| 와이드 | 72 | 49px |
+
+일반 모드에서는 비교 카드가 약 440px라 한 줄에 40자 정도만 들어가고, 와이드 모드에서는 72자까지도 한 줄이다. 그래서 세팅 스크립트가 와이드 모드를 켜고 기본값은 60으로 두었다. 와이드 모드를 끈 화면이나 더 좁은 화면에서는 Valve를 40으로 내린다.
+
+### 9.3 화면
+
+`img/13_booth_wide_no_memory_note.png`: 와이드 모드의 비교 화면. 왼쪽은 파란 NOTE 블록 안에 기억 다섯 개가 날짜 줄과 본문 한 줄씩이고, 오른쪽은 회색 한 줄 "No memory used. This model answers without MemMachine."와 구분선 아래에 답이 있다. 새 채팅 위의 "Temporary Chat" 표시와 New Chat 뒤의 사이드바는 7장과 같았다.

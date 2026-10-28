@@ -10,7 +10,7 @@ tools/ces2027_demo/
   deploy/.env.example         장소별 값. .env로 복사해서 쓴다
   deploy/memmachine.yml       MemMachine 설정. 모든 장소에서 같다
   deploy/hosts.example        시연 화면 장비의 /etc/hosts 예시
-  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 기억 검색, 목록 출력, 답변
+  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 두 모델(기억 있음, 없음)을 제공한다. 기억 검색, 목록 출력, 답변
   mock/                       개발용 LLM과 임베더 mock (Mac에서만 쓴다)
   scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 두 모델의 표시 설정
   scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
@@ -43,7 +43,7 @@ python3 ../scripts/load_scenario.py ../scenario/script.sample.json
 python3 ../scripts/demo_check.py ../scenario/script.sample.json
 ```
 
-브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 본문 두 줄)과 답이, 오른쪽에 기억 없는 답이 나온다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다.
+브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 날짜 줄과 본문 한 줄)과 답이, 오른쪽에 회색 한 줄 "No memory used"와 기억 없는 답이 나온다. 두 모델 모두 Pipe를 거치며 같은 시스템 프롬프트로 같은 LLM을 부르고, 차이는 기억 블록뿐이다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다. 화면은 와이드 모드로 열려 두 카드가 화면 전체를 쓴다.
 
 적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. `scripts/demo_reset.sh --wipe local scenario/script.sample.json`은 지우고 다시 올리고 세팅, 적재, 검사까지 한 번에 한다(아래 "문제가 생겼을 때"). MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
@@ -102,7 +102,8 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 두 모델만 있다.
 - [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`가 보이고, 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
-- [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 두 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 80).
+- [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).
+- [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 `.env`의 `BASE_SYSTEM_PROMPT`를 손보고 세팅 스크립트를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.
 - [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다.
 - [ ] `scripts/demo_reset.sh app db`(한 서버에 두 역할을 올린 경우)가 끝까지 돌고 마지막의 `demo_check.py`가 통과한다. `--wipe`를 붙여 한 번 더 돌려 처음 설치한 상태에서도 같은지 본다.
 - [ ] `python3 scripts/demo_monitor.py`가 서버 여섯 곳과 컨테이너 넷을 `OK`로 보여 준다. 서버를 재부팅하면 컨테이너 넷이 명령 없이 올라오고 모니터가 다시 `OK`가 된다.

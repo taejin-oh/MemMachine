@@ -392,7 +392,7 @@ signed in as staff@demo.local (admin)
 function memmachine_pipe: created
 function memmachine_pipe: enabled
 model memmachine_pipe.<LLM_MODEL_NAME>: created as 'MemMachine + <LLM_MODEL_NAME>'
-model <LLM_MODEL_NAME>: created as '<LLM_MODEL_NAME> (no memory)'
+model memmachine_pipe.<LLM_MODEL_NAME>--no-memory: created as '<LLM_MODEL_NAME> (no memory)'
 booth account visitor@demo.local: created
 account settings of staff@demo.local: release notes off, personal system prompt empty, new chats temporary
 account settings of visitor@demo.local: release notes off, personal system prompt empty, new chats temporary
@@ -460,7 +460,7 @@ EOF
 
 **하는 일** 관객이 보는 화면을 사람이 확인한다. 사람이 쓰는 PC의 브라우저로 `http://<APP_IP>:3000`을 열고 `visitor@demo.local`과 작업표의 부스 계정 비밀번호로 들어간다. 스태프 계정으로 들어가면 Open WebUI가 관리자에게는 기능을 숨기지 않아 첨부와 마이크 단추가 보이므로, 화면 확인은 부스 계정으로 한다. 사이드바가 접혀 있으면 왼쪽 위 단추로 펼친다.
 
-**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory)` 이름, 그 위에 "Temporary Chat" 표시. 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 두 모델만 있다. 대본의 네 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 파란 NOTE 블록 안의 목록(날짜와 세션 제목, 본문 두 줄) 다음에 답이, 오른쪽에 기억 없는 답이 나온다. New Chat을 누르면 질문 채팅은 사이드바에 남지 않는다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다.
+**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory)` 이름, 그 위에 "Temporary Chat" 표시. 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 두 모델만 있다. 대본의 네 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 파란 NOTE 블록 안의 목록(날짜와 세션 제목, 본문 두 줄) 다음에 답이, 오른쪽에 기억 없는 답이 나온다. New Chat을 누르면 질문 채팅은 사이드바에 남지 않는다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다. 오른쪽 카드는 회색 한 줄 "No memory used"로 시작하고 두 답은 80단어 안팎으로 짧다.
 
 1. Can you plan the menu for Mia's birthday party this Saturday?
 2. I am in Tokyo next week. How do I keep my training on track while I am there?

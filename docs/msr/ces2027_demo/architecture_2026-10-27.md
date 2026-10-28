@@ -3,7 +3,7 @@
 - 작성일: 2026-10-27
 - 대상: 데모의 전체 그림을 처음 보는 사람(1부), 그리고 회사 검증을 이어받거나 부스를 준비하는 사람(2부)
 - 근거 문서: [설계](design_2026-10-26.md), [회사 실행서](company_runbook_2026-10-27.md), [사용 가이드](guide_2026-10-27.md), [이전 절차서](relocation_2026-10-27.md), [Mac 검증 기록](verification_mac_2026-10-27.md), 회사 검증 결과는 GitHub 이슈 [#45](https://github.com/taejin-oh/MemMachine/issues/45)
-- 대상 커밋: `msr_ces2027_demo` 브랜치의 `c79f44ec`(2026-10-28: 초기화 스크립트, 모니터, `restart: always`). 그 앞의 `008480a6`(기억 목록 두 줄, NOTE 블록, 임시 채팅 기본값, 로고 아바타)과 리뷰 반영 커밋을 포함한다
+- 대상 커밋: `msr_ces2027_demo` 브랜치의 `181f190e`(2026-10-28: 기억 없는 모델도 Pipe, "No memory used" 줄, MAX_TOKENS, 한 줄 미리보기, 와이드 모드). 그 앞의 `c79f44ec`(초기화 스크립트, 모니터, `restart: always`), 그 앞의 `008480a6`(기억 목록 두 줄, NOTE 블록, 임시 채팅 기본값, 로고 아바타)과 리뷰 반영 커밋을 포함한다
 
 ## 0. 요약
 
@@ -312,7 +312,9 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | `TOP_K` | `5` | 검색 개수 |
 | `RECORD_MEMORY` | `false` | 켜면 각 턴을 MemMachine에 저장한다. 시연 중에는 끈다. 검사 스크립트가 확인한다 |
 | `SHOW_SESSION_INFO` | `true` | 목록에 날짜와 세션 제목 표시 |
-| `MEMORY_PREVIEW_CHARS` | `80` | 목록의 기억 본문을 단어 경계에서 자르고 "..."를 붙인다(두 줄 정도). 0이면 전문. 프롬프트에는 전문 |
+| `MEMORY_PREVIEW_CHARS` | `60` | 목록의 기억 본문을 단어 경계에서 자르고 "..."를 붙인다(와이드 모드 1600px에서 한 줄, 와이드 모드 없이는 40). 0이면 전문. 프롬프트에는 전문 |
+| `SHOW_NO_MEMORY_NOTE` | `true` | 오른쪽 답 위의 회색 한 줄 "No memory used" |
+| `MAX_TOKENS` | `300` | 두 모델 공통의 답 길이 상한. 0이면 없음 |
 | `BASE_SYSTEM_PROMPT` | 짧은 지시문 | 세팅 도구가 `.env`의 문장에 "Today is `<DEMO_DATE>`." 줄을 붙인다. 오른쪽 모델에도 같은 문장이 들어간다 |
 | `REQUEST_TIMEOUT` | `60` | 초 |
 
@@ -324,10 +326,10 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 묶음 | 설정 | 목적 |
 |---|---|---|
-| 모델 연결 | `OPENAI_API_BASE_URLS=<LLM_BASE_URLS>`, `DEFAULT_MODELS=memmachine_pipe.<모델>,<모델>` | 오른쪽은 vLLM 직접 호출, 새 채팅은 두 모델이 비교 모드로 선택 |
+| 모델 연결 | `ENABLE_OPENAI_API=false`, `DEFAULT_MODELS=memmachine_pipe.<모델>,memmachine_pipe.<모델>--no-memory` | 두 모델 모두 Pipe가 제공하고 Pipe가 vLLM을 부른다. 새 채팅은 두 모델이 비교 모드로 선택 |
 | 과거 맥락 차단 | Memory, Notes, Folders, Calendar, Automations, 문맥 압축 끄기. 두 모델 항목에 `builtin_tools=false`, `file_upload=false` | 오른쪽이 Open WebUI 자체 경로로 과거 채팅을 읽지 못하게 한다 |
 | 보조 LLM 호출 없음 | 제목, 태그, 후속 질문, 질의 재작성 생성 끄기 | 켜 두면 제목 생성이 Pipe로 들어와 검색을 한 번 더 한다 |
-| 화면 정리 | 추천 프롬프트 비우기, 릴리스 노트 창 끄기, 개인 시스템 프롬프트 비우기, 새 채팅은 임시 채팅(`ui.temporaryChatByDefault`), 두 모델의 아바타(MemMachine 로고 마크와 사선을 그은 같은 마크) | 관객의 질문은 저장되지 않고 사이드바는 적재한 과거 채팅 그대로다 |
+| 화면 정리 | 추천 프롬프트 비우기, 릴리스 노트 창 끄기, 개인 시스템 프롬프트 비우기, 새 채팅은 임시 채팅(`ui.temporaryChatByDefault`), 와이드 모드(`ui.widescreenMode`), 두 모델의 아바타(MemMachine 로고 마크와 사선을 그은 같은 마크) | 관객의 질문은 저장되지 않고 사이드바는 적재한 과거 채팅 그대로다 |
 | 부스 계정 권한 | `ENABLE_SIGNUP=false`, `USER_PERMISSIONS_CHAT_*=false`(두 모델 동시 선택과 임시 채팅만 true) | 일반 계정에서 첨부, 마이크, 음성 통화, 컨트롤 패널, 공유, 내보내기, 메시지 수정과 삭제와 평가를 없앤다 |
 | 오프라인 | `OFFLINE_MODE`, `HF_HUB_OFFLINE`, 문서 검색용 임베딩 우회 | Hugging Face 접근과 버전 확인을 하지 않는다 |
 
