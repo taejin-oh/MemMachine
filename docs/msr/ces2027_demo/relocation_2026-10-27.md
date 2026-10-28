@@ -22,7 +22,7 @@
 ## 3. 미국에서 켜기
 
 1. 라벨대로 스위치에 서버 네 대와 시연 장비를 연결한다. 인터넷은 연결하지 않는다.
-2. 전원을 켜는 순서는 DB 서버, 임베더 서버, LLM 서버, 앱 서버다. 순서가 바뀌어도 `restart: unless-stopped` 정책 때문에 결국 올라오지만, 이 순서가 가장 빨리 안정된다.
+2. 전원을 켜는 순서는 DB 서버, 임베더 서버, LLM 서버, 앱 서버다. 순서가 바뀌어도 `restart: always` 정책 때문에 결국 올라오지만, 이 순서가 가장 빨리 안정된다.
 3. vLLM 두 대는 모델을 적재하는 데 몇 분이 걸린다. GPU 서버에서 `docker compose ps`의 상태가 `healthy`가 될 때까지 기다린다. 10분이 지나도 `starting`이면 `docker compose logs llm`을 본다.
 4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script.json`을 실행한다. 전부 `OK`여야 한다.
 5. 앱 서버의 터미널 하나에 `python3 scripts/demo_monitor.py`를 띄워 시연 내내 둔다. 서버 여섯 곳과 컨테이너가 모두 `OK`여야 한다. 바뀐 줄은 `scripts/demo_monitor.log`에 남는다.
