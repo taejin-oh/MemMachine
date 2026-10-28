@@ -105,5 +105,6 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).
 - [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 `.env`의 `BASE_SYSTEM_PROMPT`를 손보고 세팅 스크립트를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.
 - [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다.
+- [ ] 질문 1의 왼쪽 답이 되묻지 않고 땅콩 알레르기, 버섯, 공룡 테마, 채식 쌍둥이를 쓴다. 되물으면 그 질문의 top-25 순위를 뽑아 이슈 #45에 적는다(대본을 고치는 근거가 된다).
 - [ ] `scripts/demo_reset.sh app db`(한 서버에 두 역할을 올린 경우)가 끝까지 돌고 마지막의 `demo_check.py`가 통과한다. `--wipe`를 붙여 한 번 더 돌려 처음 설치한 상태에서도 같은지 본다.
 - [ ] `python3 scripts/demo_monitor.py`가 서버 여섯 곳과 컨테이너 넷을 `OK`로 보여 준다. 서버를 재부팅하면 컨테이너 넷이 명령 없이 올라오고 모니터가 다시 `OK`가 된다.

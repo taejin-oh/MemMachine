@@ -243,7 +243,7 @@ BOOTH_EMAIL=visitor@demo.local
 BOOTH_PASSWORD=<BOOTH_PASSWORD>
 WEBUI_SECRET_KEY=GENERATE
 DEMO_DATE=2027-01-06
-BASE_SYSTEM_PROMPT=You are a helpful assistant. Answer briefly and concretely.
+BASE_SYSTEM_PROMPT=You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.
 POSTGRES_PASSWORD=memmachine
 EOF
 sed -i "s|^WEBUI_SECRET_KEY=GENERATE|WEBUI_SECRET_KEY=$(openssl rand -hex 32)|" ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env && (grep -n '<' ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env || echo env-ok)

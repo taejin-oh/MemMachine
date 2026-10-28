@@ -83,8 +83,8 @@ class Pipe:
             "as the counterpart of the memory list.",
         )
         BASE_SYSTEM_PROMPT: str = Field(
-            default="You are a helpful assistant. Keep every answer under 80 words, plain and concrete. If you lack "
-            "the information to answer, say so in one sentence and ask one question instead of guessing or listing options.",
+            default="You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from "
+            "what you know. Only when something essential is missing, say so in one sentence and ask one question.",
             description="Set by setup_openwebui.py from .env; both models get the same text.",
         )
         MAX_TOKENS: int = Field(

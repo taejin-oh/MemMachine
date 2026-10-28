@@ -1,99 +1,91 @@
 {
-  "_comment": "Demo script for the booth (design section 5.4). One persona, seven past chats from November and December 2026, and four demo questions dated 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday). Every question needs facts from two or three different chats, so the no-memory answer can only be generic. Dates carry the Las Vegas offset; turns are one minute apart. The expected phrases are checked by scripts/demo_check.py against the top-k memories; adjust them after the first run with the real embedding model.",
+  "_comment": "Demo script for the booth (design section 5.4). One persona, seven past chats from November and December 2026, and four demo questions dated 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday). Every question needs facts from two or three different chats, so the no-memory answer can only be generic. Each turn is short and states one fact in words close to the question that needs it, and turns that carry no fact are left out: the search ranks single turns by embedding similarity, and a chatty turn on the same topic outranks the fact (issue 45, company measurement of 2026-10-28). Dates carry the Las Vegas offset; turns are one minute apart. The expected phrases are checked by scripts/demo_check.py against the top-k memories.",
   "sessions": [
     {
       "title": "Peanut allergy and school lunches",
       "date": "2026-11-02T19:40:00-08:00",
       "turns": [
-        {"role": "user", "content": "My daughter Mia was diagnosed with a peanut allergy last year, so our whole house is peanut-free now. Her school asked for lunch ideas that are safe for her. Can you help?"},
-        {"role": "assistant", "content": "Of course. Keeping everything peanut-free, here are five lunch ideas for Mia: turkey and cheese roll-ups with apple slices, sunflower-seed-butter and jam on whole wheat, pasta salad with cherry tomatoes and mozzarella, a bean and cheese quesadilla, and rice balls with cucumber. Always check labels for 'may contain peanuts'."},
-        {"role": "user", "content": "She will eat anything with pasta, but she flatly refuses mushrooms. Please remember that."},
-        {"role": "assistant", "content": "Noted: Mia loves pasta and will not eat mushrooms. I will keep peanuts and mushrooms out of every suggestion for her and lean on pasta when I can."},
-        {"role": "user", "content": "Great. One more thing: her teacher is Ms. Alvarez, and the class has a no-nut policy, so even almond snacks are out for the whole class."},
-        {"role": "assistant", "content": "Understood. For anything that goes to Ms. Alvarez's class I will treat it as nut-free entirely, not just peanut-free."}
+        {"role": "user", "content": "My daughter Mia has a peanut allergy, so every meal and every party menu at our house has to be peanut-free. Her school asked for safe lunch ideas. Can you help?"},
+        {"role": "assistant", "content": "Of course. Peanut-free lunches for Mia: turkey and cheese roll-ups with apple slices, pasta salad with cherry tomatoes and mozzarella, a bean and cheese quesadilla, and rice balls with cucumber. Always check labels for 'may contain peanuts'."},
+        {"role": "user", "content": "She will eat anything with pasta, but she refuses mushrooms. Keep that in mind for any food you plan for her."},
+        {"role": "assistant", "content": "Noted: for Mia, pasta is always welcome, mushrooms are out, and nothing with peanuts."}
       ]
     },
     {
       "title": "Planning Mia's 7th birthday",
       "date": "2026-11-09T21:05:00-08:00",
       "turns": [
-        {"role": "user", "content": "Mia turns 7 on January 10 and she is completely obsessed with dinosaurs right now. We want to throw the party at our house the Saturday before. About twelve kids plus a few parents."},
-        {"role": "assistant", "content": "A dinosaur dig party would suit her: bury toy fossils in a sandbox for an excavation game, name the food after dinosaurs, and give each guest a small explorer hat. With twelve kids, two adults running the dig keeps it calm."},
-        {"role": "user", "content": "She wants a volcano cake. I have never baked anything like that."},
-        {"role": "assistant", "content": "A volcano cake is easier than it looks: stack two round chocolate cakes, carve the top into a cone, cover with chocolate frosting, and pour warm red and orange candy melts over the top so they run down like lava. A sparkler on top at the end gets the big reaction."},
-        {"role": "user", "content": "Perfect. Let's plan the rest of the menu closer to the date."},
-        {"role": "assistant", "content": "Sounds good. When you are ready, I will put together a kid-friendly menu for the party."}
+        {"role": "user", "content": "Mia turns 7 on January 10 and she is obsessed with dinosaurs. Her birthday party is at our house on the Saturday before, about twelve kids plus a few parents."},
+        {"role": "assistant", "content": "A dinosaur dig party suits her: toy fossils buried in a sandbox, party food named after dinosaurs, and an explorer hat for each guest. With twelve kids, two adults running the dig keeps it calm."},
+        {"role": "user", "content": "She wants a volcano cake for the party. How do I make one?"},
+        {"role": "assistant", "content": "Stack two round chocolate cakes, carve the top into a cone, cover it with chocolate frosting, and pour warm red and orange candy melts over the top so they run down like lava. A sparkler at the end gets the big reaction."}
       ]
     },
     {
       "title": "Weekend hosting and the family",
       "date": "2026-11-16T10:30:00-08:00",
       "turns": [
-        {"role": "user", "content": "We host family gatherings at our place most Saturdays. My sister Dana always brings her twins, Leo and Sam, and their whole family is vegetarian."},
-        {"role": "assistant", "content": "Good to know. For Saturday gatherings I will make sure there is a full vegetarian main for Dana, Leo and Sam, not just side dishes."},
-        {"role": "user", "content": "My father-in-law Frank also comes. He uses a wheelchair, so we keep the living room clear and eat at the big table rather than the patio."},
-        {"role": "assistant", "content": "Noted. I will plan seating around the big table and keep activities on the ground floor so Frank can join everything."},
-        {"role": "user", "content": "And Dana is the one who always asks for the recipe afterwards, so anything I make should be easy to write down."},
-        {"role": "assistant", "content": "Then I will keep the recipes short and repeatable, so you can hand them to Dana without rewriting them."}
+        {"role": "user", "content": "We host the family at our place most Saturdays. My sister Dana brings her twins, Leo and Sam, and their whole family is vegetarian, so every Saturday menu needs a vegetarian main."},
+        {"role": "assistant", "content": "Got it: a full vegetarian main for Dana, Leo and Sam at every Saturday gathering, not just side dishes."},
+        {"role": "user", "content": "My father-in-law Frank comes too. He uses a wheelchair, so we eat at the big table rather than on the patio."},
+        {"role": "assistant", "content": "Noted. Seating at the big table and everything on the ground floor so Frank can join."}
       ]
     },
     {
       "title": "Half marathon training plan",
       "date": "2026-11-23T06:50:00-08:00",
       "turns": [
-        {"role": "user", "content": "I signed up for the Las Vegas half marathon on March 14. I run on Tuesday and Thursday mornings before work and do my long run on Sunday. Can you build me a plan?"},
-        {"role": "assistant", "content": "Here is the shape of a 16-week plan: Tuesday easy 5 km building to 8 km, Thursday intervals or tempo, Sunday long run starting at 8 km and adding about 1 km a week up to 18 km three weeks before race day, then a taper. Every fourth week is lighter."},
-        {"role": "user", "content": "My right knee gets sore after anything longer than 12 km. It is fine the next day, but it worries me."},
-        {"role": "assistant", "content": "Soreness that clears by the next day is usually a load issue rather than an injury. Cap long runs at 12 km for two weeks, add 10 minutes of hip and quad strength work after Tuesday runs, and increase the Sunday distance by no more than 1 km at a time. If the knee stays sore for more than a day, see a physio."},
-        {"role": "user", "content": "I would rather not lose a week of training if I travel for work."},
-        {"role": "assistant", "content": "A travel week can keep the Tuesday and Thursday runs as short easy runs wherever you are, and move the long run to whichever day you are home. Missing one long run does not hurt the plan."}
+        {"role": "user", "content": "I am training for the Las Vegas half marathon on March 14. I run on Tuesday and Thursday mornings before work and do my long run on Sunday. Can you build me a training plan?"},
+        {"role": "assistant", "content": "A 16-week plan: Tuesday easy 5 km building to 8 km, Thursday intervals or tempo, Sunday long run from 8 km adding about 1 km a week up to 18 km, then a taper. Every fourth week is lighter."},
+        {"role": "user", "content": "My right knee gets sore after any run longer than 12 km. It is fine the next day."},
+        {"role": "assistant", "content": "Soreness that clears by the next day is a load issue, not an injury. Cap long runs at 12 km for two weeks, add 10 minutes of hip and quad strength work after Tuesday runs, and add no more than 1 km a week to the Sunday long run."},
+        {"role": "user", "content": "How do I keep the training going when I travel for work?"},
+        {"role": "assistant", "content": "On a travel week keep Tuesday and Thursday as short easy runs wherever you are, and move the long run to a day you are home. Missing one long run does not hurt the plan."}
       ]
     },
     {
       "title": "Tokyo work trip in January",
       "date": "2026-12-01T22:15:00-08:00",
       "turns": [
-        {"role": "user", "content": "I am flying to Tokyo for work from January 12 to January 16. Meetings are at our partner's office in Shinagawa all week. I want to bring a few gifts for the team there."},
-        {"role": "assistant", "content": "Gifts are appreciated in Japanese business culture, especially something from your home region, nicely wrapped. Small individually packaged treats for the team work well, plus something a bit more personal for your main contact."},
-        {"role": "user", "content": "My main contact is Kenji. He mentioned he collects whisky, and I would like to spend around fifty dollars on his gift."},
-        {"role": "assistant", "content": "A bottle of a small-batch American whisky in the fifty-dollar range would be a thoughtful gift for Kenji, since Japanese whisky is easy for him to get at home. Put it in a gift box rather than a bag."},
-        {"role": "user", "content": "I will be staying at a hotel near Shinagawa station. I would like to keep exercising during the trip if I can."},
-        {"role": "assistant", "content": "The area around Shinagawa has a riverside path along the canal that is popular with runners early in the morning, and most hotels there have a small gym. Either works for short morning sessions."}
+        {"role": "user", "content": "I am flying to Tokyo for work from January 12 to January 16. Meetings are at our partner's office in Shinagawa all week, and I want to bring gifts for the team there."},
+        {"role": "assistant", "content": "Something from your home region, nicely wrapped, works well: small packaged treats for the team and something more personal for your main contact."},
+        {"role": "user", "content": "My main contact is Kenji. He collects whisky, and I want to spend about fifty dollars on his gift."},
+        {"role": "assistant", "content": "A small-batch American whisky in the fifty-dollar range, in a gift box, suits Kenji, since Japanese whisky is easy for him to get at home."},
+        {"role": "user", "content": "I am staying at a hotel near Shinagawa station and want to keep running during the trip."},
+        {"role": "assistant", "content": "There is a riverside path along the canal near Shinagawa that runners use early in the morning, and most hotels there have a small gym."}
       ]
     },
     {
       "title": "Learning Spanish for Rosa",
       "date": "2026-12-08T20:20:00-08:00",
       "turns": [
-        {"role": "user", "content": "My mother-in-law Rosa speaks only Spanish, and we are visiting her in Guadalajara in late February. I have been doing Duolingo for three months and I am roughly at A2. I want to actually hold a conversation with her."},
-        {"role": "assistant", "content": "Three months at A2 is a solid base. The fastest gains for a visit come from speaking practice on the topics you will actually discuss: family news, food, Mia, your work. Fifteen minutes a day of talking out loud beats another hour of app exercises."},
-        {"role": "user", "content": "She loves cooking and gardening, and she always asks about Mia."},
-        {"role": "assistant", "content": "Then prepare three small stories in Spanish: one about Mia's school and her dinosaur phase, one about something you cooked, and one asking Rosa about her garden. Rehearse them until they feel natural, and learn ten questions to keep her talking."},
-        {"role": "user", "content": "Could you also suggest a gift for her? Something that fits those hobbies."},
-        {"role": "assistant", "content": "A set of heirloom vegetable seeds from your region, or a well-made kitchen tool like a good wooden spoon set, would suit Rosa's cooking and gardening. Add a short handwritten card in Spanish; that will mean more than the gift."}
+        {"role": "user", "content": "My mother-in-law Rosa speaks only Spanish, and we are visiting her in Guadalajara in late February. After three months of Duolingo I am at about A2, and I want to hold a real conversation with her."},
+        {"role": "assistant", "content": "Practise speaking on the topics you will actually discuss: family news, food, Mia, your work. Fifteen minutes a day out loud beats another hour of app exercises."},
+        {"role": "user", "content": "Rosa loves cooking and gardening, and she always asks about Mia."},
+        {"role": "assistant", "content": "Then prepare three short stories in Spanish: Mia's dinosaur phase, something you cooked, and a question about Rosa's garden. Rehearse them until they feel natural."}
       ]
     },
     {
       "title": "Home office and back pain",
       "date": "2026-12-15T14:45:00-08:00",
       "turns": [
-        {"role": "user", "content": "I work from home on Mondays, Wednesdays and Fridays, and my lower back has been hurting after long days at the desk. I just bought a standing desk."},
-        {"role": "assistant", "content": "A standing desk helps most when you alternate: roughly forty minutes sitting, twenty minutes standing. Set the standing height so your elbows are at ninety degrees, and put the monitor at eye level. A short walk every hour does more for the lower back than standing all day."},
-        {"role": "user", "content": "I also want to use the office days for the strength work my running plan needs, since I have a mat and a kettlebell at home."},
-        {"role": "assistant", "content": "Good pairing. On your home days do ten minutes of hip bridges, side planks and kettlebell deadlifts at lunch; it helps both the lower back and the knee stability your running plan asked for."}
+        {"role": "user", "content": "I work from home on Mondays, Wednesdays and Fridays, and my lower back hurts after long days at the desk. I just bought a standing desk."},
+        {"role": "assistant", "content": "Alternate roughly forty minutes sitting and twenty standing, elbows at ninety degrees, monitor at eye level, and take a short walk every hour."},
+        {"role": "user", "content": "I want to use the home-office days for the strength work my running plan needs. I have a mat and a kettlebell at home."},
+        {"role": "assistant", "content": "On your home days do ten minutes of hip bridges, side planks and kettlebell deadlifts at lunch; it helps both the lower back and the knee stability your running plan asked for."}
       ]
     }
   ],
   "questions": [
     {
       "text": "Can you plan the menu for Mia's birthday party this Saturday?",
-      "why": "needs the allergy and dislikes (chat 1), the dinosaur theme, twelve kids and volcano cake (chat 2), and the vegetarian twins and Frank's seating (chat 3)",
+      "why": "needs the peanut allergy and the mushrooms (chat 1), the dinosaur theme, twelve kids and the volcano cake (chat 2), and the vegetarian twins (chat 3)",
       "expected": ["peanut", "dinosaurs", "vegetarian"]
     },
     {
       "text": "I am in Tokyo next week. How do I keep my training on track while I am there?",
-      "why": "needs the trip dates and the Shinagawa hotel (chat 5) and the training schedule and the knee limit (chat 4)",
-      "expected": ["Shinagawa", "Sunday"]
+      "why": "needs the trip dates and the hotel near Shinagawa (chat 5) and the Tuesday, Thursday and Sunday schedule with the 12 km knee limit (chat 4)",
+      "expected": ["Shinagawa", "long run"]
     },
     {
       "text": "What gifts should I bring for Kenji and for Rosa?",
