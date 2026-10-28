@@ -3,11 +3,11 @@
 - 작성일: 2026-10-27
 - 대상: 데모의 전체 그림을 처음 보는 사람(1부), 그리고 회사 검증을 이어받거나 부스를 준비하는 사람(2부)
 - 근거 문서: [설계](design_2026-10-26.md), [회사 실행서](company_runbook_2026-10-27.md), [사용 가이드](guide_2026-10-27.md), [이전 절차서](relocation_2026-10-27.md), [Mac 검증 기록](verification_mac_2026-10-27.md), 회사 검증 결과는 GitHub 이슈 [#45](https://github.com/taejin-oh/MemMachine/issues/45)
-- 대상 커밋: `msr_ces2027_demo` 브랜치의 `008480a6`(2026-10-28: 기억 목록 두 줄, NOTE 블록, 임시 채팅 기본값, 로고 아바타)과 그 뒤의 리뷰 반영 커밋
+- 대상 커밋: `msr_ces2027_demo` 브랜치의 `c79f44ec`(2026-10-28: 초기화 스크립트, 모니터, `restart: always`). 그 앞의 `008480a6`(기억 목록 두 줄, NOTE 블록, 임시 채팅 기본값, 로고 아바타)과 리뷰 반영 커밋을 포함한다
 
 ## 0. 요약
 
-데모는 Open WebUI의 모델 비교 화면에서 같은 질문에 대한 두 답을 나란히 보여 준다. 왼쪽은 MemMachine이 과거 대화에서 찾은 기억 다섯 개를 먼저 보여 주고 그 기억으로 답하며, 오른쪽은 같은 LLM이 기억 없이 답한다. Open WebUI와 MemMachine의 소스는 고치지 않았고, 브랜치에는 Pipe 함수 하나, compose 파일 하나, 설정 파일 하나, 스크립트 셋, 대본 하나가 들어 있다.
+데모는 Open WebUI의 모델 비교 화면에서 같은 질문에 대한 두 답을 나란히 보여 준다. 왼쪽은 MemMachine이 과거 대화에서 찾은 기억 다섯 개를 먼저 보여 주고 그 기억으로 답하며, 오른쪽은 같은 LLM이 기억 없이 답한다. Open WebUI와 MemMachine의 소스는 고치지 않았고, 브랜치에는 Pipe 함수 하나, compose 파일 하나, 설정 파일 하나, 스크립트 다섯, 대본 하나가 들어 있다.
 
 같은 파일로 세 환경을 돈다. Mac에서는 가짜 LLM(mock)으로 개발하고, 회사 서버에서는 실제 vLLM으로 검증하며, 부스에서는 서버 네 대로 시연한다. 장소마다 다른 값은 `deploy/.env` 한 파일에만 있다.
 
@@ -178,6 +178,8 @@ flowchart TB
 | `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 두 모델 항목(표시 이름, 아바타, 시스템 프롬프트, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한), 부스 계정 생성, 두 계정의 조용한 설정 |
 | `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 일곱 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
 | `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 두 모델 보임, 채팅 모델이 서빙됨, 질문 넷의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, Pipe 모델에서 답 하나 |
+| `demo_reset.sh` | 위 세 스크립트를 부른다 | 이 서버의 컨테이너를 다시 만들고(`--wipe`면 볼륨도 지운 뒤) healthcheck를 기다리고, 앱 서버면 세팅, 적재, 검사를 이어서 실행 |
+| `demo_monitor.py` | 없음 | 서버 여섯 곳과 이 서버의 컨테이너 상태를 몇 초마다 표시, 바뀐 줄을 로그에 기록, 실행 중인 unhealthy 컨테이너 재시작 |
 
 검사 스크립트의 통과 기준은 설계 2장의 성공 기준과 같다. 대본 질문마다 기대 기억이 top-5에 들고, 녹음 모드가 꺼져 있고, 한 질문이 Pipe를 거쳐 답까지 온다.
 
@@ -236,7 +238,7 @@ compose 파일은 하나이고, 서비스마다 `profiles`로 속한 서버를 �
 | llm | llm | `vllm/vllm-openai:v0.26.0` | | 가중치 디렉터리를 읽기 전용 마운트, GPU 예약 |
 | embed | embed | 같은 이미지 | | `--runner pooling`, 서빙 이름 `embed` |
 
-모든 서비스는 `restart: unless-stopped`이고 이미지 태그는 고정이다. 데이터는 이름 있는 볼륨 셋(`postgres_data`, `qdrant_data`, `openwebui_data`)에 있다. 다른 서버의 서비스는 `depends_on`으로 기다릴 수 없으므로 MemMachine은 DB가 늦으면 실패하고 재시작 정책으로 다시 뜬다.
+모든 서비스는 `restart: always`이고 이미지 태그는 고정이다. 데이터는 이름 있는 볼륨 셋(`postgres_data`, `qdrant_data`, `openwebui_data`)에 있다. 다른 서버의 서비스는 `depends_on`으로 기다릴 수 없으므로 MemMachine은 DB가 늦으면 실패하고 재시작 정책으로 다시 뜬다.
 
 ### 2.4.3 데이터 흐름
 
@@ -377,9 +379,9 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 1. 완전 오프라인. 이미지(Open WebUI, PostgreSQL, Qdrant, vLLM, MemMachine, 백업용 alpine)와 모델 가중치와 브랜치 clone과 적재 뒤의 볼륨 백업을 회사 망에서 미리 디스크에 둔다. 이미지는 `docker save`로 tar도 남긴다.
 2. 고정 IP와 호스트 이름. 설정은 이름만 쓰고 IP는 `.env`와 `/etc/hosts`에만 있다.
-3. 전원만 켜면 자동 기동. 모든 컨테이너가 `restart: unless-stopped`이고 Docker 데몬은 부팅 시 시작한다. 종료는 `docker compose down`이 아니라 운영체제 종료로 한다.
+3. 전원만 켜면 자동 기동. 모든 컨테이너가 `restart: always`이고 Docker 데몬은 부팅 시 시작한다. 손으로 멈춘 컨테이너도 부팅 때 되살아나고, `docker compose down`으로 지운 컨테이너만 `demo_reset.sh`로 다시 만든다. 종료는 운영체제 종료로 한다.
 4. 볼륨과 백업으로 데이터 보존. 적재는 몇 초면 다시 할 수 있지만 볼륨을 되돌리면 사이드바의 채팅 ID까지 그대로다.
-5. 명령 하나로 준비 상태 확인. `demo_check.py`가 어느 서버의 무엇이 안 되는지 줄 단위로 알려 준다.
+5. 명령 하나로 준비 상태 확인. `demo_check.py`가 어느 서버의 무엇이 안 되는지 줄 단위로 알려 준다. 원인을 찾을 시간이 없으면 `demo_reset.sh`가 그 서버의 컨테이너를 다시 만들고 세팅, 적재, 검사까지 한 번에 하며, 시연 중에는 `demo_monitor.py`가 상태를 몇 초마다 보여 주고 unhealthy 컨테이너를 다시 시작한다.
 
 종료 순서, 미국에서의 점검 순서, 증상별 조치는 [이전 절차서](relocation_2026-10-27.md)에 있다.
 
@@ -401,6 +403,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | Pipe 동작과 Valve | 설계 5.2절, `pipe/memmachine_pipe.py` |
 | Open WebUI 환경 변수와 API, 과거 맥락 차단, 두 계정 | 설계 5.3절, `deploy/docker-compose.yml`, `scripts/setup_openwebui.py` |
 | 적재와 검사 | 설계 5.4절, 5.5절, `scripts/load_scenario.py`, `scripts/demo_check.py` |
+| 초기화와 모니터 | 설계 6.4절, `scripts/demo_reset.sh`, `scripts/demo_monitor.py` |
 | 저장소 레이아웃, compose 규칙, 오프라인 준비물 | 설계 6장 |
 | 회사 검증 절차 | 회사 실행서 전체, 특히 2.4절(운영자 서빙), 6.2절(차원), 7.3절(요청 로그) |
 | 회사 검증 결과와 발견 다섯 가지 | GitHub 이슈 #45 본문, 반영 결과는 그 댓글 |

@@ -15,6 +15,8 @@ tools/ces2027_demo/
   scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 두 모델의 표시 설정
   scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
   scripts/demo_check.py       전원을 켠 뒤 준비 상태를 한 번에 검사
+  scripts/demo_reset.sh       문제가 생겼을 때 이 서버의 컨테이너를 다시 만들고 세팅, 적재, 검사를 한 번에
+  scripts/demo_monitor.py     시연 중 서버 여섯 곳과 컨테이너 상태를 몇 초마다 표시, unhealthy 컨테이너 재시작
   scripts/common.py           스크립트 공통 (.env 읽기, Open WebUI API 호출)
   scenario/script.json        부스 대본
   scenario/script.sample.json 대본 형식 예시
@@ -43,7 +45,7 @@ python3 ../scripts/demo_check.py ../scenario/script.sample.json
 
 브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 본문 두 줄)과 답이, 오른쪽에 기억 없는 답이 나온다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다.
 
-적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
+적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. `scripts/demo_reset.sh --wipe local scenario/script.sample.json`은 지우고 다시 올리고 세팅, 적재, 검사까지 한 번에 한다(아래 "문제가 생겼을 때"). MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
 ## 회사와 부스에서 올리기
 
@@ -69,6 +71,24 @@ python3 ../scripts/demo_check.py ../scenario/script.json
 
 vLLM은 모델 적재에 몇 분이 걸린다. `docker compose ps`의 상태가 healthy가 된 뒤 세팅 스크립트를 실행한다. 전원을 다시 켜면 모든 컨테이너가 스스로 올라오므로 그 뒤에는 검사 스크립트만 돌리면 된다.
 
+## 문제가 생겼을 때
+
+모든 컨테이너는 `restart: always`라서 전원을 다시 켜면 스스로 올라오고, 끄기 전에 손으로 멈춘 컨테이너도 부팅 때 되살아난다. 되살아나지 않는 것은 `docker compose down`으로 지운 컨테이너뿐이다. 원인을 찾을 시간이 없으면 그 서버에서 초기화 스크립트를 실행한다. 서버의 프로필을 적어 주면 그 컨테이너를 고정 이미지와 현재 `.env`로 다시 만들어 healthcheck가 통과할 때까지 기다리고, 앱 서버(또는 Mac)에서는 세팅, 적재, 검사까지 이어서 한다. 데이터 볼륨은 그대로 두므로 지난 적재의 프로젝트는 남지만 쓰이지 않는다.
+
+```bash
+scripts/demo_reset.sh app          # 부스 앱 서버. DB 서버에서는 db, 한 서버에 두 역할이면 app db
+scripts/demo_reset.sh --wipe app   # 볼륨까지 지우고 처음 설치한 상태부터. 계정, 채팅, 기억이 모두 새로 만들어진다
+scripts/demo_reset.sh local scenario/script.sample.json   # Mac
+```
+
+서버가 여러 대면 DB 서버에서 먼저, 앱 서버에서 마지막에 실행한다. LLM과 임베더 서버는 건드리지 않는다.
+
+시연 중에는 앱 서버의 터미널 하나에 모니터를 띄워 둔다. 검사 스크립트의 앞부분(서버 여섯 곳)과 이 서버의 컨테이너 상태를 10초마다 다시 그리고, 바뀐 줄을 `scripts/demo_monitor.log`에 시각과 함께 남긴다. 실행 중인데 healthcheck가 unhealthy인 컨테이너는 다시 시작한다. 종료된 컨테이너는 Docker가 스스로 되살리지만 멈춘 채 살아 있는 컨테이너는 아무도 건드리지 않기 때문이다. 모델에 질문을 보내지는 않으므로 시연 중에 켜 두어도 LLM에 부하가 없다.
+
+```bash
+python3 scripts/demo_monitor.py       # 10초마다. 인자로 초를 주면 그 간격
+```
+
 ## 회사에서 확인할 것
 
 Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다음을 보고, 결과를 `docs/msr/ces2027_demo/verification_company_<날짜>.md`에 적어 커밋한다(틀은 실행서 8.1절).
@@ -84,3 +104,5 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 두 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 80).
 - [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다.
+- [ ] `scripts/demo_reset.sh app db`(한 서버에 두 역할을 올린 경우)가 끝까지 돌고 마지막의 `demo_check.py`가 통과한다. `--wipe`를 붙여 한 번 더 돌려 처음 설치한 상태에서도 같은지 본다.
+- [ ] `python3 scripts/demo_monitor.py`가 서버 여섯 곳과 컨테이너 넷을 `OK`로 보여 준다. 서버를 재부팅하면 컨테이너 넷이 명령 없이 올라오고 모니터가 다시 `OK`가 된다.

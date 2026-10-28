@@ -222,3 +222,69 @@ mock 로그의 `carries tools` 경고는 이 절의 화면 확인에서 보낸 �
 ### 7.4 아바타
 
 두 모델의 아바타를 추상적인 뇌 모양에서 MemMachine 로고 마크로 바꿨다(`assets/memmachine.svg`, `assets/no_memory.svg`; 마크는 `docs/logo/memmachine-logo-white.png`를 그대로 넣는다). 왼쪽은 브랜드 파랑 원 위의 흰 마크, 오른쪽은 회색 원 위에 흐리게 한 같은 마크에 사선을 그은 것이다. 28px, 64px, 128px와 밝은 배경과 어두운 배경에서 본 모습이 `img/12_avatars.png`에 있다. 28px에서는 마크의 선이 가늘어 파란 원과 사선 그은 회색 원으로 구별되고, 새 채팅 화면의 64px에서는 마크가 읽힌다. 7.3절의 캡처는 이 아바타로 다시 찍은 것이다.
+
+## 8. 자동 기동, 초기화 스크립트, 모니터 (2026-10-28 추가)
+
+현장에서 에이전트 없이 복구하기 위한 세 가지(`restart: always`, `scripts/demo_reset.sh`, `scripts/demo_monitor.py`)를 Mac에서 확인했다. 초기화 스크립트는 데이터 유지와 `--wipe` 모두 약 40초에 끝나고 검사가 전부 통과했으며, 모니터는 일부러 unhealthy로 만든 컨테이너를 다음 갱신에서 다시 시작했다. 실제 vLLM과 재부팅은 회사에서 확인한다(README의 확인 목록 마지막 두 항목).
+
+### 8.1 DB가 꺼졌을 때 MemMachine
+
+PostgreSQL 컨테이너를 멈추고 MemMachine을 다시 시작했다. MemMachine은 멈춘 채 살아 있지 않고 기동 중에 종료되었고 재시작 정책이 계속 되살렸다. 4분 동안 열한 번 재시작했고 그 사이 `docker compose ps`에는 `restarting`과 `unhealthy`가 번갈아 보였다. PostgreSQL을 다시 켜자 25초 뒤 `/api/v2/health`가 200을 돌려주고 healthy가 되었다. 설계 6.2절의 "DB가 늦으면 실패하고 재시작 정책으로 다시 뜬다"는 서술은 맞다. 이 동작은 `unless-stopped`와 `always`가 같고, 둘의 차이는 끄기 전에 손으로 멈춘 컨테이너를 부팅 때 되살리는지뿐이다. 그래서 모니터는 종료된 컨테이너는 Docker에 맡기고 실행 중인데 unhealthy인 컨테이너만 다시 시작한다.
+
+### 8.2 compose 동작
+
+초기화 스크립트의 인자 방식을 정하기 위해 확인했다. `.env`에 `COMPOSE_PROFILES=app,db`를 넣으면 프로필 없이도 네 서비스가 선택되지만 `--profile llm`을 함께 주면 `llm` 하나만 선택된다. 즉 플래그가 `.env`의 값을 대체한다. 프로필이 하나도 없으면 `docker compose down`은 아무것도 지우지 않는다. 회사의 `.env`를 고치지 않아도 되도록 스크립트는 프로필을 인자로 받는다. `up -d --wait`는 healthcheck가 없는 서비스(qdrant, mock)를 실행 중이면 `Healthy`로 본다.
+
+### 8.3 초기화 스크립트
+
+`scripts/demo_reset.sh local scenario/script.sample.json`은 38초, `--wipe`를 붙인 실행은 36초에 끝났고 둘 다 마지막의 검사가 전부 통과했다. `--wipe`에서는 볼륨 셋이 지워진 뒤 세팅 스크립트가 관리자와 부스 계정을 새로 만들었고 적재가 새 프로젝트에 세션 셋을 넣었다. 데이터 유지 실행의 출력은 다음과 같다(검사 부분은 6장과 같아 줄였다).
+
+```
+== starting the containers and waiting for their healthchecks
+ Container deploy-mock-1 Recreate
+ ...
+ Container deploy-openwebui-1 Healthy
+== setup: accounts, Pipe, models
+signed in as staff@demo.local (admin)
+function memmachine_pipe: updated
+model memmachine_pipe.mock-llm-a: updated as 'MemMachine + mock-llm-a'
+model mock-llm-a: updated as 'mock-llm-a (no memory)'
+booth account visitor@demo.local: exists
+account settings of staff@demo.local: release notes off, personal system prompt empty, new chats temporary
+account settings of visitor@demo.local: release notes off, personal system prompt empty, new chats temporary
+done
+== load: .../scenario/script.sample.json
+project ces-20261028-093155: Pipe valve set, previous chats of visitor@demo.local deleted
+session 'Peanut allergy and meal prep': 4 turns, chat e4f04da6-...
+session 'Mia's birthday ideas': 2 turns, chat d3ee47df-...
+session 'Weekend hosting': 2 turns, chat d0164009-...
+done. Reload the browser to see the chats.
+== check
+OK   LLM server http://127.0.0.1:8000/v1: mock-llm-a, mock-llm-b
+...
+all checks passed
+```
+
+### 8.4 모니터
+
+`python3 scripts/demo_monitor.py 5`를 13초 띄웠다. 화면은 5초마다 다시 그려지고, 로그에는 첫 화면의 열한 줄만 한 번 기록되었다. 컨테이너 줄은 상태와 health만 비교하므로 가동 시간이 바뀌어도 기록되지 않는다. 그 뒤 mock의 healthcheck를 항상 실패하는 명령으로 바꿔 올려 `running (unhealthy)`로 만들자 모니터가 다음 갱신에서 `docker compose restart mock`을 실행하고 한 줄을 기록했다. 원래 설정으로 되돌린 뒤 검사가 전부 통과했다.
+
+```
+CES 2027 demo monitor  2026-10-28 09:34:08  every 5s, changes go to demo_monitor.log, Ctrl-C stops
+
+OK   LLM server http://127.0.0.1:8000/v1: mock-llm-a, mock-llm-b
+OK   embedding server http://127.0.0.1:8001/v1: mock-llm-a, mock-llm-b
+OK   MemMachine: {"status": "healthy", "service": "memmachine", "version": "0.4.1.dev1"}
+OK   Open WebUI: {"status": true}
+OK   PostgreSQL port: 127.0.0.1:5432
+OK   Qdrant port: 127.0.0.1:6333
+OK   container memmachine: running (healthy)
+OK   container mock: running
+OK   container openwebui: running (healthy)
+OK   container postgres: running (healthy)
+OK   container qdrant: running
+```
+
+```
+2026-10-28 09:34:18 FAIL container mock: running (unhealthy), restarted by the monitor
+```
