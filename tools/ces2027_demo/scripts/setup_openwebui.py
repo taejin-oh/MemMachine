@@ -10,22 +10,24 @@ Steps:
   1. sign in as the staff account (created on the first run; first user = admin)
   2. install or update the Pipe function and switch it on
   3. write the Pipe valves that come from .env (shared system prompt, LLM address)
-  4. create or update the two model entries: display names, avatars from
-     ../assets, the same system prompt on the no-memory model, the capability
-     flags that stop Open WebUI from feeding past chats, notes or files to
-     either model, and read access for every account
+  4. create or update the two model entries, both served by the Pipe: display
+     names, avatars from ../assets, the capability flags that stop Open WebUI
+     from feeding past chats, notes or files to either model, and read access
+     for every account (the system prompt comes from the Pipe valve)
   5. create the booth account if it is missing: a regular user, so that the
      USER_PERMISSIONS_* variables in docker-compose.yml apply to it and it
      sees only these two models (Open WebUI never restricts an admin)
   6. settings of both accounts: no release-notes pop-up on first login, an
      empty personal system prompt so nothing extra reaches either model, and
      temporary chats by default so nothing a visitor types is saved and the
-     sidebar keeps showing only the loaded past chats
+     sidebar keeps showing only the loaded past chats, and wide screen mode so
+     the two comparison cards use the whole display
 """
 
 import base64
 
-from common import ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, load_env, openwebui_url, pipe_model_id, pipe_model_name
+from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, load_env, no_memory_model_id, no_memory_model_name,
+                    openwebui_url, pipe_model_id, pipe_model_name)
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -47,9 +49,9 @@ def main() -> None:
     system_prompt = shared_system_prompt(env)
     install_pipe(ui, {"BASE_SYSTEM_PROMPT": system_prompt, "LLM_BASE_URLS": env["LLM_BASE_URLS"]})
 
-    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png", params={})
-    upsert_model(ui, env["LLM_MODEL_NAME"], f"{env['LLM_MODEL_NAME']} (no memory)", "no_memory.png",
-                 params={"system": system_prompt})
+    # Both entries are Pipe models; the Pipe gives each its system prompt, so no params here.
+    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png")
+    upsert_model(ui, no_memory_model_id(env), no_memory_model_name(env), "no_memory.png")
     booth = ensure_booth_account(ui, env)
     quiet_account(ui, env["ADMIN_EMAIL"])
     quiet_account(booth, env["BOOTH_EMAIL"])
@@ -111,12 +113,13 @@ def quiet_account(ui: OpenWebUI, email: str) -> None:
     """Keep the demo screen clean and the sidebar fixed (design section 5.3): no "What's New" pop-up,
     no personal system prompt, and every new chat temporary so that a visitor's questions are never saved."""
     settings = ui.call("GET", "/api/v1/users/user/settings") or {}
-    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": "", "temporaryChatByDefault": True}
+    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": "", "temporaryChatByDefault": True,
+                      "widescreenMode": True}
     ui.call("POST", "/api/v1/users/user/settings/update", settings)
-    print(f"account settings of {email}: release notes off, personal system prompt empty, new chats temporary")
+    print(f"account settings of {email}: release notes off, personal system prompt empty, new chats temporary, wide screen mode")
 
 
-def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: dict) -> None:
+def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str) -> None:
     """Create or update a workspace model entry that overrides how a base model is shown and prompted."""
     # Open WebUI serves only raster avatars (SVG falls back to its logo), hence PNG.
     png = (ASSETS_DIR / avatar).read_bytes()
@@ -128,7 +131,7 @@ def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str, params: d
             "capabilities": NO_PAST_CONTEXT,
             "profile_image_url": "data:image/png;base64," + base64.b64encode(png).decode(),
         },
-        "params": params,
+        "params": {},
         "is_active": True,
     }
     existing_ids = {entry["id"] for entry in ui.call("GET", "/api/v1/models/all")}

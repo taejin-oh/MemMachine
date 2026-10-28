@@ -16,6 +16,7 @@ ENV_FILE = DEMO_DIR / "deploy" / ".env"
 PIPE_FILE = DEMO_DIR / "pipe" / "memmachine_pipe.py"
 ASSETS_DIR = DEMO_DIR / "assets"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
+NO_MEMORY_SUFFIX = "--no-memory"  # the Pipe's id suffix for the right-hand model (pipe/memmachine_pipe.py)
 
 
 def pipe_model_id(env: dict[str, str]) -> str:
@@ -26,6 +27,16 @@ def pipe_model_id(env: dict[str, str]) -> str:
 def pipe_model_name(env: dict[str, str]) -> str:
     """Display name of the left (memory) model."""
     return f"MemMachine + {env['LLM_MODEL_NAME']}"
+
+
+def no_memory_model_id(env: dict[str, str]) -> str:
+    """Id of the right (no-memory) model in Open WebUI, also served by the Pipe."""
+    return f"{PIPE_ID}.{env['LLM_MODEL_NAME']}{NO_MEMORY_SUFFIX}"
+
+
+def no_memory_model_name(env: dict[str, str]) -> str:
+    """Display name of the right (no-memory) model."""
+    return f"{env['LLM_MODEL_NAME']} (no memory)"
 
 
 def load_env(path: Path = ENV_FILE) -> dict[str, str]:

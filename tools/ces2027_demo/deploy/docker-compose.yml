@@ -88,15 +88,15 @@ services:
       TZ: ${TZ}                            # the Pipe shows memory dates in this zone
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
       ENABLE_PERSISTENT_CONFIG: "false"    # these variables always win over the admin UI
-      # Right-hand model: Open WebUI calls the LLM server directly, without memory.
-      ENABLE_OPENAI_API: "true"
-      OPENAI_API_BASE_URLS: ${LLM_BASE_URLS}
-      OPENAI_API_KEYS: dummy
+      # Both cards are models of the Pipe (pipe/memmachine_pipe.py), which calls
+      # the LLM server itself; Open WebUI keeps no model connection of its own.
+      ENABLE_OPENAI_API: "false"
       ENABLE_OLLAMA_API: "false"
       ENABLE_DIRECT_CONNECTIONS: "false"
-      # A new chat opens with both models selected (comparison view). The left
-      # id is "<function id>.<model>", the function id being PIPE_ID in scripts/common.py.
-      DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME},${LLM_MODEL_NAME}
+      # A new chat opens with both models selected (comparison view). The ids are
+      # "<function id>.<model>" and "<function id>.<model>--no-memory", the
+      # function id being PIPE_ID in scripts/common.py.
+      DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME},memmachine_pipe.${LLM_MODEL_NAME}--no-memory
       # Every Open WebUI path that could feed past context to a model is off
       # (design section 5.3).
       ENABLE_MEMORIES: "false"

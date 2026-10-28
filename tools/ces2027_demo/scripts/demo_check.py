@@ -9,15 +9,16 @@ Prints one line per check and exits with a non-zero code if any failed:
   3. for every question in the script, the expected phrases are among the
      top-k memories that MemMachine retrieves from the loaded project,
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
-  5. one question through Open WebUI reaches the Pipe and gets an answer.
+  5. one question through each model: the memory model answers below its
+     memory list, the no-memory model below its note (when the valve shows one).
 """
 
 import json
 import sys
 from pathlib import Path
 
-from common import (OpenWebUI, http_json, llm_urls_for_scripts, load_env, memmachine_url, openwebui_url, pipe_model_id,
-                    port_open, script_host)
+from common import (OpenWebUI, http_json, llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id,
+                    openwebui_url, pipe_model_id, port_open, script_host)
 
 failures = 0
 
@@ -74,11 +75,11 @@ def main() -> None:
         finish()
     booth = OpenWebUI(openwebui_url(env))
     check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
-    left, right = pipe_model_id(env), env["LLM_MODEL_NAME"]
+    left, right = pipe_model_id(env), no_memory_model_id(env)
     check("both demo models visible to the booth account",
           lambda: f"{left}, {right}" if {left, right} <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
           else raise_error(f"missing: {left} or {right}"))
-    report(right in llm_models, "chat model served by the LLM server", right)
+    report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
 
     # 3. expected memories per question, in the project the Pipe searches
     valves = ui.get_valves()
@@ -93,11 +94,14 @@ def main() -> None:
     record_mode = bool(valves["RECORD_MEMORY"])
     report(not record_mode, "record mode (RECORD_MEMORY) is off")
 
-    # 5. one answer through the Pipe
+    # 5. one answer through each model
+    question = script["questions"][0]["text"]
     if record_mode:
         report(False, "answer from the Pipe model", "skipped: record mode would store the question")
     else:
-        check("answer from the Pipe model", lambda: pipe_answer(ui, left, script["questions"][0]["text"]))
+        check("answer from the Pipe model", lambda: model_answer(ui, left, question, "**Memories retrieved"))
+    note = "**No memory used.**" if valves["SHOW_NO_MEMORY_NOTE"] else None
+    check("answer from the no-memory model", lambda: model_answer(ui, right, question, note))
     finish()
 
 
@@ -118,17 +122,24 @@ def expected_memories(memmachine: str, project_id: str, top_k: int, question: di
     return f"{len(texts)} retrieved from {project_id}"
 
 
-def pipe_answer(ui: OpenWebUI, model_id: str, question: str) -> str:
-    """The Pipe writes the memory list, a rule, then the answer; errors start with a fixed phrase."""
+def model_answer(ui: OpenWebUI, model_id: str, question: str, header: str | None) -> str:
+    """Both Pipe models write a block (memory list or no-memory note), a rule, then the answer.
+
+    header: text the block must contain, or None when the model writes no block. Errors start with a fixed phrase.
+    """
     reply = ui.call("POST", "/api/chat/completions",
                     {"model": model_id, "messages": [{"role": "user", "content": question}], "stream": False})
     content = reply.get("choices", [{}])[0].get("message", {}).get("content", "")
     for prefix in ("Memory search failed:", "LLM call failed:", "MemMachine pipe:"):
         if prefix in content:
             raise_error(content[content.index(prefix):][:200])
-    memory_list, _, answer = content.partition("\n---\n")
-    if "**Memories retrieved" not in memory_list or not answer.strip():
+    block, rule, answer = content.partition("\n---\n")
+    if header is None:
+        answer = content
+    elif header not in block or not rule:
         raise_error(f"unexpected reply: {content[:200]!r}")
+    if not answer.strip():
+        raise_error(f"empty answer: {content[:200]!r}")
     return answer.strip()[:80]
 
 
