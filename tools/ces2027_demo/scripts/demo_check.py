@@ -13,12 +13,11 @@ Prints one line per check and exits with a non-zero code if any failed:
 """
 
 import json
-import socket
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
-from common import OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, pipe_model_id, script_host
+from common import (OpenWebUI, http_json, llm_urls_for_scripts, load_env, memmachine_url, openwebui_url, pipe_model_id,
+                    port_open, script_host)
 
 failures = 0
 
@@ -45,23 +44,6 @@ def check(what: str, probe, warn_only: bool = False):
     except Exception as error:
         report(False, what, str(error), warn_only)
         return False
-
-
-def port_open(host: str, port: int) -> str:
-    with socket.create_connection((host, port), timeout=5):
-        return f"{host}:{port}"
-
-
-def llm_urls_for_scripts(env: dict) -> list[str]:
-    """LLM_BASE_URLS as seen from this machine: the container name 'llm' becomes LLM_HOST."""
-    urls = []
-    for url in env["LLM_BASE_URLS"].split(";"):
-        parts = urlsplit(url.strip())
-        if not parts.netloc:
-            continue
-        netloc = parts.netloc.replace("llm", script_host(env, "LLM_HOST"), 1) if parts.hostname == "llm" else parts.netloc
-        urls.append(urlunsplit((parts.scheme, netloc, parts.path, "", "")).rstrip("/"))
-    return urls
 
 
 def main() -> None:

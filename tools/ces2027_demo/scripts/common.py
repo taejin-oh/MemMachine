@@ -5,9 +5,11 @@ newer without a virtual environment.
 """
 
 import json
+import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 DEMO_DIR = Path(__file__).resolve().parent.parent  # tools/ces2027_demo
 ENV_FILE = DEMO_DIR / "deploy" / ".env"
@@ -60,14 +62,32 @@ def memmachine_url(env: dict[str, str]) -> str:
     return f"http://{env['APP_HOST']}:{env['MEMMACHINE_PORT']}"
 
 
-def http_json(method: str, url: str, body=None, token: str | None = None):
+def llm_urls_for_scripts(env: dict[str, str]) -> list[str]:
+    """LLM_BASE_URLS as seen from this machine: the container name 'llm' becomes LLM_HOST."""
+    urls = []
+    for url in env["LLM_BASE_URLS"].split(";"):
+        parts = urlsplit(url.strip())
+        if not parts.netloc:
+            continue
+        netloc = parts.netloc.replace("llm", script_host(env, "LLM_HOST"), 1) if parts.hostname == "llm" else parts.netloc
+        urls.append(urlunsplit((parts.scheme, netloc, parts.path, "", "")).rstrip("/"))
+    return urls
+
+
+def port_open(host: str, port: int) -> str:
+    """Connect to a TCP port and return 'host:port'; raises when nothing listens there."""
+    with socket.create_connection((host, port), timeout=5):
+        return f"{host}:{port}"
+
+
+def http_json(method: str, url: str, body=None, token: str | None = None, timeout: int = 60):
     """One JSON request. Returns the parsed response; raises RuntimeError with the server's message on failure."""
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             text = response.read().decode()
     except urllib.error.HTTPError as error:
         detail = error.read().decode(errors="replace")[:300]
