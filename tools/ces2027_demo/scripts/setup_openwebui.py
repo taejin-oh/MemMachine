@@ -53,8 +53,9 @@ def main() -> None:
     upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png")
     upsert_model(ui, no_memory_model_id(env), no_memory_model_name(env), "no_memory.png")
     booth = ensure_booth_account(ui, env)
-    quiet_account(ui, env["ADMIN_EMAIL"])
-    quiet_account(booth, env["BOOTH_EMAIL"])
+    temporary = env.get("TEMPORARY_CHAT", "true") == "true"
+    quiet_account(ui, env["ADMIN_EMAIL"], temporary)
+    quiet_account(booth, env["BOOTH_EMAIL"], temporary)
     print("done")
 
 
@@ -109,14 +110,16 @@ def ensure_booth_account(ui: OpenWebUI, env: dict[str, str]) -> OpenWebUI:
     return booth
 
 
-def quiet_account(ui: OpenWebUI, email: str) -> None:
-    """Keep the demo screen clean and the sidebar fixed (design section 5.3): no "What's New" pop-up,
-    no personal system prompt, and every new chat temporary so that a visitor's questions are never saved."""
+def quiet_account(ui: OpenWebUI, email: str, temporary: bool) -> None:
+    """Keep the demo screen clean (design section 5.3): no "What's New" pop-up, no personal system prompt,
+    wide screen mode, and new chats temporary (TEMPORARY_CHAT in .env) so that a visitor's questions are
+    never saved and the sidebar keeps only the loaded past chats."""
     settings = ui.call("GET", "/api/v1/users/user/settings") or {}
-    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": "", "temporaryChatByDefault": True,
-                      "widescreenMode": True}
+    settings["ui"] = {**(settings.get("ui") or {}), "showChangelog": False, "system": "",
+                      "temporaryChatByDefault": temporary, "widescreenMode": True}
     ui.call("POST", "/api/v1/users/user/settings/update", settings)
-    print(f"account settings of {email}: release notes off, personal system prompt empty, new chats temporary, wide screen mode")
+    print(f"account settings of {email}: release notes off, personal system prompt empty, "
+          f"new chats {'temporary' if temporary else 'saved'}, wide screen mode")
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str) -> None:
