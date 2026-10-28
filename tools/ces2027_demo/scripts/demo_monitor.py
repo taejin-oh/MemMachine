@@ -95,11 +95,12 @@ def container_rows() -> list:
     for c in containers:
         # State and health only, e.g. "running (healthy)", "exited": the uptime in
         # c["Status"] would make every row a change on every refresh.
-        detail = c["State"] + (f" ({c['Health']})" if c["Health"] else "")
-        if c["State"] == "running" and c["Health"] == "unhealthy":  # hung; docker handles exited and restarting ones
+        health = c.get("Health") or ""  # absent in older compose versions and for services without a healthcheck
+        detail = c["State"] + (f" ({health})" if health else "")
+        if c["State"] == "running" and health == "unhealthy":  # hung; docker handles exited and restarting ones
             subprocess.run(COMPOSE + ["restart", c["Service"]], capture_output=True)
             detail += ", restarted by the monitor"
-        rows.append((f"container {c['Service']}", c["State"] == "running" and c["Health"] != "unhealthy", detail))
+        rows.append((f"container {c['Service']}", c["State"] == "running" and health != "unhealthy", detail))
     return rows
 
 
