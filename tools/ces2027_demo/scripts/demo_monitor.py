@@ -98,8 +98,8 @@ def container_rows() -> list:
         health = c.get("Health") or ""  # absent in older compose versions and for services without a healthcheck
         detail = c["State"] + (f" ({health})" if health else "")
         if c["State"] == "running" and health == "unhealthy":  # hung; docker handles exited and restarting ones
-            subprocess.run(COMPOSE + ["restart", c["Service"]], capture_output=True)
-            detail += ", restarted by the monitor"
+            restart = subprocess.run(COMPOSE + ["restart", c["Service"]], capture_output=True, text=True)
+            detail += ", restarted by the monitor" if restart.returncode == 0 else f", restart failed: {restart.stderr.strip()[:80]}"
         rows.append((f"container {c['Service']}", c["State"] == "running" and health != "unhealthy", detail))
     return rows
 

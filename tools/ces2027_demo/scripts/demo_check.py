@@ -100,7 +100,7 @@ def main() -> None:
         report(False, "answer from the Pipe model", "skipped: record mode would store the question")
     else:
         check("answer from the Pipe model", lambda: model_answer(ui, left, question, "**Memories retrieved"))
-    note = "**No memory used.**" if valves["SHOW_NO_MEMORY_NOTE"] else None
+    note = "**No memory used.**" if valves.get("SHOW_NO_MEMORY_NOTE", True) else None  # .get: an older installed Pipe has no such valve
     check("answer from the no-memory model", lambda: model_answer(ui, right, question, note))
     finish()
 
