@@ -52,7 +52,7 @@
         {"role": "user", "content": "My main contact is Kenji. He collects whisky, and I want to spend about fifty dollars on his gift."},
         {"role": "assistant", "content": "A small-batch American whisky in the fifty-dollar range, in a gift box, suits Kenji, since Japanese whisky is easy for him to get at home."},
         {"role": "user", "content": "I am staying at a hotel near Shinagawa station and want to keep running during the trip."},
-        {"role": "assistant", "content": "There is a riverside path along the canal near Shinagawa that runners use early in the morning, and most hotels there have a small gym."}
+        {"role": "assistant", "content": "To keep your training on track in Tokyo, run early along the canal path near Shinagawa station, which local runners use every morning; most hotels there have a small gym."}
       ]
     },
     {
@@ -60,7 +60,7 @@
       "date": "2026-12-08T20:20:00-08:00",
       "turns": [
         {"role": "user", "content": "My mother-in-law Rosa speaks only Spanish, and we are visiting her in Guadalajara in late February. After three months of Duolingo I am at about A2, and I want to hold a real conversation with her."},
-        {"role": "assistant", "content": "Practise speaking on the topics you will actually discuss: family news, food, Mia, your work. Fifteen minutes a day out loud beats another hour of app exercises."},
+        {"role": "assistant", "content": "Practise speaking out loud about the things you will actually discuss with Rosa. Fifteen minutes a day of that beats another hour of app exercises."},
         {"role": "user", "content": "Rosa loves cooking and gardening, and she always asks about Mia."},
         {"role": "assistant", "content": "Then prepare three short stories in Spanish: Mia's dinosaur phase, something you cooked, and a question about Rosa's garden. Rehearse them until they feel natural."}
       ]
