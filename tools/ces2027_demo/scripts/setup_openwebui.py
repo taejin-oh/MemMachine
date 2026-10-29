@@ -26,6 +26,7 @@ Steps:
 """
 
 import base64
+from datetime import date
 
 from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, load_env, no_memory_model_id,
                     no_memory_model_name, openwebui_url, pipe_model_id, pipe_model_name)
@@ -62,10 +63,17 @@ def main() -> None:
 
 
 def shared_system_prompt(env: dict[str, str]) -> str:
-    """Base prompt for both models, with the demo date when one is set."""
+    """Base prompt for both models, with the demo date when one is set.
+
+    The weekday is spelled out so that "this Saturday" needs no calendar arithmetic from the model.
+    """
     prompt = env["BASE_SYSTEM_PROMPT"]
     if env.get("DEMO_DATE"):
-        prompt += f"\nToday is {env['DEMO_DATE']}."
+        try:
+            demo_date = date.fromisoformat(env["DEMO_DATE"])
+        except ValueError:
+            raise SystemExit(f"DEMO_DATE in .env must look like 2027-01-06, not {env['DEMO_DATE']!r}") from None
+        prompt += f"\nToday is {demo_date:%A}, {demo_date.isoformat()}."
     return prompt
 
 
