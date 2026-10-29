@@ -149,6 +149,8 @@ cd ~/ces2027/MemMachine && git log -1 --oneline && ls tools/ces2027_demo && test
 
 **다르면** `runbook-present`가 없으면 오래된 브랜치다. `cd ~/ces2027/MemMachine && git pull --ff-only`를 실행하고 다시 본다.
 
+뒤에 브랜치가 바뀌어 다시 받을 때도 같은 `git pull --ff-only`다. 이 서버에는 5.3절의 `dimensions` 한 줄이 로컬 변경으로 남아 있으므로, 다른 로컬 변경을 버릴 때 `git checkout -- tools/ces2027_demo`처럼 디렉터리를 통째로 되돌리면 그 줄까지 사라져 다음 적재가 차원 불일치로 실패한다. 버릴 파일을 하나씩 지정하거나, `git stash`로 치운 뒤 pull 하고 `git stash pop`으로 되살린다. `.env`는 git이 추적하지 않아 어느 쪽에도 영향이 없다.
+
 ## 5. 서버마다 준비
 
 5장은 역할이 있는 서버마다 한다. 서버가 한 대면 한 번, 네 대면 네 번이다. 서버마다 4장대로 clone을 두는 것이 가장 단순하다. GPU 서버는 compose 파일과 `.env`만 쓰고, 앱 서버는 스크립트와 대본도 쓴다. 어느 쪽이든 4.1절의 얕은 clone이면 충분하다.
@@ -395,6 +397,8 @@ function memmachine_pipe: created
 function memmachine_pipe: enabled
 model memmachine_pipe.<LLM_MODEL_NAME>: created as 'MemMachine + <LLM_MODEL_NAME>'
 model memmachine_pipe.<LLM_MODEL_NAME>--no-memory: created as '<LLM_MODEL_NAME> (no memory)'
+model memmachine_pipe.<LLM_MODEL_NAME>--steps: created as 'MemMachine + <LLM_MODEL_NAME> (step by step)'
+model memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps: created as '<LLM_MODEL_NAME> (no memory, step by step)'
 booth account visitor@demo.local: created
 account settings of staff@demo.local: release notes off, personal system prompt empty, new chats temporary
 account settings of visitor@demo.local: release notes off, personal system prompt empty, new chats temporary

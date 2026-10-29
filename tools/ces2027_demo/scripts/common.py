@@ -17,6 +17,7 @@ PIPE_FILE = DEMO_DIR / "pipe" / "memmachine_pipe.py"
 ASSETS_DIR = DEMO_DIR / "assets"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
 NO_MEMORY_SUFFIX = "--no-memory"  # the Pipe's id suffix for the right-hand model (pipe/memmachine_pipe.py)
+STEPS_SUFFIX = "--steps"  # the Pipe's id suffix for the step-by-step form of either model
 
 
 def pipe_model_id(env: dict[str, str]) -> str:
@@ -42,6 +43,17 @@ def no_memory_model_id(env: dict[str, str]) -> str:
 def no_memory_model_name(env: dict[str, str]) -> str:
     """Display name of the right (no-memory) model."""
     return f"{env['LLM_MODEL_NAME']} (no memory)"
+
+
+def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
+    """The four models the booth sees, as (id, display name, avatar file in ../assets): the two above and their
+    step-by-step forms, which show the memory search, the prompt and the LLM call before the answer."""
+    return [
+        (pipe_model_id(env), pipe_model_name(env), "memmachine.png"),
+        (no_memory_model_id(env), no_memory_model_name(env), "no_memory.png"),
+        (pipe_model_id(env) + STEPS_SUFFIX, f"{pipe_model_name(env)} (step by step)", "memmachine.png"),
+        (no_memory_model_id(env) + STEPS_SUFFIX, f"{env['LLM_MODEL_NAME']} (no memory, step by step)", "no_memory.png"),
+    ]
 
 
 def load_env(path: Path = ENV_FILE) -> dict[str, str]:
@@ -141,14 +153,14 @@ class OpenWebUI:
         self.token = user["token"]
         return user
 
-    def get_valves(self, function_id: str = PIPE_ID) -> dict:
-        """A function's effective valves: the defaults from its Valves class, overridden by what is stored."""
-        spec = self.call("GET", f"/api/v1/functions/id/{function_id}/valves/spec") or {}
+    def get_valves(self) -> dict:
+        """The Pipe's effective valves: the defaults from its Valves class, overridden by what is stored."""
+        spec = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves/spec") or {}
         defaults = {name: field.get("default") for name, field in spec.get("properties", {}).items()}
-        stored = self.call("GET", f"/api/v1/functions/id/{function_id}/valves") or {}
+        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
         return {**defaults, **stored}
 
-    def set_valves(self, changes: dict, function_id: str = PIPE_ID) -> None:
-        """Update some valves of a function. The API replaces the whole stored set, so merge with it to keep values set in the admin UI."""
-        stored = self.call("GET", f"/api/v1/functions/id/{function_id}/valves") or {}
-        self.call("POST", f"/api/v1/functions/id/{function_id}/valves/update", {**stored, **changes})
+    def set_valves(self, changes: dict) -> None:
+        """Update some Pipe valves. The API replaces the whole stored set, so merge with it to keep values set in the admin UI."""
+        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**stored, **changes})

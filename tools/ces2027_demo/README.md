@@ -43,7 +43,7 @@ python3 ../scripts/load_scenario.py ../scenario/script.sample.json
 python3 ../scripts/demo_check.py ../scenario/script.sample.json
 ```
 
-브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 날짜 줄과 본문 한 줄)과 답이, 오른쪽에 회색 한 줄 "No memory used"와 기억 없는 답이 나온다. 두 모델 모두 Pipe를 거치며 같은 시스템 프롬프트로 같은 LLM을 부르고, 차이는 기억 블록뿐이다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다. `.env`의 `TEMPORARY_CHAT=false`로 두면 질문이 보통 채팅으로 저장되고 스태프가 지운다. 화면은 와이드 모드로 열려 두 카드가 화면 전체를 쓴다.
+브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 날짜 줄과 본문 한 줄)과 답이, 오른쪽에 회색 한 줄 "No memory used"와 기억 없는 답이 나온다. 두 모델 모두 Pipe를 거치며 같은 시스템 프롬프트로 같은 LLM을 부르고, 차이는 기억 블록뿐이다. 모델 선택에서 "(step by step)" 쌍으로 바꾸면 같은 두 모델이 "Step 1 of 3: Searching memory", "Step 2 of 3: Composing the prompt"(LLM에 보낸 전달문이 접힌 블록으로 붙는다), "Step 3 of 3: Asking <모델>"을 2초 간격으로 보여 준 뒤 답한다. 간격은 Valve `STEP_DELAY_MS`다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다. `.env`의 `TEMPORARY_CHAT=false`로 두면 질문이 보통 채팅으로 저장되고 스태프가 지운다. 화면은 와이드 모드로 열려 두 카드가 화면 전체를 쓴다.
 
 적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. `scripts/demo_reset.sh --wipe local scenario/script.sample.json`은 지우고 다시 올리고 세팅, 적재, 검사까지 한 번에 한다(아래 "문제가 생겼을 때"). MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
@@ -98,9 +98,10 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 첫 적재(`load_scenario.py`)가 성공한다.
 - [ ] `demo_check.py`가 전부 통과한다.
 - [ ] 비교 화면에서 왼쪽에 목록과 답, 오른쪽에 기억 없는 답이 나오고, 답이 수 초 안에 시작한다. 걸린 시간을 적는다.
-- [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 두 모델만 쓴다. 부스 계정에는 그 두 모델만 보인다(설계 5.3절).
-- [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 두 모델만 있다.
-- [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`가 보이고(`.env`의 `BRAND_NAME`을 바꿨으면 "MemMachine" 자리에 그 이름), 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
+- [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 그 네 모델만 쓴다. 부스 계정에는 그 네 모델만 보인다(설계 5.3절).
+- [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 네 모델만 있다.
+- [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`, 그리고 둘의 `(step by step)` 형태가 보이고(`.env`의 `BRAND_NAME`을 바꿨으면 "MemMachine" 자리에 그 이름), 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
+- [ ] 단계별 쌍으로 바꿔 질문하면 왼쪽 카드에 "Step 1 of 3" 제목이 바로 나오고, 2초마다 기억 목록, "Step 2 of 3"과 접힌 "Prompt sent to the LLM", "Step 3 of 3"이 이어진 뒤 답이 흐른다. 오른쪽도 같은 박자로 "Skipped. This model has no memory."를 지나 답한다. 접힌 블록을 펼치면 전달문 전체가 보인다. 간격이 길거나 짧으면 Valve `STEP_DELAY_MS`를 바꾼다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).
 - [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 `.env`의 `BASE_SYSTEM_PROMPT`를 손보고 세팅 스크립트를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.

@@ -175,9 +175,9 @@ flowchart TB
 
 | 스크립트 | 로그인 | 하는 일 |
 |---|---|---|
-| `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 두 모델 항목(표시 이름, 아바타, 시스템 프롬프트, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한), 부스 계정 생성, 두 계정의 조용한 설정 |
+| `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 네 모델 항목(즉시 둘과 단계별 둘. 표시 이름, 아바타, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한)과 옛 `LLM_MODEL_NAME`의 항목 제거, 부스 계정 생성, 두 계정의 조용한 설정 |
 | `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 일곱 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
-| `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 두 모델 보임, 채팅 모델이 서빙됨, 질문 넷의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, Pipe 모델에서 답 하나 |
+| `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 네 모델 보임, 채팅 모델이 서빙됨, 질문 넷의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, 기억 모델과 기억 없는 모델과 단계별 모델에서 답 하나씩 |
 | `demo_reset.sh` | 위 세 스크립트를 부른다 | 이 서버의 컨테이너를 다시 만들고(`--wipe`면 볼륨도 지운 뒤) healthcheck를 기다리고, 앱 서버면 세팅, 적재, 검사를 이어서 실행 |
 | `demo_monitor.py` | 없음 | 서버 여섯 곳과 이 서버의 컨테이너 상태를 몇 초마다 표시, 바뀐 줄을 로그에 기록, 실행 중인 unhealthy 컨테이너 재시작 |
 
@@ -316,6 +316,9 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | `SHOW_NO_MEMORY_NOTE` | `true` | 오른쪽 답 위의 회색 한 줄 "No memory used" |
 | `MAX_TOKENS` | `300` | 두 모델 공통의 답 길이 상한. 0이면 없음 |
 | `BASE_SYSTEM_PROMPT` | 짧은 지시문 | 세팅 도구가 `.env`의 문장에 "Today is `<DEMO_DATE>`." 줄을 붙인다. 오른쪽 모델에도 같은 문장이 들어간다 |
+| `STEP_DELAY_MS` | `2000` | 단계별 모델의 단계 간격. 답은 세 간격 뒤에 시작한다 |
+| `SHOW_PROMPT` | `true` | 단계별 모델이 LLM에 보낸 전달문을 접힌 블록으로 보여 줄지 |
+| `PACE_NO_MEMORY` | `true` | 단계별 모델에서 기억 없는 쪽도 같은 박자로 세 단계를 밟을지 |
 | `REQUEST_TIMEOUT` | `60` | 초 |
 
 실패는 일부러 눈에 띄게 한다. MemMachine 호출이 실패하면 "Memory search failed: ..." 한 줄을 내고 멈추고, LLM 호출이 실패하면 "LLM call failed: ..."를 답 자리에 낸다. 제목 생성 같은 보조 작업은 설정에서 모두 꺼 두지만, 혹시 호출돼도 검색 없이 LLM에 그대로 넘긴다.
@@ -326,7 +329,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 묶음 | 설정 | 목적 |
 |---|---|---|
-| 모델 연결 | `ENABLE_OPENAI_API=false`, `DEFAULT_MODELS=memmachine_pipe.<모델>,memmachine_pipe.<모델>--no-memory` | 두 모델 모두 Pipe가 제공하고 Pipe가 vLLM을 부른다. 새 채팅은 두 모델이 비교 모드로 선택 |
+| 모델 연결 | `ENABLE_OPENAI_API=false`, `DEFAULT_MODELS=memmachine_pipe.<모델>,memmachine_pipe.<모델>--no-memory` | 네 모델 모두 Pipe가 제공하고 Pipe가 vLLM을 부른다. 새 채팅은 즉시 답하는 두 모델이 비교 모드로 선택되고, 과정을 보여 줄 때는 모델 선택에서 "(step by step)" 쌍으로 바꾼다 |
 | 과거 맥락 차단 | Memory, Notes, Folders, Calendar, Automations, 문맥 압축 끄기. 두 모델 항목에 `builtin_tools=false`, `file_upload=false` | 오른쪽이 Open WebUI 자체 경로로 과거 채팅을 읽지 못하게 한다 |
 | 보조 LLM 호출 없음 | 제목, 태그, 후속 질문, 질의 재작성 생성 끄기 | 켜 두면 제목 생성이 Pipe로 들어와 검색을 한 번 더 한다 |
 | 화면 정리 | 추천 프롬프트 비우기, 릴리스 노트 창 끄기, 개인 시스템 프롬프트 비우기, 새 채팅은 임시 채팅(`ui.temporaryChatByDefault`, `.env`의 `TEMPORARY_CHAT`으로 끌 수 있다), 와이드 모드(`ui.widescreenMode`), 두 모델의 아바타(MemMachine 로고 마크와 사선을 그은 같은 마크) | 관객의 질문은 저장되지 않고 사이드바는 적재한 과거 채팅 그대로다 |

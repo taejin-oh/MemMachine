@@ -5,20 +5,21 @@
 Prints one line per check and exits with a non-zero code if any failed:
   1. the LLM server(s), the embedding server, MemMachine, Open WebUI and the
      two database ports answer,
-  2. the booth account sees the chat model and its MemMachine counterpart in Open WebUI,
+  2. the booth account sees the four demo models in Open WebUI,
   3. for every question in the script, the expected phrases are among the
      top-k memories that MemMachine retrieves from the loaded project,
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
-  5. one question through each model: the memory model answers below its
-     memory list, the no-memory model below its note (when the valve shows one).
+  5. one question through the models: the memory model answers below its
+     memory list, the no-memory model below its note (when the valve shows one),
+     the step-by-step memory model below its third step.
 """
 
 import json
 import sys
 from pathlib import Path
 
-from common import (OpenWebUI, http_json, llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id,
-                    openwebui_url, pipe_model_id, port_open, script_host)
+from common import (STEPS_SUFFIX, OpenWebUI, demo_models, http_json, llm_urls_for_scripts, load_env, memmachine_url,
+                    no_memory_model_id, openwebui_url, pipe_model_id, port_open, script_host)
 
 failures = 0
 
@@ -76,9 +77,11 @@ def main() -> None:
     booth = OpenWebUI(openwebui_url(env))
     check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
     left, right = pipe_model_id(env), no_memory_model_id(env)
-    check("both demo models visible to the booth account",
-          lambda: f"{left}, {right}" if {left, right} <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
-          else raise_error(f"missing: {left} or {right}"))
+    expected_ids = {model_id for model_id, _, _ in demo_models(env)}
+    check("the four demo models visible to the booth account",
+          lambda: ", ".join(sorted(expected_ids))
+          if expected_ids <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
+          else raise_error(f"missing: {sorted(expected_ids - {m['id'] for m in booth.call('GET', '/api/models')['data']})}"))
     report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
 
     # 3. expected memories per question, in the project the Pipe searches
@@ -102,6 +105,8 @@ def main() -> None:
         check("answer from the Pipe model", lambda: model_answer(ui, left, question, "**Memories retrieved"))
     note = "**No memory used.**" if valves.get("SHOW_NO_MEMORY_NOTE", True) else None  # .get: an older installed Pipe has no such valve
     check("answer from the no-memory model", lambda: model_answer(ui, right, question, note))
+    if not record_mode:
+        check("answer from the step-by-step Pipe model", lambda: model_answer(ui, left + STEPS_SUFFIX, question, "Step 3 of 3"))
     finish()
 
 

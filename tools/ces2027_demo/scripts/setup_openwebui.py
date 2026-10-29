@@ -11,10 +11,12 @@ Steps:
   2. install or update the Pipe function and switch it on
   3. write the Pipe valves that come from .env (shared system prompt, LLM
      address, brand name shown on the memory side)
-  4. create or update the two model entries, both served by the Pipe: display
-     names, avatars from ../assets, the capability flags that stop Open WebUI
-     from feeding past chats, notes or files to either model, and read access
-     for every account (the system prompt comes from the Pipe valve)
+  4. create or update the four model entries, all served by the Pipe (with and
+     without memory, at once and step by step): display names, avatars from
+     ../assets, the capability flags that stop Open WebUI from feeding past
+     chats, notes or files to any of them, and read access for every account
+     (the system prompt comes from the Pipe valve); entries of this Pipe that an
+     earlier .env produced (another LLM_MODEL_NAME) are removed
   5. create the booth account if it is missing: a regular user, so that the
      USER_PERMISSIONS_* variables in docker-compose.yml apply to it and it
      sees only these two models (Open WebUI never restricts an admin)
@@ -28,8 +30,7 @@ Steps:
 import base64
 from datetime import date
 
-from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, load_env, no_memory_model_id,
-                    no_memory_model_name, openwebui_url, pipe_model_id, pipe_model_name)
+from common import ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, demo_models, load_env, openwebui_url
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -52,9 +53,11 @@ def main() -> None:
     install_pipe(ui, brand, {"BASE_SYSTEM_PROMPT": shared_system_prompt(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"],
                              "BRAND_NAME": brand})
 
-    # Both entries are Pipe models; the Pipe gives each its system prompt, so no params here.
-    upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png")
-    upsert_model(ui, no_memory_model_id(env), no_memory_model_name(env), "no_memory.png")
+    # All entries are Pipe models; the Pipe gives each its system prompt, so no params here.
+    models = demo_models(env)
+    for model_id, name, avatar in models:
+        upsert_model(ui, model_id, name, avatar)
+    remove_stale_models(ui, {model_id for model_id, _, _ in models})
     booth = ensure_booth_account(ui, env)
     temporary = env.get("TEMPORARY_CHAT", "true") == "true"
     quiet_account(ui, env["ADMIN_EMAIL"], temporary)
@@ -155,6 +158,15 @@ def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str) -> None:
         ui.call("POST", "/api/v1/models/create", form)
         print(f"model {model_id}: created as '{name}'")
     ui.call("POST", "/api/v1/models/model/access/update", {"id": model_id, "access_grants": PUBLIC_READ})
+
+
+def remove_stale_models(ui: OpenWebUI, keep: set[str]) -> None:
+    """Delete entries of this Pipe that the current .env does not produce, e.g. from an earlier LLM_MODEL_NAME;
+    they would stay in the staff account's model list under the old name."""
+    for entry in ui.call("GET", "/api/v1/models/all"):
+        if entry["id"].startswith(PIPE_ID + ".") and entry["id"] not in keep:
+            ui.call("POST", "/api/v1/models/model/delete", {"id": entry["id"]})
+            print(f"model {entry['id']}: removed (not made from the current .env)")
 
 
 if __name__ == "__main__":
