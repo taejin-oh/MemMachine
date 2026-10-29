@@ -1,0 +1,484 @@
+"""
+title: MemMachine steps
+version: 0.1.0
+description: Trial of the step-by-step presentation (status, timeline, thinking). Installed by scripts/install_steps_variants.py; not for the booth yet.
+"""
+
+# Trial variants of pipe/memmachine_pipe.py that show the work before the
+# answer: searching memory, composing the prompt, asking the LLM. The valve
+# STYLE picks how the steps are drawn; the install script puts this file under
+# three function ids, one per style, so that the styles can be compared side by
+# side in the model comparison view. The chosen style will move into the main
+# Pipe behind a valve and this file goes away.
+#
+#   status    the steps are shown only in Open WebUI's status line above the
+#             answer (spinner while a step runs); the body is as in the main Pipe
+#   timeline  the steps are written into the body one after another and stay
+#             there, with the status line mirroring the current step
+#   thinking  the steps stream inside a <think> block, which Open WebUI draws as
+#             its collapsible "Thinking..." block and closes with the duration
+#
+# Every style pauses STEP_DELAY_MS between steps so that each one is visible,
+# shows the exact prompt sent to the LLM in a collapsed block (SHOW_PROMPT),
+# and, with PACE_NO_MEMORY on, lets the no-memory model walk the same three
+# steps ("Memory search: skipped") so that both cards move in the same rhythm.
+
+# Open WebUI Pipe function for the CES 2027 demo (design section 5.2).
+#
+# Open WebUI loads this file as a "manifold" pipe: pipes() lists two models per
+# chat model that the LLM server offers ("<BRAND_NAME> + <model>" and
+# "<model> (no memory)", id suffix NO_MEMORY_SUFFIX), and pipe() handles one
+# request. For every question the memory model
+#   1. searches MemMachine for the top-k episodes,
+#   2. streams them into the chat as a numbered list inside a NOTE callout
+#      (Open WebUI's built-in "> [!NOTE]" markup: a blue bar; raw HTML and
+#      colours are escaped by Open WebUI, so this is the one coloured block
+#      available), followed by a rule,
+#   3. puts the same episodes into the system prompt and streams the LLM's
+#      answer below the rule.
+# The no-memory model skips the search, writes a one-line grey note in place of
+# the list (valve SHOW_NO_MEMORY_NOTE) and calls the same LLM with the same base
+# system prompt, so the only difference between the two answers is the memory
+# block. Both answers are capped by the valve MAX_TOKENS.
+#
+# Only packages that ship with the Open WebUI image are used (httpx, pydantic)
+# plus Open WebUI's own chat table, which gives each memory its session title.
+# scripts/setup_openwebui.py installs this file through the admin API.
+
+import asyncio
+import json
+import time
+from datetime import datetime
+from typing import AsyncGenerator, Awaitable, Callable
+
+import httpx
+from open_webui.models.chats import Chats
+from pydantic import BaseModel, Field
+
+# First line of the memory block in the system prompt. The development mock
+# looks for this sentence to tell "with memory" requests apart.
+MEMORY_BLOCK_HEADER = (
+    "The following are memories retrieved from the user's past conversations. "
+    "Use them when they are relevant."
+)
+
+# Appended to the LLM model id to form the no-memory model; scripts/common.py uses the same suffix.
+NO_MEMORY_SUFFIX = "--no-memory"
+# Shown above the no-memory answer as the counterpart of the memory list: a plain
+# (grey) blockquote, so the coloured NOTE block stays unique to the memory side.
+# {brand} is the valve BRAND_NAME.
+NO_MEMORY_NOTE = "> **No memory used.** This model answers without {brand}.\n\n"
+
+EventEmitter = Callable[[dict], Awaitable[None]]
+
+
+class Pipe:
+    class Valves(BaseModel):
+        # Editable in the admin UI under Functions > <BRAND_NAME> > Valves.
+        BRAND_NAME: str = Field(
+            default="MemMachine",
+            description="Name of the memory side as the screen shows it: model names from pipes() and the "
+            "no-memory note. Set by setup_openwebui.py from .env.",
+        )
+        MEMMACHINE_URL: str = Field(
+            default="http://memmachine:8080",
+            description="MemMachine server. Same compose network, so the service name works.",
+        )
+        LLM_BASE_URLS: str = Field(
+            default="http://llm:8000/v1",
+            description="OpenAI-compatible LLM servers, separated by ';'. Set by setup_openwebui.py from .env.",
+        )
+        PROJECT_ID: str = Field(
+            default="universal",
+            description="MemMachine project to search. load_scenario.py writes a fresh id here on every load.",
+        )
+        LLM_API_KEY: str = Field(default="dummy", description="Sent as a Bearer token; vLLM ignores it.")
+        TOP_K: int = Field(default=5, description="How many memories to retrieve and show.")
+        STYLE: str = Field(
+            default="timeline",
+            description="How the steps are shown: status (status line only), timeline (lines in the body), "
+            "thinking (inside a Thinking block). Set by install_steps_variants.py.",
+        )
+        STEP_DELAY_MS: int = Field(default=700, description="Pause before each step so that it can be seen. 0 runs at full speed.")
+        SHOW_PROMPT: bool = Field(default=True, description="Show the exact prompt sent to the LLM in a collapsed block.")
+        PACE_NO_MEMORY: bool = Field(
+            default=True,
+            description="The no-memory model walks the same three steps (with 'Memory search: skipped') so that both "
+            "cards move in the same rhythm. Off: it answers at once with the one-line note, as in the main Pipe.",
+        )
+        RECORD_MEMORY: bool = Field(
+            default=False,
+            description="Store every turn in MemMachine (record mode, design appendix D). Keep OFF during the demo.",
+        )
+        SHOW_SESSION_INFO: bool = Field(default=True, description="Show the date and session title of each memory.")
+        MEMORY_PREVIEW_CHARS: int = Field(
+            default=60,
+            description="Longest memory text shown in the list, cut at a word and ended with '...'; one line in the "
+            "comparison view in wide screen mode at 1600px (about 40 without wide screen mode). 0 shows the full text. The LLM always gets the full text.",
+        )
+        SHOW_NO_MEMORY_NOTE: bool = Field(
+            default=True,
+            description="Start the no-memory model's answer with a one-line note that no memory was used, "
+            "as the counterpart of the memory list.",
+        )
+        BASE_SYSTEM_PROMPT: str = Field(
+            default="You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from "
+            "what you know. Only when something essential is missing, say so in one sentence and ask one question.",
+            description="Set by setup_openwebui.py from .env; both models get the same text.",
+        )
+        MAX_TOKENS: int = Field(
+            default=300,
+            description="Longest answer in tokens for both models; BASE_SYSTEM_PROMPT asks for a short answer and "
+            "this is the safety net behind it. 0 sends no limit.",
+        )
+        REQUEST_TIMEOUT: int = Field(default=60, description="Seconds allowed for a MemMachine or LLM response.")
+
+    def __init__(self):
+        self.valves = self.Valves()
+        self._model_urls: dict[str, str] = {}  # model id -> LLM base URL, filled by pipes()
+
+    # --- model list -----------------------------------------------------------
+
+    async def pipes(self) -> list[dict]:
+        """Two entries (with and without memory) per chat model on each LLM server; Open WebUI calls this when it refreshes its model list."""
+        entries = []
+        async with self._client() as client:
+            for index, base_url in enumerate(self._base_urls()):
+                try:
+                    response = await client.get(f"{base_url}/models", headers=self._llm_headers())
+                    response.raise_for_status()
+                    for model in response.json().get("data", []):
+                        self._model_urls[model["id"]] = base_url
+                        # setup_openwebui.py gives the two demo models their final display names.
+                        style = self.valves.STYLE
+                        entries.append({"id": model["id"], "name": f"[{style}] {self.valves.BRAND_NAME} + {model['id']}"})
+                        entries.append({"id": model["id"] + NO_MEMORY_SUFFIX, "name": f"[{style}] {model['id']} (no memory)"})
+                except Exception as error:
+                    # Show the problem in the model dropdown instead of hiding it.
+                    entries.append({"id": f"error-{index}", "name": f"{self.valves.BRAND_NAME}: cannot reach {base_url} ({error})"})
+        return entries
+
+    # --- one request ----------------------------------------------------------
+
+    async def pipe(
+        self,
+        body: dict,
+        __event_emitter__: EventEmitter | None = None,
+        __task__: str | None = None,
+        __chat_id__: str | None = None,
+    ):
+        # Open WebUI names the model "<function id>.<model id>"; the no-memory
+        # model is the LLM model id plus NO_MEMORY_SUFFIX.
+        model_id = body["model"].split(".", 1)[-1]
+        with_memory = not model_id.endswith(NO_MEMORY_SUFFIX)
+        llm_model = model_id.removesuffix(NO_MEMORY_SUFFIX)
+        if llm_model not in self._model_urls:
+            await self.pipes()  # fills the map again after an Open WebUI restart
+        base_url = self._model_urls.get(llm_model)
+        if base_url is None:
+            return (f"MemMachine pipe: {llm_model} is not offered by {self.valves.LLM_BASE_URLS} "
+                    "(server unreachable or model name changed)")
+
+        if __task__:
+            # Background tasks (title generation and the like) are switched off
+            # in the demo configuration. If one arrives anyway, answer without
+            # touching memory so the task cannot leak into the comparison.
+            return await self._complete(base_url, llm_model, body["messages"])
+
+        return self._answer(base_url, llm_model, body["messages"], with_memory, __event_emitter__, __chat_id__)
+
+    async def _answer(
+        self,
+        base_url: str,
+        model_id: str,
+        messages: list[dict],
+        with_memory: bool,
+        emit: EventEmitter | None,
+        chat_id: str | None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream the three steps, the memory list (or the no-memory note), a rule, then the LLM answer.
+
+        Open WebUI turns each yielded string into a chunk.
+        """
+        question = last_user_text(messages)
+        started = time.monotonic()
+        steps = Steps(self.valves.STYLE, emit, self.valves.STEP_DELAY_MS / 1000)
+        paced = with_memory or self.valves.PACE_NO_MEMORY
+        # In the thinking style the memory list and the prompt block follow the closed block.
+        deferred: list[str] = []
+        inline = self.valves.STYLE != "thinking"
+
+        memories: list[dict] = []
+        if with_memory:
+            async for chunk in steps.start(1, f'Searching memory for "{preview(question, 60)}"'):
+                yield chunk
+            search_started = time.monotonic()
+            try:
+                memories = await self._search(question)
+            except Exception as error:
+                # Fail loudly: answering without memory would make both sides look alike.
+                await send_status(emit, "Memory search failed", done=True)
+                yield f"Memory search failed: {error}"
+                return
+            async for chunk in steps.finish(f"{len(memories)} memories found in {time.monotonic() - search_started:.1f} s"):
+                yield chunk
+            memory_list = render_memory_list(memories, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS)
+            if inline:
+                yield memory_list
+            else:
+                deferred.append(memory_list)
+        elif paced:
+            async for chunk in steps.start(1, "Searching memory"):
+                yield chunk
+            async for chunk in steps.finish("Skipped. This model has no memory."):
+                yield chunk
+        elif self.valves.SHOW_NO_MEMORY_NOTE:
+            yield NO_MEMORY_NOTE.format(brand=self.valves.BRAND_NAME)
+
+        prompt = self.valves.BASE_SYSTEM_PROMPT
+        if memories:
+            prompt += "\n\n" + MEMORY_BLOCK_HEADER + "\n" + "\n".join(memory_prompt_line(m) for m in memories)
+        llm_messages = [{"role": "system", "content": prompt}] + [m for m in messages if m.get("role") != "system"]
+
+        if paced:
+            parts = "the system prompt, " + (f"{len(memories)} memories" if memories else "no memories") + " and your question"
+            async for chunk in steps.start(2, f"Composing the prompt from {parts}"):
+                yield chunk
+            async for chunk in steps.finish(""):
+                yield chunk
+            if self.valves.SHOW_PROMPT:
+                if inline:
+                    yield render_prompt(prompt, question)
+                else:
+                    deferred.append(render_prompt(prompt, question))
+            async for chunk in steps.start(3, f"Asking {model_id}"):
+                yield chunk
+            async for chunk in steps.close():
+                yield chunk
+            for block in deferred:
+                yield block
+        yield "---\n\n"
+
+        answer_parts = []
+        try:
+            async for token in self._stream(base_url, model_id, llm_messages):
+                answer_parts.append(token)
+                yield token
+        except Exception as error:
+            # Same rule as for memory: a visible error beats a card that stops silently.
+            yield f"\n\nLLM call failed: {error}"
+            return
+        await send_status(emit, f"Answered in {time.monotonic() - started:.1f} s", done=True)
+
+        if with_memory and self.valves.RECORD_MEMORY:
+            try:
+                await self._store(question, "".join(answer_parts), chat_id)
+            except Exception as error:
+                yield f"\n\nMemory write failed: {error}"
+
+    # --- MemMachine -----------------------------------------------------------
+
+    async def _search(self, query: str) -> list[dict]:
+        """Top-k episodes for the query, each with the date and session title filled in."""
+        payload = {"project_id": self.valves.PROJECT_ID, "query": query, "top_k": self.valves.TOP_K}
+        async with self._client() as client:
+            response = await client.post(f"{self.valves.MEMMACHINE_URL}/api/v2/memories/search", json=payload)
+        response.raise_for_status()  # a project with nothing stored yet answers 200 with no episodes
+
+        content = response.json().get("content") or {}
+        episodes = ((content.get("episodic_memory") or {}).get("long_term_memory") or {}).get("episodes") or []
+
+        titles: dict[str, str | None] = {}  # chat id -> title, looked up once per chat
+        memories = []
+        for episode in episodes:
+            session_id = (episode.get("metadata") or {}).get("session_id")
+            if session_id and session_id not in titles:
+                chat = await Chats.get_chat_by_id(session_id)
+                titles[session_id] = chat.title if chat else None
+            memories.append(
+                {
+                    "text": episode.get("content", ""),
+                    "role": episode.get("producer_role") or episode.get("producer_id") or "user",
+                    "date": format_date(episode.get("created_at")),
+                    "title": titles.get(session_id),
+                }
+            )
+        return memories
+
+    async def _store(self, question: str, answer: str, chat_id: str | None) -> None:
+        """Record mode: save the user turn and the answer as two episodes of this chat."""
+        now = datetime.now().astimezone().isoformat()
+        metadata = {"session_id": chat_id} if chat_id else {}
+        payload = {
+            "project_id": self.valves.PROJECT_ID,
+            "messages": [
+                {"content": question, "producer": "user", "role": "user", "timestamp": now, "metadata": metadata},
+                {"content": answer, "producer": "assistant", "role": "assistant", "timestamp": now, "metadata": metadata},
+            ],
+        }
+        async with self._client() as client:
+            response = await client.post(f"{self.valves.MEMMACHINE_URL}/api/v2/memories", json=payload)
+        response.raise_for_status()
+
+    # --- LLM server -----------------------------------------------------------
+
+    async def _stream(self, base_url: str, model_id: str, messages: list[dict]) -> AsyncGenerator[str, None]:
+        """Yield the content tokens of a streaming chat completion."""
+        payload = {"model": model_id, "messages": messages, "stream": True}
+        if self.valves.MAX_TOKENS > 0:
+            payload["max_tokens"] = self.valves.MAX_TOKENS
+        async with self._client() as client:
+            async with client.stream(
+                "POST", f"{base_url}/chat/completions", json=payload, headers=self._llm_headers()
+            ) as response:
+                if response.status_code >= 400:
+                    await response.aread()  # the body holds vLLM's reason, e.g. context length
+                    raise RuntimeError(f"HTTP {response.status_code} from {base_url}: {response.text[:300]}")
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    choices = json.loads(data).get("choices") or []
+                    if choices and choices[0].get("delta", {}).get("content"):
+                        yield choices[0]["delta"]["content"]
+
+    async def _complete(self, base_url: str, model_id: str, messages: list[dict]) -> str:
+        """Non-streaming chat completion; only used for background tasks."""
+        payload = {"model": model_id, "messages": messages, "stream": False}
+        async with self._client() as client:
+            response = await client.post(f"{base_url}/chat/completions", json=payload, headers=self._llm_headers())
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
+    def _client(self) -> httpx.AsyncClient:
+        """HTTP client with a short connect timeout: Open WebUI calls pipes() on every model-list refresh,
+        so an unreachable LLM server must fail in seconds, not in REQUEST_TIMEOUT."""
+        return httpx.AsyncClient(timeout=httpx.Timeout(self.valves.REQUEST_TIMEOUT, connect=5))
+
+    def _base_urls(self) -> list[str]:
+        return [url.strip().rstrip("/") for url in self.valves.LLM_BASE_URLS.split(";") if url.strip()]
+
+    def _llm_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.valves.LLM_API_KEY}"}
+
+
+# --- step presentation ------------------------------------------------------------
+
+
+class Steps:
+    """Draws the three steps in the chosen style. start() opens a step, finish() adds its result, close() ends the block."""
+
+    TOTAL = 3
+
+    def __init__(self, style: str, emit: EventEmitter | None, delay: float):
+        self.style = style
+        self.emit = emit
+        self.delay = delay
+        self.opened = False  # thinking: whether the <think> block has been started
+
+    async def start(self, number: int, text: str) -> AsyncGenerator[str, None]:
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        await send_status(self.emit, f"Step {number} of {self.TOTAL}: {text}")
+        if self.style == "timeline":
+            yield f"**Step {number} of {self.TOTAL}: {text}**  \n"
+        elif self.style == "thinking":
+            if not self.opened:
+                yield "<think>\n"
+                self.opened = True
+            yield f"Step {number} of {self.TOTAL}: {text}\n"
+
+    async def finish(self, result: str) -> AsyncGenerator[str, None]:
+        if result:
+            await send_status(self.emit, result, done=True)
+        if self.style == "timeline":
+            yield (f"{result}\n\n" if result else "\n")
+        elif self.style == "thinking" and result:
+            yield f"{result}\n"
+
+    async def close(self) -> AsyncGenerator[str, None]:
+        if self.style == "timeline":
+            yield "\n"
+        elif self.style == "thinking" and self.opened:
+            yield "</think>\n\n"
+
+
+def render_prompt(prompt: str, question: str) -> str:
+    """The exact text the LLM receives, in a collapsed block: system prompt (with the memories) and the question."""
+    return (
+        "<details>\n<summary>Prompt sent to the LLM</summary>\n\n"
+        f"```text\n[system]\n{prompt}\n\n[user]\n{question}\n```\n\n</details>\n\n"
+    )
+
+
+# --- formatting helpers ---------------------------------------------------------
+
+
+def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int) -> str:
+    """The block shown above the answer: a NOTE callout with the memories. No scores on purpose."""
+    lines = [f"**Memories retrieved ({len(memories)})**", ""]
+    if not memories:
+        lines.append("_No memories found._")
+    for number, memory in enumerate(memories, start=1):
+        label = memory_label(memory) if show_session_info else ""
+        lines.append(f"{number}. {label}".rstrip())
+        lines.append(f'   "{preview(memory["text"], preview_chars)}"')
+    callout = ["> [!NOTE]"] + [f"> {line}".rstrip() for line in lines]
+    return "\n".join(callout) + "\n\n"
+
+
+def preview(text: str, max_chars: int) -> str:
+    """The text on one line, cut at a word boundary to max_chars and ended with '...'. 0 means no cut."""
+    text = " ".join(text.split())  # a line break inside the callout would end the blockquote
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0] + "..."
+
+
+def memory_label(memory: dict) -> str:
+    """'**Nov 3, 2026** (Session title)'; the title is left out when unknown."""
+    label = f"**{memory['date']}**" if memory["date"] else ""
+    if memory["title"]:
+        label += f" ({memory['title']})"
+    return label.strip()
+
+
+def memory_prompt_line(memory: dict) -> str:
+    """One memory as the LLM sees it: '[Nov 3, 2026 | Session title] user: ...'."""
+    where = " | ".join(part for part in (memory["date"], memory["title"]) if part)
+    return f"[{where}] {memory['role']}: {memory['text']}"
+
+
+def format_date(created_at: str | None) -> str:
+    """ISO timestamp from MemMachine to 'Nov 3, 2026' in the container's time zone (TZ in .env).
+
+    MemMachine stores UTC; converting keeps the list consistent with the chat
+    timestamps the browser shows in the display device's local time.
+    """
+    if not created_at:
+        return ""
+    try:
+        moment = datetime.fromisoformat(created_at).astimezone()
+    except ValueError:
+        return ""
+    return f"{moment.strftime('%b')} {moment.day}, {moment.year}"
+
+
+def last_user_text(messages: list[dict]) -> str:
+    """Text of the latest user message; Open WebUI may send content as a list of parts."""
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = message.get("content", "")
+        if isinstance(content, list):
+            return " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return content if isinstance(content, str) else ""
+    return ""
+
+
+async def send_status(emit: EventEmitter | None, description: str, done: bool = False) -> None:
+    """Show a status line above the answer ("Step 1 of 3: Searching memory ...")."""
+    if emit:
+        await emit({"type": "status", "data": {"description": description, "done": done}})
