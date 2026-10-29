@@ -9,7 +9,8 @@ Every step creates or updates, so running it twice is harmless.
 Steps:
   1. sign in as the staff account (created on the first run; first user = admin)
   2. install or update the Pipe function and switch it on
-  3. write the Pipe valves that come from .env (shared system prompt, LLM address)
+  3. write the Pipe valves that come from .env (shared system prompt, LLM
+     address, brand name shown on the memory side)
   4. create or update the two model entries, both served by the Pipe: display
      names, avatars from ../assets, the capability flags that stop Open WebUI
      from feeding past chats, notes or files to either model, and read access
@@ -26,8 +27,8 @@ Steps:
 
 import base64
 
-from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, load_env, no_memory_model_id, no_memory_model_name,
-                    openwebui_url, pipe_model_id, pipe_model_name)
+from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, load_env, no_memory_model_id,
+                    no_memory_model_name, openwebui_url, pipe_model_id, pipe_model_name)
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -46,8 +47,9 @@ def main() -> None:
     if user["role"] != "admin":
         raise SystemExit("this account is not an admin: remove the openwebui_data volume and run again")
 
-    system_prompt = shared_system_prompt(env)
-    install_pipe(ui, {"BASE_SYSTEM_PROMPT": system_prompt, "LLM_BASE_URLS": env["LLM_BASE_URLS"]})
+    brand = brand_name(env)
+    install_pipe(ui, brand, {"BASE_SYSTEM_PROMPT": shared_system_prompt(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"],
+                             "BRAND_NAME": brand})
 
     # Both entries are Pipe models; the Pipe gives each its system prompt, so no params here.
     upsert_model(ui, pipe_model_id(env), pipe_model_name(env), "memmachine.png")
@@ -67,11 +69,11 @@ def shared_system_prompt(env: dict[str, str]) -> str:
     return prompt
 
 
-def install_pipe(ui: OpenWebUI, valves: dict) -> None:
-    """Create or update the Pipe function from the source file, enable it, and set the given valves."""
+def install_pipe(ui: OpenWebUI, name: str, valves: dict) -> None:
+    """Create or update the Pipe function from the source file under the given title, enable it, and set the given valves."""
     form = {
         "id": PIPE_ID,
-        "name": "MemMachine",
+        "name": name,
         "content": PIPE_FILE.read_text(),
         "meta": {"description": "CES 2027 demo: top-k memories from MemMachine, then the answer."},
     }

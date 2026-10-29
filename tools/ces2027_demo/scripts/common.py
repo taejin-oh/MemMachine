@@ -24,9 +24,14 @@ def pipe_model_id(env: dict[str, str]) -> str:
     return f"{PIPE_ID}.{env['LLM_MODEL_NAME']}"
 
 
+def brand_name(env: dict[str, str]) -> str:
+    """Name of the memory side as the screen shows it (BRAND_NAME in .env; ids and file names keep 'memmachine')."""
+    return env.get("BRAND_NAME", "MemMachine")
+
+
 def pipe_model_name(env: dict[str, str]) -> str:
     """Display name of the left (memory) model."""
-    return f"MemMachine + {env['LLM_MODEL_NAME']}"
+    return f"{brand_name(env)} + {env['LLM_MODEL_NAME']}"
 
 
 def no_memory_model_id(env: dict[str, str]) -> str:

@@ -7,7 +7,7 @@ description: Two models per LLM: one shows the top-k memories from MemMachine an
 # Open WebUI Pipe function for the CES 2027 demo (design section 5.2).
 #
 # Open WebUI loads this file as a "manifold" pipe: pipes() lists two models per
-# chat model that the LLM server offers ("MemMachine + <model>" and
+# chat model that the LLM server offers ("<BRAND_NAME> + <model>" and
 # "<model> (no memory)", id suffix NO_MEMORY_SUFFIX), and pipe() handles one
 # request. For every question the memory model
 #   1. searches MemMachine for the top-k episodes,
@@ -45,14 +45,20 @@ MEMORY_BLOCK_HEADER = (
 NO_MEMORY_SUFFIX = "--no-memory"
 # Shown above the no-memory answer as the counterpart of the memory list: a plain
 # (grey) blockquote, so the coloured NOTE block stays unique to the memory side.
-NO_MEMORY_NOTE = "> **No memory used.** This model answers without MemMachine.\n\n---\n\n"
+# {brand} is the valve BRAND_NAME.
+NO_MEMORY_NOTE = "> **No memory used.** This model answers without {brand}.\n\n---\n\n"
 
 EventEmitter = Callable[[dict], Awaitable[None]]
 
 
 class Pipe:
     class Valves(BaseModel):
-        # Editable in the admin UI under Functions > MemMachine > Valves.
+        # Editable in the admin UI under Functions > <BRAND_NAME> > Valves.
+        BRAND_NAME: str = Field(
+            default="MemMachine",
+            description="Name of the memory side as the screen shows it: model names from pipes() and the "
+            "no-memory note. Set by setup_openwebui.py from .env.",
+        )
         MEMMACHINE_URL: str = Field(
             default="http://memmachine:8080",
             description="MemMachine server. Same compose network, so the service name works.",
@@ -111,11 +117,11 @@ class Pipe:
                     for model in response.json().get("data", []):
                         self._model_urls[model["id"]] = base_url
                         # setup_openwebui.py gives the two demo models their final display names.
-                        entries.append({"id": model["id"], "name": f"MemMachine + {model['id']}"})
+                        entries.append({"id": model["id"], "name": f"{self.valves.BRAND_NAME} + {model['id']}"})
                         entries.append({"id": model["id"] + NO_MEMORY_SUFFIX, "name": f"{model['id']} (no memory)"})
                 except Exception as error:
                     # Show the problem in the model dropdown instead of hiding it.
-                    entries.append({"id": f"error-{index}", "name": f"MemMachine pipe: cannot reach {base_url} ({error})"})
+                    entries.append({"id": f"error-{index}", "name": f"{self.valves.BRAND_NAME}: cannot reach {base_url} ({error})"})
         return entries
 
     # --- one request ----------------------------------------------------------
@@ -175,7 +181,7 @@ class Pipe:
             await send_status(emit, f"Retrieved {len(memories)} memories", done=True)
             yield render_memory_list(memories, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS)
         elif self.valves.SHOW_NO_MEMORY_NOTE:
-            yield NO_MEMORY_NOTE
+            yield NO_MEMORY_NOTE.format(brand=self.valves.BRAND_NAME)
 
         prompt = self.valves.BASE_SYSTEM_PROMPT
         if memories:
