@@ -44,15 +44,15 @@
       ]
     },
     {
-      "title": "Tokyo work trip in January",
+      "title": "Seoul work trip in January",
       "date": "2026-12-01T22:15:00-08:00",
       "turns": [
-        {"role": "user", "content": "I am flying to Tokyo for work from January 12 to January 16. Meetings are at our partner's office in Shinagawa all week, and I want to bring gifts for the team there."},
+        {"role": "user", "content": "I am flying to Seoul for work from January 12 to January 16. Meetings are at our partner's office in Gangnam all week, and I want to bring gifts for the team there."},
         {"role": "assistant", "content": "Something from your home region, nicely wrapped, works well: small packaged treats for the team and something more personal for your main contact."},
-        {"role": "user", "content": "My main contact is Kenji. He collects whisky, and I want to spend about fifty dollars on his gift."},
-        {"role": "assistant", "content": "A small-batch American whisky in the fifty-dollar range, in a gift box, suits Kenji, since Japanese whisky is easy for him to get at home."},
-        {"role": "user", "content": "I am staying at a hotel near Shinagawa station and want to keep running during the trip."},
-        {"role": "assistant", "content": "To keep your training on track in Tokyo, run early along the canal path near Shinagawa station, which local runners use every morning; most hotels there have a small gym."}
+        {"role": "user", "content": "My main contact is Junhyeok. He collects whisky, and I want to spend about fifty dollars on his gift."},
+        {"role": "assistant", "content": "A small-batch American whisky in the fifty-dollar range, in a gift box, suits Junhyeok, since imported whisky costs far more in Korea."},
+        {"role": "user", "content": "I am staying at a hotel near Gangnam station and want to keep running during the trip."},
+        {"role": "assistant", "content": "To keep your training on track in Seoul, run early along the Yangjae stream path near Gangnam station, which local runners use every morning; most hotels there have a small gym."}
       ]
     },
     {
@@ -83,13 +83,13 @@
       "expected": ["peanut", "dinosaurs", "vegetarian"]
     },
     {
-      "text": "I am in Tokyo next week. How do I keep my training on track while I am there?",
-      "why": "needs the trip dates and the hotel near Shinagawa (chat 5) and the Tuesday, Thursday and Sunday schedule with the 12 km knee limit (chat 4)",
-      "expected": ["Shinagawa", "long run"]
+      "text": "I am in Seoul next week. How do I keep my training on track while I am there?",
+      "why": "needs the trip dates and the hotel near Gangnam (chat 5) and the Tuesday, Thursday and Sunday schedule with the 12 km knee limit (chat 4)",
+      "expected": ["Gangnam", "long run"]
     },
     {
-      "text": "What gifts should I bring for Kenji and for Rosa?",
-      "why": "needs Kenji's whisky and the fifty-dollar budget (chat 5) and Rosa's cooking and gardening (chat 6)",
+      "text": "What gifts should I bring for Junhyeok and for Rosa?",
+      "why": "needs Junhyeok's whisky and the fifty-dollar budget (chat 5) and Rosa's cooking and gardening (chat 6)",
       "expected": ["whisky", "gardening"]
     },
     {

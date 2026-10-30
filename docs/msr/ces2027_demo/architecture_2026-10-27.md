@@ -350,15 +350,15 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | 2026-11-09 | Planning Mia's 7th birthday | 6 |
 | 2026-11-16 | Weekend hosting and the family | 6 |
 | 2026-11-23 | Half marathon training plan | 6 |
-| 2026-12-01 | Tokyo work trip in January | 6 |
+| 2026-12-01 | Seoul work trip in January | 6 |
 | 2026-12-08 | Learning Spanish for Rosa | 6 |
 | 2026-12-15 | Home office and back pain | 4 |
 
 | 질문 | 기대 문구 |
 |---|---|
 | Can you plan the menu for Mia's birthday party this Saturday? | peanut, dinosaurs, vegetarian |
-| I am in Tokyo next week. How do I keep my training on track while I am there? | Shinagawa, Sunday |
-| What gifts should I bring for Kenji and for Rosa? | whisky, gardening |
+| I am in Seoul next week. How do I keep my training on track while I am there? | Gangnam, long run |
+| What gifts should I bring for Junhyeok and for Rosa? | whisky, gardening |
 | My right knee was sore again after Sunday's long run. What should I change this week? | 12 km, kettlebell |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다.
