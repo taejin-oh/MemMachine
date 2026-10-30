@@ -45,6 +45,17 @@ def no_memory_model_name(env: dict[str, str]) -> str:
     return f"{env['LLM_MODEL_NAME']} (no memory)"
 
 
+def default_models(env: dict[str, str]) -> list[str]:
+    """Ids a new chat opens with, as docker-compose.yml builds DEFAULT_MODELS from the same .env: the instant pair,
+    or the step-by-step pair when STEPS_BY_DEFAULT=true. Compose can only test whether the value is empty, so any
+    other value is an error here instead of a silent true."""
+    value = env.get("STEPS_BY_DEFAULT", "")
+    if value not in ("", "true"):
+        raise ValueError(f"STEPS_BY_DEFAULT in .env must be true or empty, not {value!r} (compose reads any value as true)")
+    suffix = STEPS_SUFFIX if value else ""
+    return [pipe_model_id(env) + suffix, no_memory_model_id(env) + suffix]
+
+
 def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
     """The four models the booth sees, as (id, display name, avatar file in ../assets): the two above and their
     step-by-step forms, which show the memory search, the prompt and the LLM call before the answer."""

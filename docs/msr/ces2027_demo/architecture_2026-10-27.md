@@ -329,7 +329,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 묶음 | 설정 | 목적 |
 |---|---|---|
-| 모델 연결 | `ENABLE_OPENAI_API=false`, `DEFAULT_MODELS=memmachine_pipe.<모델>,memmachine_pipe.<모델>--no-memory` | 네 모델 모두 Pipe가 제공하고 Pipe가 vLLM을 부른다. 새 채팅은 즉시 답하는 두 모델이 비교 모드로 선택되고, 과정을 보여 줄 때는 모델 선택에서 "(step by step)" 쌍으로 바꾼다 |
+| 모델 연결 | `ENABLE_OPENAI_API=false`, `DEFAULT_MODELS=memmachine_pipe.<모델>,memmachine_pipe.<모델>--no-memory`(`.env`의 `STEPS_BY_DEFAULT=true`면 `--steps` 쌍) | 네 모델 모두 Pipe가 제공하고 Pipe가 vLLM을 부른다. 새 채팅은 `.env`가 고른 쌍이 비교 모드로 선택되고, 다른 쌍은 모델 선택에서 바꾼다. 부스는 단계별 쌍을 기본으로 쓴다 |
 | 과거 맥락 차단 | Memory, Notes, Folders, Calendar, Automations, 문맥 압축 끄기. 두 모델 항목에 `builtin_tools=false`, `file_upload=false` | 오른쪽이 Open WebUI 자체 경로로 과거 채팅을 읽지 못하게 한다 |
 | 보조 LLM 호출 없음 | 제목, 태그, 후속 질문, 질의 재작성 생성 끄기 | 켜 두면 제목 생성이 Pipe로 들어와 검색을 한 번 더 한다 |
 | 화면 정리 | 추천 프롬프트 비우기, 릴리스 노트 창 끄기, 개인 시스템 프롬프트 비우기, 새 채팅은 임시 채팅(`ui.temporaryChatByDefault`, `.env`의 `TEMPORARY_CHAT`으로 끌 수 있다), 와이드 모드(`ui.widescreenMode`), 두 모델의 아바타(MemMachine 로고 마크와 사선을 그은 같은 마크) | 관객의 질문은 저장되지 않고 사이드바는 적재한 과거 채팅 그대로다 |

@@ -18,8 +18,8 @@ import json
 import sys
 from pathlib import Path
 
-from common import (STEPS_SUFFIX, OpenWebUI, demo_models, http_json, llm_urls_for_scripts, load_env, memmachine_url,
-                    no_memory_model_id, openwebui_url, pipe_model_id, port_open, script_host)
+from common import (STEPS_SUFFIX, OpenWebUI, default_models, demo_models, http_json, llm_urls_for_scripts, load_env,
+                    memmachine_url, no_memory_model_id, openwebui_url, pipe_model_id, port_open, script_host)
 
 failures = 0
 
@@ -83,6 +83,7 @@ def main() -> None:
           if expected_ids <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
           else raise_error(f"missing: {sorted(expected_ids - {m['id'] for m in booth.call('GET', '/api/models')['data']})}"))
     report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
+    check("new chats open with the pair STEPS_BY_DEFAULT selects", lambda: default_pair_in_use(booth, env))
 
     # 3. expected memories per question, in the project the Pipe searches
     valves = ui.get_valves()
@@ -115,6 +116,16 @@ def served_models(base_url: str, into: list) -> str:
     found = [m["id"] for m in http_json("GET", f"{base_url}/models")["data"]]
     into.extend(found)
     return ", ".join(found)
+
+
+def default_pair_in_use(booth: OpenWebUI, env: dict[str, str]) -> str:
+    """The pair .env asks for, if the running Open WebUI opens new chats with it (DEFAULT_MODELS is read at start)."""
+    wanted = ",".join(default_models(env))
+    actual = booth.call("GET", "/api/config").get("default_models") or ""
+    if actual != wanted:
+        raise_error(f"Open WebUI opens {actual!r}: after changing STEPS_BY_DEFAULT run "
+                    "'docker compose --profile app up -d openwebui'")
+    return wanted
 
 
 def expected_memories(memmachine: str, project_id: str, top_k: int, question: dict) -> str:

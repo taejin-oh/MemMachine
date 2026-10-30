@@ -95,8 +95,11 @@ services:
       ENABLE_DIRECT_CONNECTIONS: "false"
       # A new chat opens with both models selected (comparison view). The ids are
       # "<function id>.<model>" and "<function id>.<model>--no-memory", the
-      # function id being PIPE_ID in scripts/common.py.
-      DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME},memmachine_pipe.${LLM_MODEL_NAME}--no-memory
+      # function id being PIPE_ID in scripts/common.py. STEPS_BY_DEFAULT=true in
+      # .env appends "--steps" to both, so the pair that shows its steps opens
+      # instead. Compose can only test whether the value is empty, so .env keeps
+      # it empty for the instant pair; the scripts reject any other value.
+      DEFAULT_MODELS: memmachine_pipe.${LLM_MODEL_NAME}${STEPS_BY_DEFAULT:+--steps},memmachine_pipe.${LLM_MODEL_NAME}--no-memory${STEPS_BY_DEFAULT:+--steps}
       # Every Open WebUI path that could feed past context to a model is off
       # (design section 5.3).
       ENABLE_MEMORIES: "false"

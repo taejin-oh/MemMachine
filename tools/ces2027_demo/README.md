@@ -101,6 +101,7 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 그 네 모델만 쓴다. 부스 계정에는 그 네 모델만 보인다(설계 5.3절).
 - [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 네 모델만 있다.
 - [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`, 그리고 둘의 `(step by step)` 형태가 보이고(`.env`의 `BRAND_NAME`을 바꿨으면 "MemMachine" 자리에 그 이름), 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
+- [ ] 새 채팅이 `.env`의 `STEPS_BY_DEFAULT`가 고른 쌍으로 열린다(빈 값이면 즉시 쌍, `true`면 단계별 쌍). 검사 스크립트의 "new chats open with" 줄이 같은 것을 확인한다.
 - [ ] 단계별 쌍으로 바꿔 질문하면 왼쪽 카드에 "Step 1 of 3" 제목이 바로 나오고, 2초마다 기억 목록, "Step 2 of 3"과 접힌 "Prompt sent to the LLM", "Step 3 of 3"이 이어진 뒤 답이 흐른다. 오른쪽도 같은 박자로 "Skipped. This model has no memory."를 지나 답한다. 접힌 블록을 펼치면 전달문 전체가 보인다. 간격이 길거나 짧으면 Valve `STEP_DELAY_MS`를 바꾼다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).

@@ -30,7 +30,8 @@ Steps:
 import base64
 from datetime import date
 
-from common import ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, demo_models, load_env, openwebui_url
+from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, default_models, demo_models, load_env,
+                    openwebui_url)
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -43,6 +44,10 @@ PUBLIC_READ = [{"principal_type": "user", "principal_id": "*", "permission": "re
 
 def main() -> None:
     env = load_env()
+    try:
+        default_pair = default_models(env)  # validated first: compose reads the same key when openwebui starts
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
     ui = OpenWebUI(openwebui_url(env))
     user = ui.login(env["ADMIN_NAME"], env["ADMIN_EMAIL"], env["ADMIN_PASSWORD"])
     print(f"signed in as {user['email']} ({user['role']})")
@@ -58,6 +63,7 @@ def main() -> None:
     for model_id, name, avatar in models:
         upsert_model(ui, model_id, name, avatar)
     remove_stale_models(ui, {model_id for model_id, _, _ in models})
+    print(f"new chats open with {', '.join(default_pair)} (STEPS_BY_DEFAULT; demo_check.py verifies the running container)")
     booth = ensure_booth_account(ui, env)
     temporary = env.get("TEMPORARY_CHAT", "true") == "true"
     quiet_account(ui, env["ADMIN_EMAIL"], temporary)
