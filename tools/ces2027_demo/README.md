@@ -20,7 +20,7 @@ tools/ces2027_demo/
   scripts/common.py           스크립트 공통 (.env 읽기, Open WebUI API 호출)
   scenario/script.json        부스 대본
   scenario/script.sample.json 대본 형식 예시
-  assets/                     두 모델의 아바타: MemMachine 로고 마크(docs/logo)로 만든 SVG 원본과 PNG. `.env`의 `AVATAR_MEMORY`, `AVATAR_NO_MEMORY`로 바꾼다
+  assets/                     모델 아바타의 SVG 원본과 PNG. MemMachine 마크 한 쌍(memmachine, no_memory)과 부스용 한 쌍(skhynix, no_memory_plain). `.env`의 `AVATAR_MEMORY`, `AVATAR_NO_MEMORY`로 고른다
 ```
 
 컨테이너는 다른 서버를 고정 이름 `db`, `llm`, `embed`로 부른다. 이름과 실제 주소의 대응은 `.env`에만 있으므로, 장소를 옮길 때 고치는 파일은 `.env` 하나다.

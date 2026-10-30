@@ -1,0 +1,11 @@
+<!-- Source of no_memory_plain.png (avatar of the no-memory models when AVATAR_NO_MEMORY=no_memory_plain.png):
+     a list of memories struck through, on grey, with no brand mark, for a booth whose memory side shows a
+     company logo that must not be altered. The PNG was drawn at 192x192 from this geometry with Pillow. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <circle cx="48" cy="48" r="48" fill="#6b7280"/>
+  <rect x="28" y="30" width="40" height="8" rx="4" fill="#ffffff" opacity="0.55"/>
+  <rect x="28" y="44" width="40" height="8" rx="4" fill="#ffffff" opacity="0.55"/>
+  <rect x="28" y="58" width="40" height="8" rx="4" fill="#ffffff" opacity="0.55"/>
+  <path d="M26 70L70 26" stroke="#374151" stroke-width="9" stroke-linecap="round"/>
+  <path d="M26 70L70 26" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+</svg>
