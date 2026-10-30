@@ -144,7 +144,10 @@ def quiet_account(ui: OpenWebUI, email: str, temporary: bool) -> None:
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str) -> None:
     """Create or update a workspace model entry that overrides how a base model is shown and prompted."""
     # Open WebUI serves only raster avatars (SVG falls back to its logo), hence PNG.
-    png = (ASSETS_DIR / avatar).read_bytes()
+    path = ASSETS_DIR / avatar  # an absolute AVATAR_* value replaces ASSETS_DIR
+    if not path.is_file():
+        raise SystemExit(f"avatar {path} not found: check AVATAR_MEMORY and AVATAR_NO_MEMORY in .env")
+    png = path.read_bytes()
     form = {
         "id": model_id,
         "base_model_id": None,

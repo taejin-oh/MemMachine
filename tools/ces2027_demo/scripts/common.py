@@ -57,13 +57,15 @@ def default_models(env: dict[str, str]) -> list[str]:
 
 
 def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
-    """The four models the booth sees, as (id, display name, avatar file in ../assets): the two above and their
-    step-by-step forms, which show the memory search, the prompt and the LLM call before the answer."""
+    """The four models the booth sees, as (id, display name, avatar PNG): the two above and their step-by-step
+    forms, which show the memory search, the prompt and the LLM call before the answer. The avatars come from
+    AVATAR_MEMORY and AVATAR_NO_MEMORY in .env, a file name in ../assets or an absolute path."""
+    memory, no_memory = env.get("AVATAR_MEMORY", "memmachine.png"), env.get("AVATAR_NO_MEMORY", "no_memory.png")
     return [
-        (pipe_model_id(env), pipe_model_name(env), "memmachine.png"),
-        (no_memory_model_id(env), no_memory_model_name(env), "no_memory.png"),
-        (pipe_model_id(env) + STEPS_SUFFIX, f"{pipe_model_name(env)} (step by step)", "memmachine.png"),
-        (no_memory_model_id(env) + STEPS_SUFFIX, f"{env['LLM_MODEL_NAME']} (no memory, step by step)", "no_memory.png"),
+        (pipe_model_id(env), pipe_model_name(env), memory),
+        (no_memory_model_id(env), no_memory_model_name(env), no_memory),
+        (pipe_model_id(env) + STEPS_SUFFIX, f"{pipe_model_name(env)} (step by step)", memory),
+        (no_memory_model_id(env) + STEPS_SUFFIX, f"{env['LLM_MODEL_NAME']} (no memory, step by step)", no_memory),
     ]
 
 
