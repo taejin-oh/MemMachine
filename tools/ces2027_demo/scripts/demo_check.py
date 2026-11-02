@@ -1,13 +1,15 @@
 """Readiness check for the demo, one command after power-on (design section 5.5).
 
-    python3 scripts/demo_check.py scenario/script.sample.json
+    python3 scripts/demo_check.py scenario/script_en.json
 
 Prints one line per check and exits with a non-zero code if any failed:
   1. the LLM server(s), the embedding server, MemMachine, Open WebUI and the
      two database ports answer,
   2. the booth account sees the four demo models in Open WebUI,
-  3. for every question in the script, the expected phrases are among the
-     top-k memories that MemMachine retrieves from the loaded project,
+  3. the Pipe is in the script's language (the last load used this script),
+     and for the first question and every follow-up of every demo topic the
+     expected phrases are among the top-k memories that MemMachine retrieves
+     from the loaded project,
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
   5. one question through the models: the memory model answers below its
      memory list, the no-memory model below its note (when the valve shows one),
@@ -16,10 +18,10 @@ Prints one line per check and exits with a non-zero code if any failed:
 
 import json
 import sys
-from pathlib import Path
 
-from common import (STEPS_SUFFIX, OpenWebUI, default_models, demo_models, http_json, llm_urls_for_scripts, load_env,
-                    memmachine_url, no_memory_model_id, openwebui_url, pipe_model_id, port_open, script_host)
+from common import (REPLY_MARKERS, STEPS_SUFFIX, OpenWebUI, default_models, demo_models, demo_questions, http_json,
+                    llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id, openwebui_url, pipe_model_id,
+                    port_open, read_script, script_host)
 
 failures = 0
 
@@ -50,8 +52,8 @@ def check(what: str, probe, warn_only: bool = False):
 
 def main() -> None:
     if len(sys.argv) != 2:
-        raise SystemExit("usage: demo_check.py <script.json>")
-    script = json.loads(Path(sys.argv[1]).read_text())
+        raise SystemExit("usage: demo_check.py <script_en.json | script_ko.json>")
+    script = read_script(sys.argv[1])
     env = load_env()
     memmachine = memmachine_url(env)
 
@@ -85,12 +87,16 @@ def main() -> None:
     report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
     check("new chats open with the pair STEPS_BY_DEFAULT selects", lambda: default_pair_in_use(booth, env))
 
-    # 3. expected memories per question, in the project the Pipe searches
+    # 3. the loaded language, then expected memories per question, in the project the Pipe searches
     valves = ui.get_valves()
+    language = valves.get("LANGUAGE", "en")  # .get: an older installed Pipe has no such valve
+    report(language == script["language"], "the Pipe is in the script's language",
+           language if language == script["language"] else f"Pipe {language!r}, script {script['language']!r}: load this script first")
     project_id, top_k = valves["PROJECT_ID"], int(valves["TOP_K"])
-    for question in script["questions"]:
-        check(f"top-{top_k} memories for '{question['text'][:50]}'",
-              lambda q=question: expected_memories(memmachine, project_id, top_k, q), warn_only=mock_embedder)
+    for demo in script["demos"]:
+        for question in demo_questions(demo):
+            check(f"top-{top_k} memories for '{question['text'][:50]}'",
+                  lambda q=question: expected_memories(memmachine, project_id, top_k, q), warn_only=mock_embedder)
     if mock_embedder:
         print("     (mock embedder: expected phrases are matched by word overlap only; verify with the real embedder)")
 
@@ -98,16 +104,18 @@ def main() -> None:
     record_mode = bool(valves["RECORD_MEMORY"])
     report(not record_mode, "record mode (RECORD_MEMORY) is off")
 
-    # 5. one answer through each model
-    question = script["questions"][0]["text"]
+    # 5. one answer through each model, recognised by the markers of the loaded language
+    markers = REPLY_MARKERS.get(language, REPLY_MARKERS["en"])
+    question = script["demos"][0]["first"]["text"]
     if record_mode:
         report(False, "answer from the Pipe model", "skipped: record mode would store the question")
     else:
-        check("answer from the Pipe model", lambda: model_answer(ui, left, question, "**Memories retrieved"))
-    note = "**No memory used.**" if valves.get("SHOW_NO_MEMORY_NOTE", True) else None  # .get: an older installed Pipe has no such valve
+        check("answer from the Pipe model", lambda: model_answer(ui, left, question, markers["memory_list"]))
+    note = markers["no_memory_note"] if valves.get("SHOW_NO_MEMORY_NOTE", True) else None
     check("answer from the no-memory model", lambda: model_answer(ui, right, question, note))
     if not record_mode:
-        check("answer from the step-by-step Pipe model", lambda: model_answer(ui, left + STEPS_SUFFIX, question, "Step 3 of 3"))
+        check("answer from the step-by-step Pipe model",
+              lambda: model_answer(ui, left + STEPS_SUFFIX, question, markers["last_step"]))
     finish()
 
 

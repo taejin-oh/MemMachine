@@ -9,8 +9,9 @@ Every step creates or updates, so running it twice is harmless.
 Steps:
   1. sign in as the staff account (created on the first run; first user = admin)
   2. install or update the Pipe function and switch it on
-  3. write the Pipe valves that come from .env (shared system prompt, LLM
-     address, brand name shown on the memory side)
+  3. write the Pipe valves that come from .env (LLM address, brand name shown
+     on the memory side, demo date); the shared system prompt and the screen
+     language come from the script file when load_scenario.py runs
   4. create or update the four model entries, all served by the Pipe (with and
      without memory, at once and step by step): display names, avatars from
      ../assets, the capability flags that stop Open WebUI from feeding past
@@ -55,8 +56,7 @@ def main() -> None:
         raise SystemExit("this account is not an admin: remove the openwebui_data volume and run again")
 
     brand = brand_name(env)
-    install_pipe(ui, brand, {"BASE_SYSTEM_PROMPT": shared_system_prompt(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"],
-                             "BRAND_NAME": brand})
+    install_pipe(ui, brand, {"DEMO_DATE": demo_date(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"], "BRAND_NAME": brand})
 
     # All entries are Pipe models; the Pipe gives each its system prompt, so no params here.
     models = demo_models(env)
@@ -71,19 +71,16 @@ def main() -> None:
     print("done")
 
 
-def shared_system_prompt(env: dict[str, str]) -> str:
-    """Base prompt for both models, with the demo date when one is set.
-
-    The weekday is spelled out so that "this Saturday" needs no calendar arithmetic from the model.
-    """
-    prompt = env["BASE_SYSTEM_PROMPT"]
-    if env.get("DEMO_DATE"):
+def demo_date(env: dict[str, str]) -> str:
+    """DEMO_DATE from .env, checked; the Pipe adds "Today is <weekday>, <date>." to both models' prompt in the screen
+    language so that "this Saturday" needs no calendar arithmetic from the model. Empty when unset."""
+    value = env.get("DEMO_DATE", "")
+    if value:
         try:
-            demo_date = date.fromisoformat(env["DEMO_DATE"])
+            date.fromisoformat(value)
         except ValueError:
-            raise SystemExit(f"DEMO_DATE in .env must look like 2027-01-06, not {env['DEMO_DATE']!r}") from None
-        prompt += f"\nToday is {demo_date:%A}, {demo_date.isoformat()}."
-    return prompt
+            raise SystemExit(f"DEMO_DATE in .env must look like 2027-01-06, not {value!r}") from None
+    return value
 
 
 def install_pipe(ui: OpenWebUI, name: str, valves: dict) -> None:

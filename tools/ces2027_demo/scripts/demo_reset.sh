@@ -6,11 +6,11 @@
 #   scripts/demo_reset.sh --wipe app                         also delete this server's data volumes
 #   scripts/demo_reset.sh db                                 booth db server
 #   scripts/demo_reset.sh app db                             one server with both roles (company)
-#   scripts/demo_reset.sh local scenario/script.sample.json  Mac
+#   scripts/demo_reset.sh local scenario/script.sample.json  Mac (or script_en.json)
 #
 # Arguments: the compose profiles of this server (the same words as in
 # `docker compose --profile`), --wipe, and optionally the script file
-# (default scenario/script.json).
+# (default scenario/script_en.json; script_ko.json for the Korean recording).
 #
 #   1. --wipe only: `docker compose down -v` removes the containers and the data
 #      volumes of this server (PostgreSQL, Qdrant, Open WebUI with its accounts
@@ -27,7 +27,7 @@ set -euo pipefail
 
 demo=$(cd "$(dirname "$0")/.." && pwd)
 wipe=
-script=$demo/scenario/script.json
+script=$demo/scenario/script_en.json
 profiles=()
 for arg in "$@"; do
   case $arg in

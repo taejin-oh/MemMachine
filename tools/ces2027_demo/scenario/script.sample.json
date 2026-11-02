@@ -1,41 +1,82 @@
 {
-  "_comment": "Format example for the demo script (design section 5.4). sessions: past chats loaded into Open WebUI and MemMachine with the given date; turns alternate user/assistant and are one minute apart. questions: what the staff types during the demo; every string in expected must appear in the top-k memories retrieved for that question (checked by scripts/demo_check.py). Dates carry the display device's time zone offset.",
+  "_comment": "Format example for the demo script. language: en or ko, the Pipe's screen language; system_prompt: the instruction both models share; both are written into the Pipe valves by scripts/load_scenario.py. sessions: past chats loaded into Open WebUI and MemMachine with the given date; turns alternate user/assistant and are one minute apart. demos: one topic per recording, with the first question asked verbatim to the no-memory model and then to the memory model in a new chat, and follow_ups to choose from by the condition in 'if'. Every string in expected must appear in the top-k memories retrieved for that question (checked by scripts/demo_check.py). Dates carry the display device's time zone offset. The real scripts are script_en.json and script_ko.json.",
+  "language": "en",
+  "system_prompt": "You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.",
   "sessions": [
     {
       "title": "Peanut allergy and meal prep",
       "date": "2026-11-03T19:12:00-08:00",
       "turns": [
-        {"role": "user", "content": "Mia was diagnosed with a peanut allergy last year, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"},
-        {"role": "assistant", "content": "Of course. Keeping everything peanut-free, here are three lunch ideas: turkey and cheese roll-ups with apple slices, a sunflower-seed-butter and jam sandwich, and pasta salad with cherry tomatoes and mozzarella."},
-        {"role": "user", "content": "She also refuses anything with mushrooms, so leave those out too."},
-        {"role": "assistant", "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Mia."}
+        {
+          "role": "user",
+          "content": "My daughter Karina has a peanut allergy, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"
+        },
+        {
+          "role": "assistant",
+          "content": "Of course. Keeping everything peanut-free: kimbap without peanut sauce, egg rolls with rice, and pasta salad with cherry tomatoes and mozzarella."
+        },
+        {
+          "role": "user",
+          "content": "She also refuses anything with mushrooms, so leave those out too."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Karina."
+        }
       ]
     },
     {
-      "title": "Mia's birthday ideas",
+      "title": "Karina's birthday ideas",
       "date": "2026-11-18T20:05:00-08:00",
       "turns": [
-        {"role": "user", "content": "Mia turns 7 in January and she is obsessed with dinosaurs right now. Any ideas for her birthday party?"},
-        {"role": "assistant", "content": "A dinosaur dig party would suit her: bury toy fossils in a sandbox, serve food with dinosaur names, and give each guest a small explorer hat."}
+        {
+          "role": "user",
+          "content": "Karina turns 7 in January and she is obsessed with Frozen right now. Any ideas for her birthday party?"
+        },
+        {
+          "role": "assistant",
+          "content": "A Frozen party would suit her: a snowflake hunt, party food with winter names, and a paper crown for each guest."
+        }
       ]
     },
     {
-      "title": "Weekend hosting",
+      "title": "Saturday swimming",
       "date": "2026-12-05T10:30:00-08:00",
       "turns": [
-        {"role": "user", "content": "We usually host family gatherings at our place on Saturdays. My sister brings her twins, who are vegetarian."},
-        {"role": "assistant", "content": "Good to know. For Saturday gatherings I will plan dishes that work for the vegetarian twins as well as everyone else."}
+        {
+          "role": "user",
+          "content": "Karina has a swimming lesson every Saturday morning, so anything for her on a Saturday has to start after lunch."
+        },
+        {
+          "role": "assistant",
+          "content": "Good to know. Saturday plans for Karina start in the afternoon."
+        }
       ]
     }
   ],
-  "questions": [
+  "demos": [
     {
-      "text": "Can you plan a menu for Mia's birthday party this Saturday?",
-      "expected": ["peanut-free", "turns 7 in January", "vegetarian"]
-    },
-    {
-      "text": "What theme should we pick for Mia's party?",
-      "expected": ["dinosaurs"]
+      "topic": "Karina's birthday party",
+      "first": {
+        "text": "Can you plan the food for Karina's party this Saturday?",
+        "why": "needs the allergy (chat 1) and the Frozen theme (chat 2)",
+        "expected": [
+          "peanut",
+          "Frozen"
+        ],
+        "no_memory": "asks who Karina is or lists a generic children's menu"
+      },
+      "follow_ups": [
+        {
+          "if": "the first answer did not say when to start",
+          "text": "What time should the party start?",
+          "why": "needs the swimming lesson (chat 3)",
+          "expected": [
+            "swimming lesson"
+          ],
+          "no_memory": "suggests a usual afternoon time"
+        }
+      ]
     }
   ]
 }

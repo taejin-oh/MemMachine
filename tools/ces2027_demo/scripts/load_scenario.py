@@ -1,11 +1,14 @@
 """Load the scripted past sessions into Open WebUI and MemMachine (design section 5.4).
 
-    python3 scripts/load_scenario.py scenario/script.sample.json
+    python3 scripts/load_scenario.py scenario/script_en.json
 
 Every run starts from scratch:
   1. a fresh MemMachine project named ces-<date>-<time> is chosen and written
      to the Pipe valve PROJECT_ID, so the left card searches only this load
-     (MemMachine cannot reuse a deleted project, so old ones just stay unused),
+     (MemMachine cannot reuse a deleted project, so old ones just stay unused);
+     the script's language and system_prompt go into the valves LANGUAGE and
+     BASE_SYSTEM_PROMPT at the same time, so loading a script also switches
+     the screen texts and the shared instruction to its language,
   2. all chats of the booth account (the one the booth screen signs in as) are deleted,
   3. each session of the script is imported as one chat with the script's date
      and one-minute spacing between turns, so the sidebar and the message
@@ -16,21 +19,20 @@ Every run starts from scratch:
 Reload the browser afterwards so the sidebar picks up the new chats.
 """
 
-import json
 import sys
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 
-from common import OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, pipe_model_id, pipe_model_name
+from common import (OpenWebUI, http_json, load_env, memmachine_url, openwebui_url, pipe_model_id, pipe_model_name,
+                    read_script)
 
 TURN_SPACING = timedelta(minutes=1)
 
 
 def main() -> None:
     if len(sys.argv) != 2:
-        raise SystemExit("usage: load_scenario.py <script.json>")
-    script = json.loads(Path(sys.argv[1]).read_text())
+        raise SystemExit("usage: load_scenario.py <script_en.json | script_ko.json>")
+    script = read_script(sys.argv[1])
     sessions = [timed_turns(session) for session in script["sessions"]]  # validates before anything is touched
     env = load_env()
 
@@ -40,10 +42,12 @@ def main() -> None:
     booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])
 
     project_id = f"ces-{datetime.now():%Y%m%d-%H%M%S}"
-    admin.set_valves({"PROJECT_ID": project_id})
+    admin.set_valves({"PROJECT_ID": project_id, "LANGUAGE": script["language"],
+                      "BASE_SYSTEM_PROMPT": script["system_prompt"]})
     if not booth.call("DELETE", "/api/v1/chats/"):
         raise SystemExit("Open WebUI could not delete the previous chats")
-    print(f"project {project_id}: Pipe valve set, previous chats of {env['BOOTH_EMAIL']} deleted")
+    print(f"project {project_id}: Pipe valves set (language {script['language']}), "
+          f"previous chats of {env['BOOTH_EMAIL']} deleted")
 
     for session, turns in zip(script["sessions"], sessions):
         chat_id = import_chat(booth, session["title"], turns, pipe_model_id(env), pipe_model_name(env))

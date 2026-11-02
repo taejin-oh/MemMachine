@@ -18,6 +18,14 @@ ASSETS_DIR = DEMO_DIR / "assets"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
 NO_MEMORY_SUFFIX = "--no-memory"  # the Pipe's id suffix for the right-hand model (pipe/memmachine_pipe.py)
 STEPS_SUFFIX = "--steps"  # the Pipe's id suffix for the step-by-step form of either model
+LANGUAGES = ("en", "ko")  # the Pipe's TEXT table has these; a script file names one
+# Texts demo_check.py looks for in the Pipe's replies, per language: the start of
+# the memory list, the no-memory note, and the third step. They mirror TEXT in
+# pipe/memmachine_pipe.py (memories_retrieved, no_memory_note, step).
+REPLY_MARKERS = {
+    "en": {"memory_list": "**Memories retrieved", "no_memory_note": "**No memory used.**", "last_step": "Step 3 of 3"},
+    "ko": {"memory_list": "**검색된 기억", "no_memory_note": "**기억을 쓰지 않았습니다.**", "last_step": "3단계 중 3단계"},
+}
 
 
 def pipe_model_id(env: dict[str, str]) -> str:
@@ -67,6 +75,28 @@ def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
         (pipe_model_id(env) + STEPS_SUFFIX, f"{pipe_model_name(env)} (step by step)", memory),
         (no_memory_model_id(env) + STEPS_SUFFIX, f"{env['LLM_MODEL_NAME']} (no memory, step by step)", no_memory),
     ]
+
+
+def read_script(path: str) -> dict:
+    """The script file (scenario/script_en.json or script_ko.json), checked for the keys every tool relies on."""
+    script = json.loads(Path(path).read_text())
+    if script.get("language") not in LANGUAGES:
+        raise SystemExit(f"{path}: language must be one of {LANGUAGES}, not {script.get('language')!r}")
+    if not isinstance(script.get("system_prompt"), str) or not script["system_prompt"].strip():
+        raise SystemExit(f"{path}: system_prompt must be a non-empty string")
+    for key in ("sessions", "demos"):
+        if not isinstance(script.get(key), list) or not script[key]:
+            raise SystemExit(f"{path}: {key} must be a non-empty list")
+    for demo in script["demos"]:
+        for question in demo_questions(demo):
+            if not isinstance(question.get("text"), str) or not isinstance(question.get("expected"), list):
+                raise SystemExit(f"{path}: every first question and follow-up needs text and expected (demo {demo.get('topic')!r})")
+    return script
+
+
+def demo_questions(demo: dict) -> list[dict]:
+    """The first question of a demo topic followed by its follow-up candidates."""
+    return [demo["first"], *demo.get("follow_ups", [])]
 
 
 def load_env(path: Path = ENV_FILE) -> dict[str, str]:
