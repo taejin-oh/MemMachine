@@ -9,29 +9,29 @@
       "turns": [
         {
           "role": "user",
-          "content": "My daughter Yuha has a peanut allergy, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"
+          "content": "My daughter Chloe has a peanut allergy, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"
         },
         {
           "role": "assistant",
-          "content": "Of course. Keeping everything peanut-free: kimbap without peanut sauce, egg rolls with rice, and pasta salad with cherry tomatoes and mozzarella."
+          "content": "Of course. Keeping everything peanut-free: kimbap without peanut sauce, egg rolls with rice, and pasta salad with mozzarella and cucumber."
         },
         {
           "role": "user",
-          "content": "She also refuses anything with mushrooms, so leave those out too."
+          "content": "Chloe loves all kinds of fruit, but she refuses cherries."
         },
         {
           "role": "assistant",
-          "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Yuha."
+          "content": "Noted: no peanuts and no cherries. I will keep both out of every suggestion for Chloe."
         }
       ]
     },
     {
-      "title": "Yuha's birthday ideas",
+      "title": "Chloe's birthday ideas",
       "date": "2026-11-18T20:05:00-08:00",
       "turns": [
         {
           "role": "user",
-          "content": "Yuha turns 7 in January and she is obsessed with Frozen right now. Any ideas for her birthday party?"
+          "content": "Chloe turns 7 in January and she is obsessed with Frozen right now. Any ideas for her birthday party?"
         },
         {
           "role": "assistant",
@@ -45,26 +45,26 @@
       "turns": [
         {
           "role": "user",
-          "content": "Yuha has a swimming lesson every Saturday morning, so anything for her on a Saturday has to start after lunch."
+          "content": "Chloe has a swimming lesson every Saturday morning, so anything for her on a Saturday has to start after lunch."
         },
         {
           "role": "assistant",
-          "content": "Good to know. Saturday plans for Yuha start in the afternoon."
+          "content": "Good to know. Saturday plans for Chloe start in the afternoon."
         }
       ]
     }
   ],
   "demos": [
     {
-      "topic": "Yuha's birthday party",
+      "topic": "Chloe's birthday party",
       "first": {
-        "text": "Can you plan the food for Yuha's party this Saturday?",
+        "text": "Can you plan the food for Chloe's party this Saturday?",
         "why": "needs the allergy (chat 1) and the Frozen theme (chat 2)",
         "expected": [
           "peanut",
           "Frozen"
         ],
-        "no_memory": "asks who Yuha is or lists a generic children's menu"
+        "no_memory": "asks who Chloe is or lists a generic children's menu"
       },
       "follow_ups": [
         {
