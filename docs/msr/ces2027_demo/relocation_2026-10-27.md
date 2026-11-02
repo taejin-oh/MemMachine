@@ -26,7 +26,7 @@
 3. vLLM 두 대는 모델을 적재하는 데 몇 분이 걸린다. GPU 서버에서 `docker compose ps`의 상태가 `healthy`가 될 때까지 기다린다. 10분이 지나도 `starting`이면 `docker compose logs llm`을 본다.
 4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script_en.json`을 실행한다. 전부 `OK`여야 한다.
 5. 앱 서버의 터미널 하나에 `python3 scripts/demo_monitor.py`를 띄워 시연 내내 둔다. 서버 여섯 곳과 컨테이너가 모두 `OK`여야 한다. 바뀐 줄은 `scripts/demo_monitor.log`에 남는다.
-6. 브라우저로 `http://app:3000`을 열고 `.env`의 부스 계정(`BOOTH_EMAIL`, `BOOTH_PASSWORD`)으로 들어간다. 사이드바에 과거 채팅 일곱 개가 11월과 12월로 묶여 있고, 새 채팅에 두 모델이 선택되어 있고 그 위에 "Temporary Chat" 표시(`TEMPORARY_CHAT=true`일 때)가 있으면 준비가 끝난 것이다. 로그인은 4주 동안 유효하므로 한국에서 한 로그인에 기대지 말고 여기서 다시 한다. 화면 왼쪽의 사이드바가 접혀 있으면 왼쪽 위 단추로 한 번 펼친다. 이 설정은 브라우저에 남는다.
+6. 브라우저로 `http://app:3000`을 열고 `.env`의 부스 계정(`BOOTH_EMAIL`, `BOOTH_PASSWORD`)으로 들어간다. 사이드바에 과거 채팅 여덟 개가 11월과 12월로 묶여 있고, 새 채팅에 두 모델이 선택되어 있고 그 위에 "Temporary Chat" 표시(`TEMPORARY_CHAT=true`일 때)가 있으면 준비가 끝난 것이다. 로그인은 4주 동안 유효하므로 한국에서 한 로그인에 기대지 말고 여기서 다시 한다. 화면 왼쪽의 사이드바가 접혀 있으면 왼쪽 위 단추로 한 번 펼친다. 이 설정은 브라우저에 남는다.
 7. 대본의 첫 질문을 한 번 보내 두 답이 수 초 안에 시작하는지 본다. 이 질문은 시연 중의 질문과 같으며 기억에 저장되지 않는다.
 
 ## 4. 문제가 생겼을 때

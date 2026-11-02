@@ -19,11 +19,11 @@
 
 ## 1.1 무엇을 보여 주나
 
-스태프가 "이번 토요일 Yuha 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
+스태프가 "이번 토요일 Chloe 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
 
 ![비교 화면](img/08_booth_comparison_callout.png)
 
-과거 대화는 미리 적어 둔 대본이다. 일곱 세션 서른 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
+과거 대화는 미리 적어 둔 대본이다. 여덟 세션 서른여섯 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
 
 ## 1.2 다섯 가지 구성 요소
 
@@ -176,7 +176,7 @@ flowchart TB
 | 스크립트 | 로그인 | 하는 일 |
 |---|---|---|
 | `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 네 모델 항목(즉시 둘과 단계별 둘. 표시 이름, `.env`의 `AVATAR_*`가 고른 아바타, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한)과 옛 `LLM_MODEL_NAME`의 항목 제거, 부스 계정 생성, 두 계정의 조용한 설정 |
-| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`과 대본의 언어와 공통 지시문을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 일곱 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
+| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`과 대본의 언어와 공통 지시문을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 여덟 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
 | `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 네 모델 보임, 채팅 모델이 서빙됨, Pipe가 대본의 언어임, 시연 주제마다 첫 질문과 후속 후보의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, 기억 모델과 기억 없는 모델과 단계별 모델에서 답 하나씩 |
 | `demo_reset.sh` | 위 세 스크립트를 부른다 | 이 서버의 컨테이너를 다시 만들고(`--wipe`면 볼륨도 지운 뒤) healthcheck를 기다리고, 앱 서버면 세팅, 적재, 검사를 이어서 실행 |
 | `demo_monitor.py` | 없음 | 서버 여섯 곳과 이 서버의 컨테이너 상태를 몇 초마다 표시, 바뀐 줄을 로그에 기록, 실행 중인 unhealthy 컨테이너 재시작 |
@@ -254,7 +254,7 @@ sequenceDiagram
     Note over S: 시연 전에 한 번
     S->>W: 관리자: Valve PROJECT_ID = 새 프로젝트 ID
     S->>W: 부스 계정: 채팅 전체 삭제
-    loop 세션 일곱 개
+    loop 세션 여덟 개
         S->>W: 부스 계정: POST /api/v1/chats/import (제목, 날짜, 턴마다 timestamp)
         W-->>S: 채팅 ID
         S->>M: POST /api/v2/memories (project_id, 턴마다 content, role, timestamp, metadata.session_id = 채팅 ID)
@@ -344,21 +344,22 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 ### 2.4.7 대본
 
-`scenario/script_en.json`과 `script_ko.json`에 같은 인물과 사실의 영어와 한국어 대본이 있다. 각 파일에 언어, 공통 지시문, 세션 일곱 개, 시연 주제 둘이 있다. 세션마다 날짜(UTC 오프셋 포함)와 제목과 턴 목록이 있고, 턴 시각은 세션 날짜에 순서대로 1분씩 더한 값이다. 시연 주제마다 첫 질문과 후속 후보가 있고 질문마다 top-5에 들어야 하는 기대 문구가 있어 검사 스크립트가 자동으로 확인한다. 인물과 사실, 질문 표는 [콜드 데모 문서](cold_demo_2026-11-02.md) 4장에 있다.
+`scenario/script_en.json`과 `script_ko.json`에 같은 인물과 사실의 영어와 한국어 대본이 있다. 각 파일에 언어, 공통 지시문, 세션 여덟 개, 시연 주제 둘이 있다. 세션마다 날짜(UTC 오프셋 포함)와 제목과 턴 목록이 있고, 턴 시각은 세션 날짜에 순서대로 1분씩 더한 값이다. 시연 주제마다 첫 질문과 후속 후보가 있고 질문마다 top-5에 들어야 하는 기대 문구가 있어 검사 스크립트가 자동으로 확인한다. 인물과 사실, 질문 표는 [콜드 데모 문서](cold_demo_2026-11-02.md) 4장에 있다.
 
 | 날짜 | 세션(영어 제목) | 턴 |
 |---|---|---|
-| 2026-11-02 | Yuha's peanut allergy and school lunches | 4 |
-| 2026-11-09 | Planning Yuha's 7th birthday | 4 |
-| 2026-11-16 | Yuha's Saturday swimming lesson | 4 |
+| 2026-11-01 | Chloe's Halloween costume | 4 |
+| 2026-11-02 | Chloe's peanut allergy and school lunches | 6 |
+| 2026-11-09 | Planning Chloe's 7th birthday | 4 |
+| 2026-11-16 | Chloe's Saturday swimming lesson | 4 |
 | 2026-11-23 | Seoul Marathon training plan | 6 |
 | 2026-12-01 | Conference trip to Las Vegas in January | 4 |
-| 2026-12-08 | Winter break plans for Yuha | 4 |
+| 2026-12-08 | Winter break plans for Chloe | 4 |
 | 2026-12-15 | Home office and back pain | 4 |
 
 | 주제 | 첫 질문(영어) | 기대 문구 |
 |---|---|---|
-| 유하의 생일 파티 | Can you plan the food for Yuha's party this Saturday? | peanut, mushrooms, Frozen, twelve |
+| Chloe의 생일 파티 | Can you plan the food for Chloe's party this Saturday? | peanut, cherries, Frozen, twelve |
 | 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday, Thursday, hotel, long run |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다.
