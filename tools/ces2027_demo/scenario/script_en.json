@@ -1,36 +1,36 @@
 {
-  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Karina. Seven past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Every turn is short and states one fact with its relationship word ('my daughter Karina'), because the search ranks single turns by embedding similarity and the LLM only sees the retrieved turns. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: phrases that must be among the top-k memories (scripts/demo_check.py). no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Las Vegas offset so the sidebar shows them as written; turns are one minute apart.",
+  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Yuha. Seven past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Every turn is short and states one fact with its relationship word ('my daughter Yuha'), because the search ranks single turns by embedding similarity and the LLM only sees the retrieved turns. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: short word stems that must occur, as substrings, in the top-k memories (scripts/demo_check.py); stems rather than phrases, because the fact often comes back in a paraphrase ('swimming time' for 'swimming lesson') and demo_check.py matches substrings. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Las Vegas offset so the sidebar shows them as written; turns are one minute apart.",
   "language": "en",
   "system_prompt": "You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.",
   "sessions": [
     {
-      "title": "Karina's peanut allergy and school lunches",
+      "title": "Yuha's peanut allergy and school lunches",
       "date": "2026-11-02T19:40:00-08:00",
       "turns": [
-        {"role": "user", "content": "My daughter Karina has a peanut allergy, so every meal and every party menu at our house has to be peanut-free. Her school asked for safe lunch ideas. Can you help?"},
-        {"role": "assistant", "content": "Of course. Peanut-free lunches for Karina: kimbap without any peanut sauce, pasta salad with cherry tomatoes and mozzarella, egg rolls with rice, and cut fruit. Always check labels for 'may contain peanuts'."},
+        {"role": "user", "content": "My daughter Yuha has a peanut allergy, so every meal and every party menu at our house has to be peanut-free. Her school asked for safe lunch ideas. Can you help?"},
+        {"role": "assistant", "content": "Of course. Peanut-free lunches for Yuha: kimbap without any peanut sauce, pasta salad with cherry tomatoes and mozzarella, egg rolls with rice, and cut fruit. Always check labels for 'may contain peanuts'."},
         {"role": "user", "content": "She will eat anything with pasta, but she refuses mushrooms. Keep that in mind for any food you plan for her."},
-        {"role": "assistant", "content": "Noted: for Karina, pasta is always welcome, mushrooms are out, and nothing with peanuts."}
+        {"role": "assistant", "content": "Noted: for Yuha, pasta is always welcome, mushrooms are out, and nothing with peanuts."}
       ]
     },
     {
-      "title": "Planning Karina's 7th birthday",
+      "title": "Planning Yuha's 7th birthday",
       "date": "2026-11-09T21:05:00-08:00",
       "turns": [
-        {"role": "user", "content": "Karina turns 7 on January 10 and she is obsessed with Frozen and Elsa. Her birthday party is at our apartment on the Saturday before, about twelve kids plus a few parents."},
+        {"role": "user", "content": "Yuha turns 7 on January 10 and she is obsessed with Frozen and Elsa. Her birthday party is at our apartment on Saturday, January 9, about twelve kids plus a few parents."},
         {"role": "assistant", "content": "A Frozen party suits her: a snowflake hunt through the apartment, party food with winter names, and a paper crown for each guest. With twelve kids, two adults running the games keeps it calm."},
         {"role": "user", "content": "She wants an ice castle cake like Elsa's palace for the party. How do I make one?"},
         {"role": "assistant", "content": "Stack two round vanilla cakes, cover them with pale blue frosting, stand ice cream cones on top as towers, and press rock candy and white chocolate shards around them so they shine like ice. A sparkler on the tallest tower gets the big reaction."}
       ]
     },
     {
-      "title": "Karina's Saturday swimming lesson",
+      "title": "Yuha's Saturday swimming lesson",
       "date": "2026-11-16T10:30:00-08:00",
       "turns": [
-        {"role": "user", "content": "My daughter Karina has a swimming lesson every Saturday from 10 to 11 at the pool in our neighbourhood, so Saturday plans for her have to start after lunch."},
-        {"role": "assistant", "content": "Noted: Saturday mornings are Karina's swimming time, so anything planned for her on a Saturday starts in the afternoon."},
+        {"role": "user", "content": "My daughter Yuha has a swimming lesson every Saturday from 10 to 11 at the pool in our neighbourhood, so Saturday plans for her have to start after lunch."},
+        {"role": "assistant", "content": "Noted: Saturday mornings are Yuha's swimming time, so anything planned for her on a Saturday starts in the afternoon."},
         {"role": "user", "content": "She gets very hungry after swimming and tired by the early evening."},
-        {"role": "assistant", "content": "Then a late lunch right after the pool and nothing big after six in the evening works best for Karina on Saturdays."}
+        {"role": "assistant", "content": "Then a late lunch right after the pool and nothing big after six in the evening works best for Yuha on Saturdays."}
       ]
     },
     {
@@ -51,18 +51,18 @@
       "turns": [
         {"role": "user", "content": "Our team at SK hynix MSR is presenting at a conference in Las Vegas, so I fly there from January 11 to January 15. Sessions run all day, and I want to keep running during the trip."},
         {"role": "assistant", "content": "Run early, before the sessions: most hotels there have a gym with treadmills, and the streets are quiet at six in the morning. Keep the runs short on a conference week."},
-        {"role": "user", "content": "Karina asked me to bring her back an Elsa doll from the trip."},
-        {"role": "assistant", "content": "An Elsa doll is easy to find in the big toy stores there and packs flat in a suitcase, exactly what Karina asked for."}
+        {"role": "user", "content": "Yuha asked me to bring her back an Elsa doll from the trip."},
+        {"role": "assistant", "content": "An Elsa doll is easy to find in the big toy stores there and packs flat in a suitcase, exactly what Yuha asked for."}
       ]
     },
     {
-      "title": "Winter break plans for Karina",
+      "title": "Winter break plans for Yuha",
       "date": "2026-12-08T20:20:00-08:00",
       "turns": [
-        {"role": "user", "content": "Karina's winter break starts on December 24. She wants to learn to skate like Elsa, and on cold days she needs indoor things to do."},
+        {"role": "user", "content": "Yuha's winter break starts on December 24. She wants to learn to skate like Elsa, and on cold days she needs indoor things to do."},
         {"role": "assistant", "content": "Start with two or three short sessions at the Seoul Plaza skating rink, with a helmet and gloves. For cold days: a children's museum visit, baking together, and a library card."},
         {"role": "user", "content": "She loved the skating. She also keeps asking to decorate her birthday cake herself."},
-        {"role": "assistant", "content": "Let Karina decorate the ice castle cake: she can press the rock candy and sugar snowflakes onto the frosting once the towers stand."}
+        {"role": "assistant", "content": "Let Yuha decorate the ice castle cake: she can press the rock candy and sugar snowflakes onto the frosting once the towers stand."}
       ]
     },
     {
@@ -78,26 +78,26 @@
   ],
   "demos": [
     {
-      "topic": "Karina's birthday party",
+      "topic": "Yuha's birthday party",
       "first": {
-        "text": "Can you plan the food for Karina's party this Saturday?",
+        "text": "Can you plan the food for Yuha's party this Saturday?",
         "why": "needs the peanut allergy and the mushrooms (chat 1) and the Frozen theme with twelve kids (chat 2)",
         "expected": ["peanut", "mushrooms", "Frozen", "twelve"],
-        "no_memory": "asks who Karina is, her age or her allergies, or lists a generic children's menu"
+        "no_memory": "asks who Yuha is, her age or her allergies, or lists a generic children's menu"
       },
       "follow_ups": [
         {
           "if": "the first answer did not mention the cake",
           "text": "And what about the cake?",
-          "why": "needs the ice castle cake (chat 2) and Karina decorating it herself (chat 6)",
-          "expected": ["ice castle cake", "frosting"],
+          "why": "needs the ice castle cake (chat 2) and Yuha decorating it herself (chat 6)",
+          "expected": ["ice castle", "frosting"],
           "no_memory": "suggests a generic birthday cake"
         },
         {
           "if": "the first answer already described the cake",
           "text": "What time should the party start?",
           "why": "needs the Saturday swimming lesson from 10 to 11 and the late lunch (chat 3)",
-          "expected": ["swimming lesson", "after lunch"],
+          "expected": ["swimming", "lunch"],
           "no_memory": "suggests a usual early-afternoon time without a reason"
         }
       ]
@@ -107,7 +107,7 @@
       "first": {
         "text": "I fly to Las Vegas on Monday. When and where do I run next week?",
         "why": "needs the Tuesday, Thursday and Sunday schedule with the travel rule (chat 4) and the hotel gym in the mornings (chat 5)",
-        "expected": ["Tuesday and Thursday", "hotel", "long run"],
+        "expected": ["Tuesday", "Thursday", "hotel", "long run"],
         "no_memory": "asks about the schedule and the hotel, or gives generic treadmill advice"
       },
       "follow_ups": [
@@ -120,10 +120,10 @@
         },
         {
           "if": "the first answer already covered the knee",
-          "text": "What should I bring back for Karina?",
+          "text": "What should I bring back for Yuha?",
           "why": "needs the Elsa doll she asked for (chat 5)",
-          "expected": ["Elsa doll"],
-          "no_memory": "asks who Karina is and what she likes"
+          "expected": ["Elsa"],
+          "no_memory": "asks who Yuha is and what she likes"
         }
       ]
     }

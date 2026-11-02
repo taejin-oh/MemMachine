@@ -9,7 +9,7 @@
       "turns": [
         {
           "role": "user",
-          "content": "My daughter Karina has a peanut allergy, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"
+          "content": "My daughter Yuha has a peanut allergy, so we keep the house peanut-free. Can you suggest a few school lunch ideas for her?"
         },
         {
           "role": "assistant",
@@ -21,17 +21,17 @@
         },
         {
           "role": "assistant",
-          "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Karina."
+          "content": "Noted: no peanuts and no mushrooms. I will keep both out of every suggestion for Yuha."
         }
       ]
     },
     {
-      "title": "Karina's birthday ideas",
+      "title": "Yuha's birthday ideas",
       "date": "2026-11-18T20:05:00-08:00",
       "turns": [
         {
           "role": "user",
-          "content": "Karina turns 7 in January and she is obsessed with Frozen right now. Any ideas for her birthday party?"
+          "content": "Yuha turns 7 in January and she is obsessed with Frozen right now. Any ideas for her birthday party?"
         },
         {
           "role": "assistant",
@@ -45,26 +45,26 @@
       "turns": [
         {
           "role": "user",
-          "content": "Karina has a swimming lesson every Saturday morning, so anything for her on a Saturday has to start after lunch."
+          "content": "Yuha has a swimming lesson every Saturday morning, so anything for her on a Saturday has to start after lunch."
         },
         {
           "role": "assistant",
-          "content": "Good to know. Saturday plans for Karina start in the afternoon."
+          "content": "Good to know. Saturday plans for Yuha start in the afternoon."
         }
       ]
     }
   ],
   "demos": [
     {
-      "topic": "Karina's birthday party",
+      "topic": "Yuha's birthday party",
       "first": {
-        "text": "Can you plan the food for Karina's party this Saturday?",
+        "text": "Can you plan the food for Yuha's party this Saturday?",
         "why": "needs the allergy (chat 1) and the Frozen theme (chat 2)",
         "expected": [
           "peanut",
           "Frozen"
         ],
-        "no_memory": "asks who Karina is or lists a generic children's menu"
+        "no_memory": "asks who Yuha is or lists a generic children's menu"
       },
       "follow_ups": [
         {
@@ -72,7 +72,7 @@
           "text": "What time should the party start?",
           "why": "needs the swimming lesson (chat 3)",
           "expected": [
-            "swimming lesson"
+            "swimming"
           ],
           "no_memory": "suggests a usual afternoon time"
         }
