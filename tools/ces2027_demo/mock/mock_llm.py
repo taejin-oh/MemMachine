@@ -43,8 +43,9 @@ MODEL_NAMES = [
 ]
 # Used when the embeddings request does not ask for a specific size.
 DEFAULT_DIMENSIONS = 384
-# The Pipe starts its memory block with this sentence (pipe/memmachine_pipe.py).
-MEMORY_BLOCK_MARKER = "memories retrieved from the user's past conversations"
+# The Pipe starts its memory block with one of these sentences, per language
+# (TEXT["memory_header"] in pipe/memmachine_pipe.py).
+MEMORY_BLOCK_MARKERS = ("memories retrieved from the user's past conversations", "과거 대화에서 찾은 기억")
 
 
 @app.get("/health")
@@ -95,11 +96,12 @@ def compose_answer(messages: list[dict]) -> str:
     question = next((text_of(m) for m in reversed(messages) if m.get("role") == "user"), "")
     question = question[:60]
 
-    if MEMORY_BLOCK_MARKER not in system_text:
+    marker = next((m for m in MEMORY_BLOCK_MARKERS if m in system_text), None)
+    if marker is None:
         return f'(mock, no memory) I know nothing about you, so here is a generic answer to "{question}".'
 
     # Memory lines follow the marker and look like "[Nov 3, 2026 | title] user: ..."
-    block = system_text.split(MEMORY_BLOCK_MARKER, 1)[1]
+    block = system_text.split(marker, 1)[1]
     memory_lines = [line for line in block.splitlines() if line.startswith("[")]
     first = memory_lines[0][:120] if memory_lines else "(none)"
     return (

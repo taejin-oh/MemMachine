@@ -1,7 +1,7 @@
 """
 title: MemMachine
-version: 0.4.0
-description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first.
+version: 0.5.0
+description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
 # Open WebUI Pipe function for the CES 2027 demo (design section 5.2).
@@ -33,6 +33,12 @@ description: Four models per LLM: with and without memory, answering at once or 
 # step. The booth shows the at-once pair first and the step-by-step pair when
 # the visitor wants to see how the answer is made.
 #
+# Everything the Pipe writes on the screen, and the memory instruction in the
+# prompt, comes from TEXT in the language of the valve LANGUAGE (en or ko);
+# scripts/load_scenario.py sets it from the script file together with the base
+# system prompt, so loading a script switches the whole screen to its language.
+# Error texts stay English: scripts/demo_check.py looks for their prefixes.
+#
 # Only packages that ship with the Open WebUI image are used (httpx, pydantic)
 # plus Open WebUI's own chat table, which gives each memory its session title.
 # scripts/setup_openwebui.py installs this file through the admin API.
@@ -47,21 +53,68 @@ import httpx
 from open_webui.models.chats import Chats
 from pydantic import BaseModel, Field
 
-# First line of the memory block in the system prompt. The development mock
-# looks for this sentence to tell "with memory" requests apart.
-MEMORY_BLOCK_HEADER = (
-    "The following are memories retrieved from the user's past conversations. "
-    "Use them when they are relevant."
-)
-
 # Appended to the LLM model id to form the no-memory and the step-by-step models;
 # scripts/common.py uses the same suffixes.
 NO_MEMORY_SUFFIX = "--no-memory"
 STEPS_SUFFIX = "--steps"
-# Shown above the no-memory answer as the counterpart of the memory list: a plain
-# (grey) blockquote, so the coloured NOTE block stays unique to the memory side.
-# {brand} is the valve BRAND_NAME.
-NO_MEMORY_NOTE = "> **No memory used.** This model answers without {brand}.\n\n"
+
+# Screen and prompt texts per language (valve LANGUAGE). scripts/common.py
+# repeats the three markers that demo_check.py looks for (memories_retrieved,
+# no_memory_note, step) and mock/mock_llm.py the start of memory_header: change
+# them together.
+TEXT = {
+    "en": {
+        # First line of the memory block in the system prompt.
+        "memory_header": "The following are memories retrieved from the user's past conversations. "
+                         "Use them when they are relevant.",
+        # "Today is Wednesday, 2027-01-06."; {weekday} is the English weekday name.
+        "today": "Today is {weekday}, {date}.",
+        # Shown above the no-memory answer as the counterpart of the memory list: a plain
+        # (grey) blockquote, so the coloured NOTE block stays unique to the memory side.
+        "no_memory_note": "> **No memory used.** This model answers without {brand}.\n\n",
+        # Date of a memory as the list and the prompt show it, "Nov 3, 2026"; {month} is the short English month name.
+        "date": "{month} {day}, {year}",
+        "memories_retrieved": "**Memories retrieved ({count})**",
+        "no_memories": "_No memories found._",
+        "status_searching": "Searching memories",
+        "status_retrieved": "Retrieved {count} memories",
+        "status_answered": "Answered in {seconds:.1f} s",
+        "status_search_failed": "Memory search failed",
+        "step": "Step {number} of {total}: {text}",
+        "step_search": 'Searching memory for "{question}"',
+        "step_search_done": "{count} memories found in {seconds:.1f} s",
+        "step_search_skipped_title": "Searching memory",
+        "step_search_skipped": "Skipped. This model has no memory.",
+        "step_compose": "Composing the prompt from the system prompt, {memories} and your question",
+        "memories_some": "{count} memories",
+        "memories_none": "no memories",
+        "step_ask": "Asking {model}",
+        "prompt_summary": "Prompt sent to the LLM",
+    },
+    "ko": {
+        "memory_header": "다음은 사용자의 과거 대화에서 찾은 기억이다. 관련이 있을 때 활용하라.",
+        "today": "오늘은 {date} {weekday}이다.",
+        "no_memory_note": "> **기억을 쓰지 않았습니다.** 이 모델은 {brand} 없이 답합니다.\n\n",
+        "date": "{year}년 {month_number}월 {day}일",
+        "memories_retrieved": "**검색된 기억 ({count}개)**",
+        "no_memories": "_찾은 기억이 없습니다._",
+        "status_searching": "기억을 검색하는 중",
+        "status_retrieved": "기억 {count}개를 찾았습니다",
+        "status_answered": "{seconds:.1f}초 만에 답했습니다",
+        "status_search_failed": "기억 검색 실패",
+        "step": "{total}단계 중 {number}단계: {text}",
+        "step_search": '기억을 검색합니다: "{question}"',
+        "step_search_done": "{seconds:.1f}초 만에 기억 {count}개를 찾았습니다",
+        "step_search_skipped_title": "기억 검색",
+        "step_search_skipped": "건너뜁니다. 이 모델에는 기억이 없습니다.",
+        "step_compose": "시스템 프롬프트, {memories}, 질문으로 프롬프트를 만듭니다",
+        "memories_some": "기억 {count}개",
+        "memories_none": "기억 없음",
+        "step_ask": "{model}에 묻습니다",
+        "prompt_summary": "LLM에 보낸 프롬프트",
+    },
+}
+WEEKDAYS_KO = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
 
 EventEmitter = Callable[[dict], Awaitable[None]]
 
@@ -103,10 +156,21 @@ class Pipe:
             description="Start the no-memory model's answer with a one-line note that no memory was used, "
             "as the counterpart of the memory list.",
         )
+        LANGUAGE: str = Field(
+            default="en",
+            description="Language of the screen texts and of the memory instruction in the prompt: en or ko. "
+            "Set by load_scenario.py from the script file.",
+        )
         BASE_SYSTEM_PROMPT: str = Field(
             default="You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from "
             "what you know. Only when something essential is missing, say so in one sentence and ask one question.",
-            description="Set by setup_openwebui.py from .env; both models get the same text.",
+            description="Set by load_scenario.py from the script file; both models get the same text.",
+        )
+        DEMO_DATE: str = Field(
+            default="",
+            description="Date of the demo as 2027-01-06; both models are told 'Today is <weekday>, <date>.' in the "
+            "screen language, so 'this Saturday' needs no calendar arithmetic. Empty: no such line. "
+            "Set by setup_openwebui.py from .env.",
         )
         MAX_TOKENS: int = Field(
             default=300,
@@ -206,51 +270,51 @@ class Pipe:
         """
         question = last_user_text(messages)
         started = time.monotonic()
-        steps = Steps(emit, self.valves.STEP_DELAY_MS / 1000) if in_steps else None
+        steps = Steps(emit, self.valves.STEP_DELAY_MS / 1000, self._text("step")) if in_steps else None
         # The no-memory model walks the steps as well when PACE_NO_MEMORY is on, so both cards keep one rhythm.
         paced = steps is not None and (with_memory or self.valves.PACE_NO_MEMORY)
 
         memories: list[dict] = []
         if with_memory:
             if steps:
-                async for chunk in steps.start(1, f'Searching memory for "{preview(question, 60)}"'):
+                async for chunk in steps.start(1, self._text("step_search", question=preview(question, 60))):
                     yield chunk
             else:
-                await send_status(emit, "Searching memories")
+                await send_status(emit, self._text("status_searching"))
             search_started = time.monotonic()
             try:
                 memories = await self._search(question)
             except Exception as error:
                 # Fail loudly: answering without memory would make both sides look alike.
-                await send_status(emit, "Memory search failed", done=True)
+                await send_status(emit, self._text("status_search_failed"), done=True)
                 yield f"Memory search failed: {error}"
                 return
             if steps:
-                async for chunk in steps.finish(f"{len(memories)} memories found in {time.monotonic() - search_started:.1f} s"):
+                async for chunk in steps.finish(self._text("step_search_done", count=len(memories),
+                                                           seconds=time.monotonic() - search_started)):
                     yield chunk
             else:
-                await send_status(emit, f"Retrieved {len(memories)} memories", done=True)
-            yield render_memory_list(memories, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS)
+                await send_status(emit, self._text("status_retrieved", count=len(memories)), done=True)
+            yield render_memory_list(memories, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS,
+                                     self._text("memories_retrieved", count=len(memories)), self._text("no_memories"))
         elif paced:
-            async for chunk in steps.start(1, "Searching memory"):
+            async for chunk in steps.start(1, self._text("step_search_skipped_title")):
                 yield chunk
-            async for chunk in steps.finish("Skipped. This model has no memory."):
+            async for chunk in steps.finish(self._text("step_search_skipped")):
                 yield chunk
         elif self.valves.SHOW_NO_MEMORY_NOTE:
-            yield NO_MEMORY_NOTE.format(brand=self.valves.BRAND_NAME)
+            yield self._text("no_memory_note", brand=self.valves.BRAND_NAME)
 
-        prompt = self.valves.BASE_SYSTEM_PROMPT
-        if memories:
-            prompt += "\n\n" + MEMORY_BLOCK_HEADER + "\n" + "\n".join(memory_prompt_line(m) for m in memories)
+        prompt = self._system_prompt(memories)
         llm_messages = [{"role": "system", "content": prompt}] + [m for m in messages if m.get("role") != "system"]
 
         if paced:
-            parts = "the system prompt, " + (f"{len(memories)} memories" if memories else "no memories") + " and your question"
-            async for chunk in steps.start(2, f"Composing the prompt from {parts}"):
+            parts = self._text("memories_some", count=len(memories)) if memories else self._text("memories_none")
+            async for chunk in steps.start(2, self._text("step_compose", memories=parts)):
                 yield chunk
             if self.valves.SHOW_PROMPT:
-                yield render_prompt(prompt, question)
-            async for chunk in steps.start(3, f"Asking {model_id}"):
+                yield render_prompt(prompt, question, self._text("prompt_summary"))
+            async for chunk in steps.start(3, self._text("step_ask", model=model_id)):
                 yield chunk
         yield "---\n\n"
 
@@ -264,13 +328,36 @@ class Pipe:
             yield f"\n\nLLM call failed: {error}"
             return
         if steps:
-            await send_status(emit, f"Answered in {time.monotonic() - started:.1f} s", done=True)
+            await send_status(emit, self._text("status_answered", seconds=time.monotonic() - started), done=True)
 
         if with_memory and self.valves.RECORD_MEMORY:
             try:
                 await self._store(question, "".join(answer_parts), chat_id)
             except Exception as error:
                 yield f"\n\nMemory write failed: {error}"
+
+    # --- language -------------------------------------------------------------
+
+    def _text(self, key: str, **values) -> str:
+        """A screen or prompt text in the valve language; an unknown language falls back to English.
+        Without values the template itself is returned, for Steps to fill in later."""
+        template = TEXT.get(self.valves.LANGUAGE, TEXT["en"])[key]
+        return template.format(**values) if values else template
+
+    def _system_prompt(self, memories: list[dict]) -> str:
+        """The base prompt, the date line when DEMO_DATE is set, and the memory block when there are memories."""
+        prompt = self.valves.BASE_SYSTEM_PROMPT
+        if self.valves.DEMO_DATE:
+            try:
+                day = datetime.fromisoformat(self.valves.DEMO_DATE).date()
+            except ValueError:
+                day = None  # setup_openwebui.py validates the value; a bad one typed into the valve is ignored
+            if day:
+                weekday = WEEKDAYS_KO[day.weekday()] if self.valves.LANGUAGE == "ko" else f"{day:%A}"
+                prompt += "\n" + self._text("today", weekday=weekday, date=day.isoformat())
+        if memories:
+            prompt += "\n\n" + self._text("memory_header") + "\n" + "\n".join(memory_prompt_line(m) for m in memories)
+        return prompt
 
     # --- MemMachine -----------------------------------------------------------
 
@@ -295,7 +382,7 @@ class Pipe:
                 {
                     "text": episode.get("content", ""),
                     "role": episode.get("producer_role") or episode.get("producer_id") or "user",
-                    "date": format_date(episode.get("created_at")),
+                    "date": format_date(episode.get("created_at"), self._text("date")),
                     "title": titles.get(session_id),
                 }
             )
@@ -368,17 +455,19 @@ class Steps:
 
     TOTAL = 3
 
-    def __init__(self, emit: EventEmitter | None, delay: float):
+    def __init__(self, emit: EventEmitter | None, delay: float, label: str):
         self.emit = emit
         self.delay = delay
+        self.label = label  # TEXT["step"] of the language: "Step {number} of {total}: {text}"
 
     async def start(self, number: int, text: str) -> AsyncGenerator[str, None]:
         # The first title goes out as soon as the question arrives, so the card shows it is working; the
         # pauses come before every later step and between a step and its result (finish()).
         if self.delay and number > 1:
             await asyncio.sleep(self.delay)
-        await send_status(self.emit, f"Step {number} of {self.TOTAL}: {text}")
-        yield f"**Step {number} of {self.TOTAL}: {text}**\n\n"
+        line = self.label.format(number=number, total=self.TOTAL, text=text)
+        await send_status(self.emit, line)
+        yield f"**{line}**\n\n"
 
     async def finish(self, result: str) -> AsyncGenerator[str, None]:
         # The result follows its step after one pause, so it reads as the outcome of the line above.
@@ -388,10 +477,10 @@ class Steps:
         yield f"{result}\n\n"
 
 
-def render_prompt(prompt: str, question: str) -> str:
+def render_prompt(prompt: str, question: str, summary: str) -> str:
     """The exact text the LLM receives, in a collapsed block: the system prompt (with the memories) and the question."""
     return (
-        "<details>\n<summary>Prompt sent to the LLM</summary>\n\n"
+        f"<details>\n<summary>{summary}</summary>\n\n"
         f"```text\n[system]\n{prompt}\n\n[user]\n{question}\n```\n\n</details>\n\n"
     )
 
@@ -399,11 +488,11 @@ def render_prompt(prompt: str, question: str) -> str:
 # --- formatting helpers ---------------------------------------------------------
 
 
-def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int) -> str:
+def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int, header: str, empty: str) -> str:
     """The block shown above the answer: a NOTE callout with the memories. No scores on purpose."""
-    lines = [f"**Memories retrieved ({len(memories)})**", ""]
+    lines = [header, ""]
     if not memories:
-        lines.append("_No memories found._")
+        lines.append(empty)
     for number, memory in enumerate(memories, start=1):
         label = memory_label(memory) if show_session_info else ""
         lines.append(f"{number}. {label}".rstrip())
@@ -434,8 +523,9 @@ def memory_prompt_line(memory: dict) -> str:
     return f"[{where}] {memory['role']}: {memory['text']}"
 
 
-def format_date(created_at: str | None) -> str:
-    """ISO timestamp from MemMachine to 'Nov 3, 2026' in the container's time zone (TZ in .env).
+def format_date(created_at: str | None, template: str) -> str:
+    """ISO timestamp from MemMachine to the language's date form (TEXT "date", e.g. 'Nov 3, 2026') in the
+    container's time zone (TZ in .env).
 
     MemMachine stores UTC; converting keeps the list consistent with the chat
     timestamps the browser shows in the display device's local time.
@@ -446,7 +536,7 @@ def format_date(created_at: str | None) -> str:
         moment = datetime.fromisoformat(created_at).astimezone()
     except ValueError:
         return ""
-    return f"{moment.strftime('%b')} {moment.day}, {moment.year}"
+    return template.format(month=moment.strftime("%b"), month_number=moment.month, day=moment.day, year=moment.year)
 
 
 def last_user_text(messages: list[dict]) -> str:
