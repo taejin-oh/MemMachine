@@ -65,8 +65,9 @@ STEPS_SUFFIX = "--steps"
 TEXT = {
     "en": {
         # First line of the memory block in the system prompt.
-        "memory_header": "The following are memories retrieved from the user's past conversations. "
-                         "Use them when they are relevant.",
+        "memory_header": "The following are memories retrieved from the user's past conversations. Use every "
+                         "memory that is relevant and state the specific facts you take from it (names, numbers, "
+                         "days, places).",
         # "Today is Wednesday, 2027-01-06."; {weekday} is the English weekday name.
         "today": "Today is {weekday}, {date}.",
         # Shown above the no-memory answer as the counterpart of the memory list: a plain
@@ -92,7 +93,8 @@ TEXT = {
         "prompt_summary": "Prompt sent to the LLM",
     },
     "ko": {
-        "memory_header": "다음은 사용자의 과거 대화에서 찾은 기억이다. 관련이 있을 때 활용하라.",
+        "memory_header": "다음은 사용자의 과거 대화에서 찾은 기억이다. 관련 있는 기억은 모두 쓰고, 거기서 가져온 구체적인 "
+                         "사실(이름, 숫자, 요일, 장소)을 답에 밝혀라.",
         "today": "오늘은 {date} {weekday}이다.",
         "no_memory_note": "> **기억을 쓰지 않았습니다.** 이 모델은 {brand} 없이 답합니다.\n\n",
         "date": "{year}년 {month_number}월 {day}일",
