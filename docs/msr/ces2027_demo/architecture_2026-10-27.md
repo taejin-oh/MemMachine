@@ -19,7 +19,7 @@
 
 ## 1.1 무엇을 보여 주나
 
-스태프가 "이번 토요일 Karina 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
+스태프가 "이번 토요일 Yuha 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
 
 ![비교 화면](img/08_booth_comparison_callout.png)
 
@@ -348,18 +348,18 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 날짜 | 세션(영어 제목) | 턴 |
 |---|---|---|
-| 2026-11-02 | Karina's peanut allergy and school lunches | 4 |
-| 2026-11-09 | Planning Karina's 7th birthday | 4 |
-| 2026-11-16 | Karina's Saturday swimming lesson | 4 |
+| 2026-11-02 | Yuha's peanut allergy and school lunches | 4 |
+| 2026-11-09 | Planning Yuha's 7th birthday | 4 |
+| 2026-11-16 | Yuha's Saturday swimming lesson | 4 |
 | 2026-11-23 | Seoul Marathon training plan | 6 |
 | 2026-12-01 | Conference trip to Las Vegas in January | 4 |
-| 2026-12-08 | Winter break plans for Karina | 4 |
+| 2026-12-08 | Winter break plans for Yuha | 4 |
 | 2026-12-15 | Home office and back pain | 4 |
 
 | 주제 | 첫 질문(영어) | 기대 문구 |
 |---|---|---|
-| 카리나의 생일 파티 | Can you plan the food for Karina's party this Saturday? | peanut, mushrooms, Frozen, twelve |
-| 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday and Thursday, hotel, long run |
+| 유하의 생일 파티 | Can you plan the food for Yuha's party this Saturday? | peanut, mushrooms, Frozen, twelve |
+| 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday, Thursday, hotel, long run |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다.
 
