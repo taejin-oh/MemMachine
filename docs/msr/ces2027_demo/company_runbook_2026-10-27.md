@@ -250,7 +250,6 @@ AVATAR_NO_MEMORY=no_memory_plain.png
 TEMPORARY_CHAT=true
 STEPS_BY_DEFAULT=true
 DEMO_DATE=2027-01-06
-BASE_SYSTEM_PROMPT=You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.
 POSTGRES_PASSWORD=memmachine
 EOF
 sed -i "s|^WEBUI_SECRET_KEY=GENERATE|WEBUI_SECRET_KEY=$(openssl rand -hex 32)|" ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env && (grep -n '<' ~/ces2027/MemMachine/tools/ces2027_demo/deploy/.env || echo env-ok)
@@ -418,7 +417,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile ap
 ```
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/load_scenario.py scenario/script.json
+cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/load_scenario.py scenario/script_en.json
 ```
 
 **나와야 하는 것** `project ces-<날짜>-<시각>: Pipe valve set, previous chats of visitor@demo.local deleted`, 세션 일곱 줄(`session '...': N turns, chat ...`), `done. Reload the browser to see the chats.`
@@ -426,7 +425,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/load_scenario.py s
 **다르면** HTTP 500이면 `cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose logs --tail 100 memmachine`에서 임베딩 오류를 본다. `dimension`이 들어 있으면 5.3절과 6.2절의 값이 다른 것이고, `connection`이 들어 있으면 `EMBED_HOST`가 틀린 것이다. 고친 뒤 바로 위의 MemMachine 다시 올리기 명령을 실행하고 적재를 다시 실행한다. 적재는 매번 처음부터 다시 한다.
 
 ```bash
-cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/demo_check.py scenario/script.json
+cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/demo_check.py scenario/script_en.json
 ```
 
 **나와야 하는 것** 아래 모양으로 모든 줄이 `OK`이고 마지막이 `all checks passed`. 실제 임베더이므로 Mac과 달리 `WARN`은 나오지 않는다. 이 출력 전체를 보고서에 붙인다.
@@ -442,10 +441,13 @@ OK   sign in to Open WebUI: staff@demo.local
 OK   sign in as the booth account: visitor@demo.local
 OK   both demo models visible to the booth account: memmachine_pipe.<LLM_MODEL_NAME>, <LLM_MODEL_NAME>
 OK   chat model served by the LLM server: <LLM_MODEL_NAME>
-OK   top-5 memories for 'Can you plan the menu for Mia's birthday party thi': 5 retrieved from ces-...
-OK   top-5 memories for 'I am in Seoul next week. How do I keep my training': 5 retrieved from ces-...
-OK   top-5 memories for 'What gifts should I bring for Junhyeok and for Rosa': 5 retrieved from ces-...
-OK   top-5 memories for 'My right knee was sore again after Sunday's long r': 5 retrieved from ces-...
+OK   the Pipe is in the script's language: en
+OK   top-5 memories for 'Can you plan the food for Karina's party this Satu': 5 retrieved from ces-...
+OK   top-5 memories for 'And what about the cake?': 5 retrieved from ces-...
+OK   top-5 memories for 'What time should the party start?': 5 retrieved from ces-...
+OK   top-5 memories for 'I fly to Las Vegas on Monday. When and where do I ': 5 retrieved from ces-...
+OK   top-5 memories for 'My knee was sore again after Sunday's long run. Wh': 5 retrieved from ces-...
+OK   top-5 memories for 'What should I bring back for Karina?': 5 retrieved from ces-...
 OK   record mode (RECORD_MEMORY) is off
 OK   answer from the Pipe model: ...
 
@@ -454,7 +456,7 @@ all checks passed
 
 **다르면** `FAIL` 줄의 끝에 이유가 있다. 앞쪽 서버 줄이 `FAIL`이면 6.1절에서 6.3절의 해당 서버를 본다. `top-5 memories` 줄이 `FAIL ... missing ['문구'] among 5 retrieved from ces-...`이면 그 질문의 기대 문구가 실제 임베더의 top-5에 없는 것이다. 이때는 대본을 바로 고치지 말고 먼저 무엇이 검색됐는지 본다.
 
-질문에 작은따옴표(`Mia's`)가 있으므로 JSON은 heredoc으로 넘긴다. 아래 세 줄을 통째로 실행한다.
+질문에 작은따옴표(`Karina's`)가 있으므로 JSON은 heredoc으로 넘긴다. 아래 세 줄을 통째로 실행한다.
 
 ```bash
 curl -s http://<APP_IP>:8080/api/v2/memories/search -H 'Content-Type: application/json' --data-binary @- <<'EOF' | python3 -c "import json,sys; [print('-', e['content'][:160]) for e in json.load(sys.stdin)['content']['episodic_memory']['long_term_memory']['episodes']]"
@@ -462,7 +464,7 @@ curl -s http://<APP_IP>:8080/api/v2/memories/search -H 'Content-Type: applicatio
 EOF
 ```
 
-검색된 다섯 문장을 사람에게 보여 주고 둘 중 하나를 고르게 한다. 빠진 사실이 다른 문장으로 검색됐으면 `scenario/script.json`의 그 질문 `expected`에서 빠진 문구를 검색된 문장 안에 실제로 있는 단어로 바꾼다. 그 세션이 아예 검색되지 않았으면 질문 문장에 그 세션의 핵심 단어를 더 넣는다. 고친 뒤 `load_scenario.py`와 `demo_check.py`를 다시 실행한다. 기대 문구는 Mac에서 mock으로 정한 것이라 바뀌는 것이 정상이며, 바뀐 내용을 보고서에 적는다.
+검색된 다섯 문장을 사람에게 보여 주고 둘 중 하나를 고르게 한다. 빠진 사실이 다른 문장으로 검색됐으면 `scenario/script_en.json`(한국어판은 `script_ko.json`)의 그 질문 `expected`에서 빠진 문구를 검색된 문장 안에 실제로 있는 단어로 바꾼다. 그 세션이 아예 검색되지 않았으면 질문 문장에 그 세션의 핵심 단어를 더 넣는다. 고친 뒤 `load_scenario.py`와 `demo_check.py`를 다시 실행한다. 기대 문구는 Mac에서 mock으로 정한 것이라 바뀌는 것이 정상이며, 바뀐 내용을 보고서에 적는다.
 
 ## 7. 화면과 시간 확인
 
@@ -470,16 +472,18 @@ EOF
 
 **하는 일** 관객이 보는 화면을 사람이 확인한다. 사람이 쓰는 PC의 브라우저로 `http://<APP_IP>:3000`을 열고 `visitor@demo.local`과 작업표의 부스 계정 비밀번호로 들어간다. 스태프 계정으로 들어가면 Open WebUI가 관리자에게는 기능을 숨기지 않아 첨부와 마이크 단추가 보이므로, 화면 확인은 부스 계정으로 한다. 사이드바가 접혀 있으면 왼쪽 위 단추로 펼친다.
 
-**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory, step by step)` 이름(`STEPS_BY_DEFAULT=true`일 때. 빈 값이면 `(no memory)`), 그 위에 "Temporary Chat" 표시(`.env`의 `TEMPORARY_CHAT=true`일 때). 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 두 모델만 있다. 대본의 네 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 파란 NOTE 블록 안의 목록(날짜와 세션 제목, 본문 한 줄) 다음에 답이, 오른쪽에 기억 없는 답이 나온다. New Chat을 누르면 질문 채팅은 사이드바에 남지 않는다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다. 오른쪽 카드는 회색 한 줄 "No memory used"로 시작하고 두 답은 80단어 안팎으로 짧다.
+**나와야 하는 것** 사이드바에 과거 채팅 일곱 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory, step by step)` 이름(`STEPS_BY_DEFAULT=true`일 때. 빈 값이면 `(no memory)`), 그 위에 "Temporary Chat" 표시(`.env`의 `TEMPORARY_CHAT=true`일 때). 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 두 모델만 있다. 대본의 질문을 차례로 보내면(아래 목록) 왼쪽에 "Retrieved 5 memories"와 파란 NOTE 블록 안의 목록(날짜와 세션 제목, 본문 한 줄) 다음에 답이, 오른쪽에 기억 없는 답이 나온다. New Chat을 누르면 질문 채팅은 사이드바에 남지 않는다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다. 오른쪽 카드는 회색 한 줄 "No memory used"로 시작하고 두 답은 80단어 안팎으로 짧다.
 
-1. Can you plan the menu for Mia's birthday party this Saturday?
-2. I am in Seoul next week. How do I keep my training on track while I am there?
-3. What gifts should I bring for Junhyeok and for Rosa?
-4. My right knee was sore again after Sunday's long run. What should I change this week?
+1. Can you plan the food for Karina's party this Saturday?
+2. And what about the cake? (또는 What time should the party start?)
+3. I fly to Las Vegas on Monday. When and where do I run next week?
+4. My knee was sore again after Sunday's long run. What do I change this week? (또는 What should I bring back for Karina?)
+
+녹화 때는 비교 화면이 아니라 모델 하나짜리 채팅 둘에 같은 질문을 차례로 묻는다. 순서와 후속 질문을 고르는 조건은 [콜드 데모 문서](cold_demo_2026-11-02.md) 6장에 있다. 한국어판 질문은 같은 문서 부록 B에 있다.
 
 오늘이 대본 날짜(2026년 11월과 12월)보다 앞서면 사이드바 묶음이 "Previous 7 days"나 "in a month"로 보이고 읽지 않음 점이 찍힌다. 브라우저 시각 기준이라 그렇고 시연 날짜(2027년 1월)에는 월별로 묶인다. 정상이다.
 
-**다르면** 모델이 하나만 선택되어 있거나 "Model not found"가 보이면 브라우저를 새로 고친다. 오른쪽 답에 과거 사실(Mia, 땅콩, 공룡 등)이 들어가면 내장 도구 차단이 풀린 것이므로 7.3절을 본다.
+**다르면** 모델이 하나만 선택되어 있거나 "Model not found"가 보이면 브라우저를 새로 고친다. 오른쪽 답에 과거 사실(Karina, 땅콩, 겨울왕국 등)이 들어가면 내장 도구 차단이 풀린 것이므로 7.3절을 본다.
 
 사람이 캡처를 남기려면 `~/ces2027/MemMachine/docs/msr/ces2027_demo/img/` 아래에 `company_01_new_chat.png`, `company_02_comparison.png`, `company_03_past_chat.png`로 저장한다. 8장에서 함께 커밋한다. 없으면 보고서에 "캡처 없음"으로 적는다.
 
@@ -556,7 +560,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker
 
 ## 5. 화면
 
-<질문 넷에 대해 왼쪽과 오른쪽 답이 어떻게 달랐는지 한 줄씩. 캡처가 있으면 ![설명](img/company_02_comparison.png) 형식으로 넣는다. 없으면 "캡처 없음".>
+<질문마다 왼쪽과 오른쪽 답이 어떻게 달랐는지 한 줄씩. 캡처가 있으면 ![설명](img/company_02_comparison.png) 형식으로 넣는다. 없으면 "캡처 없음".>
 
 ## 6. 남은 일
 
@@ -571,7 +575,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && echo "tools-recent $(docker
 cd ~/ces2027/MemMachine && git status --short
 ```
 
-**나와야 하는 것** 다음 중에서만 나온다. `docs/msr/ces2027_demo/verification_company_<날짜>.md`(새 파일), `docs/msr/ces2027_demo/img/company_*.png`(있으면), `tools/ces2027_demo/deploy/memmachine.yml`(차원), `tools/ces2027_demo/scenario/script.json`(기대 문구를 고쳤으면). `.env`는 나오지 않는다(gitignore).
+**나와야 하는 것** 다음 중에서만 나온다. `docs/msr/ces2027_demo/verification_company_<날짜>.md`(새 파일), `docs/msr/ces2027_demo/img/company_*.png`(있으면), `tools/ces2027_demo/deploy/memmachine.yml`(차원), `tools/ces2027_demo/scenario/script_en.json`(기대 문구를 고쳤으면). `.env`는 나오지 않는다(gitignore).
 
 **다르면** 그 밖의 파일이 보이면 사람에게 묻는다. `.env`가 보이면 절대 add하지 않는다.
 
@@ -580,7 +584,7 @@ cd ~/ces2027/MemMachine && git status --short
 **하는 일** 8.2절의 `git status`에 보인 파일을 모두 이름으로 적어 add하고 커밋한다. 아래 명령은 여섯 파일을 모두 적은 예이며, `git status`에 없는 파일은 명령에서 뺀다. 제목은 영어 한 줄, 본문은 한국어 한 문단 뒤에 영어 한 문단이다.
 
 ```bash
-cd ~/ces2027/MemMachine && git add docs/msr/ces2027_demo/verification_company_<날짜>.md docs/msr/ces2027_demo/img/company_01_new_chat.png docs/msr/ces2027_demo/img/company_02_comparison.png docs/msr/ces2027_demo/img/company_03_past_chat.png tools/ces2027_demo/deploy/memmachine.yml tools/ces2027_demo/scenario/script.json && git commit -m "Docs: Add the company verification record for the CES 2027 demo" -m "회사에서 실제 vLLM(<LLM_MODEL_NAME>, <EMBED_MODEL>)로 올려 검사 스크립트가 통과한 기록이다. 임베딩 차원을 <DIM>으로 고정했다. <고친 것이 있으면 한 문장>." -m "Verification record from the company run with real vLLM servers (<LLM_MODEL_NAME>, <EMBED_MODEL>); every check passed. The embedding dimension is fixed at <DIM>. <One sentence per other change, if any>."
+cd ~/ces2027/MemMachine && git add docs/msr/ces2027_demo/verification_company_<날짜>.md docs/msr/ces2027_demo/img/company_01_new_chat.png docs/msr/ces2027_demo/img/company_02_comparison.png docs/msr/ces2027_demo/img/company_03_past_chat.png tools/ces2027_demo/deploy/memmachine.yml tools/ces2027_demo/scenario/script_en.json && git commit -m "Docs: Add the company verification record for the CES 2027 demo" -m "회사에서 실제 vLLM(<LLM_MODEL_NAME>, <EMBED_MODEL>)로 올려 검사 스크립트가 통과한 기록이다. 임베딩 차원을 <DIM>으로 고정했다. <고친 것이 있으면 한 문장>." -m "Verification record from the company run with real vLLM servers (<LLM_MODEL_NAME>, <EMBED_MODEL>); every check passed. The embedding dimension is fixed at <DIM>. <One sentence per other change, if any>."
 ```
 
 **나와야 하는 것** `[msr_ces2027_demo <해시>] Docs: Add the company verification record ...`와 바뀐 파일 수.

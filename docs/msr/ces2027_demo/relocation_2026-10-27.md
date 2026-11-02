@@ -11,7 +11,7 @@
 ## 2. 한국에서 끄기 전에
 
 1. 마지막 리허설을 끝낸 상태 그대로 둔다. 적재 도구를 다시 실행하지 않는다. 실행하면 새 프로젝트가 만들어지고 사이드바의 채팅이 지워졌다가 다시 들어가므로, 다시 실행했다면 검사 스크립트까지 다시 돌린다.
-2. 앱 서버에서 `python3 scripts/demo_check.py scenario/script.json`이 전부 통과하는지 마지막으로 본다. 출력을 복사해 둔다.
+2. 앱 서버에서 `python3 scripts/demo_check.py scenario/script_en.json`이 전부 통과하는지 마지막으로 본다. 출력을 복사해 둔다.
 3. USB 메모리에 복구 재료를 모은다. 각 서버의 `deploy/.env`와 `/etc/hosts`, 브랜치 clone 전체, 그리고 설계 6.3절대로 `docker save`로 뜬 이미지 tar(Open WebUI, pgvector, Qdrant, vLLM, 공개 MemMachine 이미지 `memmachine/memmachine:0.4.1-dev1`, 백업용 alpine)다. 인터넷이 없는 부스에서 서버를 교체하려면 이것이 전부 있어야 한다.
 4. DB 서버에서 볼륨을 백업한다. `docker compose --profile db stop`으로 멈춘 뒤 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine tar czf /b/postgres_data.tgz -C /d .`과 같은 명령으로 PostgreSQL과 Qdrant 볼륨을 tar로 떠서 USB 메모리에 둔다. 앱 서버의 `deploy_openwebui_data`도 같은 방법으로 뜬다. 백업이 끝나면 `docker compose --profile db up -d`(앱 서버는 `--profile app`)로 다시 올리고 `docker compose ps`에서 모두 `Up`인지 확인한다. `restart: always`라서 멈춘 채 꺼도 부팅 때 되살아나지만, 올라온 것을 보고 끄는 쪽이 확실하다. 적재는 몇 초면 다시 할 수 있지만, 볼륨을 되돌리는 쪽이 사이드바의 채팅 ID까지 그대로 유지한다.
 5. 서버마다 `docker compose --profile <역할> down`이 아니라 운영체제 종료를 쓴다. `down`을 하면 컨테이너가 지워져 부팅 때 자동으로 올라오지 않는다. 그랬다면 `scripts/demo_reset.sh <프로필>`로 다시 만든다. 정상 종료 순서는 앱 서버, LLM 서버, 임베더 서버, DB 서버다.
@@ -24,7 +24,7 @@
 1. 라벨대로 스위치에 서버 네 대와 시연 장비를 연결한다. 인터넷은 연결하지 않는다.
 2. 전원을 켜는 순서는 DB 서버, 임베더 서버, LLM 서버, 앱 서버다. 순서가 바뀌어도 `restart: always` 정책 때문에 결국 올라오지만, 이 순서가 가장 빨리 안정된다.
 3. vLLM 두 대는 모델을 적재하는 데 몇 분이 걸린다. GPU 서버에서 `docker compose ps`의 상태가 `healthy`가 될 때까지 기다린다. 10분이 지나도 `starting`이면 `docker compose logs llm`을 본다.
-4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script.json`을 실행한다. 전부 `OK`여야 한다.
+4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script_en.json`을 실행한다. 전부 `OK`여야 한다.
 5. 앱 서버의 터미널 하나에 `python3 scripts/demo_monitor.py`를 띄워 시연 내내 둔다. 서버 여섯 곳과 컨테이너가 모두 `OK`여야 한다. 바뀐 줄은 `scripts/demo_monitor.log`에 남는다.
 6. 브라우저로 `http://app:3000`을 열고 `.env`의 부스 계정(`BOOTH_EMAIL`, `BOOTH_PASSWORD`)으로 들어간다. 사이드바에 과거 채팅 일곱 개가 11월과 12월로 묶여 있고, 새 채팅에 두 모델이 선택되어 있고 그 위에 "Temporary Chat" 표시(`TEMPORARY_CHAT=true`일 때)가 있으면 준비가 끝난 것이다. 로그인은 4주 동안 유효하므로 한국에서 한 로그인에 기대지 말고 여기서 다시 한다. 화면 왼쪽의 사이드바가 접혀 있으면 왼쪽 위 단추로 한 번 펼친다. 이 설정은 브라우저에 남는다.
 7. 대본의 첫 질문을 한 번 보내 두 답이 수 초 안에 시작하는지 본다. 이 질문은 시연 중의 질문과 같으며 기억에 저장되지 않는다.

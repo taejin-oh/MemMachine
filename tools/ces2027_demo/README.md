@@ -1,6 +1,6 @@
 # CES 2027 MemMachine 비교 데모
 
-Open WebUI의 모델 비교 화면에서 같은 질문에 대해 왼쪽은 MemMachine의 기억을 검색해 보여 주고 답하고, 오른쪽은 같은 LLM이 기억 없이 답하는 데모다. Open WebUI와 MemMachine 서버의 소스는 고치지 않는다. 설계와 근거는 [설계 문서](../../docs/msr/ces2027_demo/design_2026-10-26.md)에 있다. 전체 구조의 요약은 [아키텍처 문서](../../docs/msr/ces2027_demo/architecture_2026-10-27.md)에 있다.
+Open WebUI의 모델 비교 화면에서 같은 질문에 대해 왼쪽은 MemMachine의 기억을 검색해 보여 주고 답하고, 오른쪽은 같은 LLM이 기억 없이 답하는 데모다. Open WebUI와 MemMachine 서버의 소스는 고치지 않는다. 설계와 근거는 [설계 문서](../../docs/msr/ces2027_demo/design_2026-10-26.md)에 있다. 전체 구조의 요약은 [아키텍처 문서](../../docs/msr/ces2027_demo/architecture_2026-10-27.md)에 있다. 2026-11-02부터 시연은 녹화(콜드)이고, 대본과 녹화 절차와 두 언어 전환은 [콜드 데모 문서](../../docs/msr/ces2027_demo/cold_demo_2026-11-02.md)에 있다.
 
 ## 구성
 
@@ -18,7 +18,8 @@ tools/ces2027_demo/
   scripts/demo_reset.sh       문제가 생겼을 때 이 서버의 컨테이너를 다시 만들고 세팅, 적재, 검사를 한 번에
   scripts/demo_monitor.py     시연 중 서버 여섯 곳과 컨테이너 상태를 몇 초마다 표시, unhealthy 컨테이너 재시작
   scripts/common.py           스크립트 공통 (.env 읽기, Open WebUI API 호출)
-  scenario/script.json        부스 대본
+  scenario/script_en.json     녹화 대본, 영어. 한 번에 한 언어만 적재한다
+  scenario/script_ko.json     녹화 대본, 한국어
   scenario/script.sample.json 대본 형식 예시
   assets/                     모델 아바타의 SVG 원본과 PNG. MemMachine 마크 한 쌍(memmachine, no_memory)과 부스용 한 쌍(skhynix, no_memory_plain). `.env`의 `AVATAR_MEMORY`, `AVATAR_NO_MEMORY`로 고른다
 ```
@@ -65,8 +66,8 @@ docker compose --profile llm up -d           # LLM 서버: vLLM 채팅 모델 (8
 docker compose --profile embed up -d         # 임베더 서버: vLLM 임베딩 모델 (8001)
 docker compose --profile app up -d           # 앱 서버: MemMachine + Open WebUI
 python3 ../scripts/setup_openwebui.py        # 앱 서버에서 한 번. 계정, Pipe, 두 모델 항목
-python3 ../scripts/load_scenario.py ../scenario/script.json   # 실제 대본
-python3 ../scripts/demo_check.py ../scenario/script.json
+python3 ../scripts/load_scenario.py ../scenario/script_en.json   # 실제 대본
+python3 ../scripts/demo_check.py ../scenario/script_en.json
 ```
 
 vLLM은 모델 적재에 몇 분이 걸린다. `docker compose ps`의 상태가 healthy가 된 뒤 세팅 스크립트를 실행한다. 전원을 다시 켜면 모든 컨테이너가 스스로 올라오므로 그 뒤에는 검사 스크립트만 돌리면 된다.
@@ -105,7 +106,7 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] 단계별 쌍으로 바꿔 질문하면 왼쪽 카드에 "Step 1 of 3" 제목이 바로 나오고, 2초마다 기억 목록, "Step 2 of 3"과 접힌 "Prompt sent to the LLM", "Step 3 of 3"이 이어진 뒤 답이 흐른다. 오른쪽도 같은 박자로 "Skipped. This model has no memory."를 지나 답한다. 접힌 블록을 펼치면 전달문 전체가 보인다. 간격이 길거나 짧으면 Valve `STEP_DELAY_MS`를 바꾼다.
 - [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).
-- [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 `.env`의 `BASE_SYSTEM_PROMPT`를 손보고 세팅 스크립트를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.
+- [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 대본 파일의 `system_prompt`를 손보고 적재 도구를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.
 - [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다(`TEMPORARY_CHAT=true`일 때. `false`면 질문 채팅이 남고 직접 지운다).
 - [ ] 질문 1의 왼쪽 답이 되묻지 않고 땅콩 알레르기, 버섯, 공룡 테마, 채식 쌍둥이를 쓴다. 되물으면 그 질문의 top-25 순위를 뽑아 이슈 #45에 적는다(대본을 고치는 근거가 된다).
 - [ ] `scripts/demo_reset.sh app db`(한 서버에 두 역할을 올린 경우)가 끝까지 돌고 마지막의 `demo_check.py`가 통과한다. `--wipe`를 붙여 한 번 더 돌려 처음 설치한 상태에서도 같은지 본다.

@@ -7,7 +7,7 @@
 
 ## 0. 요약
 
-데모는 Open WebUI의 모델 비교 화면에서 같은 질문에 대한 두 답을 나란히 보여 준다. 왼쪽은 MemMachine이 과거 대화에서 찾은 기억 다섯 개를 먼저 보여 주고 그 기억으로 답하며, 오른쪽은 같은 LLM이 기억 없이 답한다. Open WebUI와 MemMachine의 소스는 고치지 않았고, 브랜치에는 Pipe 함수 하나, compose 파일 하나, 설정 파일 하나, 스크립트 다섯, 대본 하나가 들어 있다.
+데모는 Open WebUI의 모델 비교 화면에서 같은 질문에 대한 두 답을 나란히 보여 준다. 왼쪽은 MemMachine이 과거 대화에서 찾은 기억 다섯 개를 먼저 보여 주고 그 기억으로 답하며, 오른쪽은 같은 LLM이 기억 없이 답한다. Open WebUI와 MemMachine의 소스는 고치지 않았고, 브랜치에는 Pipe 함수 하나, compose 파일 하나, 설정 파일 하나, 스크립트 다섯, 대본 둘(영어, 한국어)이 들어 있다. 2026-11-02에 시연이 라이브에서 녹화(콜드)로 바뀌었고, 녹화는 비교 화면 대신 모델 하나짜리 채팅 둘에 같은 질문을 차례로 묻는다. 바뀐 대본과 녹화 절차는 [콜드 데모 문서](cold_demo_2026-11-02.md)에 있다.
 
 같은 파일로 세 환경을 돈다. Mac에서는 가짜 LLM(mock)으로 개발하고, 회사 서버에서는 실제 vLLM으로 검증하며, 부스에서는 서버 네 대로 시연한다. 장소마다 다른 값은 `deploy/.env` 한 파일에만 있다.
 
@@ -19,11 +19,11 @@
 
 ## 1.1 무엇을 보여 주나
 
-스태프가 "이번 토요일 Mia 생일 파티 메뉴를 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
+스태프가 "이번 토요일 Karina 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
 
 ![비교 화면](img/08_booth_comparison_callout.png)
 
-과거 대화는 미리 적어 둔 대본이다. 일곱 세션 서른두 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
+과거 대화는 미리 적어 둔 대본이다. 일곱 세션 서른 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
 
 ## 1.2 다섯 가지 구성 요소
 
@@ -123,7 +123,7 @@ flowchart TB
 
 한국에서 할 일은 회사 검증과 같은 순서로 네 대에 올리고, 대본을 적재하고, 인터넷 선을 뽑은 채 전체를 껐다 켜서 검사 스크립트가 통과하는지 보는 것이다. 그 상태로 전원을 끄고 옮긴다. 미국에서 할 일은 배선 복구, 전원 켜기, 검사 스크립트 실행, 브라우저 열기 네 가지다. 모든 컨테이너는 부팅 때 저절로 뜨고, 데이터는 디스크 볼륨에 남는다.
 
-시연 화면은 부스용 일반 계정(`visitor@demo.local`)으로 들어간다. 입력창에는 보내기 단추와 모델 선택만 있고, 첨부와 마이크와 컨트롤 단추는 없다. 스태프는 대본의 질문 넷만 입력한다. 새 채팅은 임시 채팅으로 열리므로 관객의 질문은 저장되지 않고, 다음 관객 때는 New Chat만 누르면 사이드바가 적재한 과거 채팅 그대로다. 왼쪽 카드의 기억 목록은 파란 NOTE 블록 안에 기억마다 한 줄로 나온다.
+시연 화면은 부스용 일반 계정(`visitor@demo.local`)으로 들어간다. 입력창에는 보내기 단추와 모델 선택만 있고, 첨부와 마이크와 컨트롤 단추는 없다. 녹화하는 사람은 대본의 첫 질문과 후속 질문만 입력한다([콜드 데모 문서](cold_demo_2026-11-02.md) 6장). 새 채팅은 임시 채팅으로 열리므로 관객의 질문은 저장되지 않고, 다음 관객 때는 New Chat만 누르면 사이드바가 적재한 과거 채팅 그대로다. 왼쪽 카드의 기억 목록은 파란 NOTE 블록 안에 기억마다 한 줄로 나온다.
 
 ## 1.6 회사 검증과 부스의 차이
 
@@ -176,8 +176,8 @@ flowchart TB
 | 스크립트 | 로그인 | 하는 일 |
 |---|---|---|
 | `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 네 모델 항목(즉시 둘과 단계별 둘. 표시 이름, `.env`의 `AVATAR_*`가 고른 아바타, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한)과 옛 `LLM_MODEL_NAME`의 항목 제거, 부스 계정 생성, 두 계정의 조용한 설정 |
-| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 일곱 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
-| `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 네 모델 보임, 채팅 모델이 서빙됨, 질문 넷의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, 기억 모델과 기억 없는 모델과 단계별 모델에서 답 하나씩 |
+| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 새 프로젝트 ID `ces-<날짜>-<시각>`과 대본의 언어와 공통 지시문을 Valve에 쓰고, 부스 계정의 채팅을 모두 지운 뒤 대본의 일곱 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 MemMachine 에피소드로 저장 |
+| `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답, 부스 계정에 네 모델 보임, 채팅 모델이 서빙됨, Pipe가 대본의 언어임, 시연 주제마다 첫 질문과 후속 후보의 기대 문구가 top-5에 듦, 녹음 Valve 꺼짐, 기억 모델과 기억 없는 모델과 단계별 모델에서 답 하나씩 |
 | `demo_reset.sh` | 위 세 스크립트를 부른다 | 이 서버의 컨테이너를 다시 만들고(`--wipe`면 볼륨도 지운 뒤) healthcheck를 기다리고, 앱 서버면 세팅, 적재, 검사를 이어서 실행 |
 | `demo_monitor.py` | 없음 | 서버 여섯 곳과 이 서버의 컨테이너 상태를 몇 초마다 표시, 바뀐 줄을 로그에 기록, 실행 중인 unhealthy 컨테이너 재시작 |
 
@@ -315,7 +315,9 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | `MEMORY_PREVIEW_CHARS` | `60` | 목록의 기억 본문을 단어 경계에서 자르고 "..."를 붙인다(와이드 모드 1600px에서 한 줄, 와이드 모드 없이는 40). 0이면 전문. 프롬프트에는 전문 |
 | `SHOW_NO_MEMORY_NOTE` | `true` | 오른쪽 답 위의 회색 한 줄 "No memory used" |
 | `MAX_TOKENS` | `300` | 두 모델 공통의 답 길이 상한. 0이면 없음 |
-| `BASE_SYSTEM_PROMPT` | 짧은 지시문 | 세팅 도구가 `.env`의 문장에 "Today is `<DEMO_DATE>`." 줄을 붙인다. 오른쪽 모델에도 같은 문장이 들어간다 |
+| `BASE_SYSTEM_PROMPT` | 짧은 지시문 | 적재 도구가 대본 파일의 `system_prompt`를 쓴다. 오른쪽 모델에도 같은 문장이 들어간다 |
+| `LANGUAGE` | `en` | 화면 문구와 프롬프트의 기억 지시문의 언어(`en`, `ko`). 적재 도구가 대본 파일의 `language`를 쓴다 |
+| `DEMO_DATE` | 빈 값 | 세팅 도구가 `.env`의 값을 쓰고, Pipe가 그 언어로 "Today is Wednesday, 2027-01-06." 줄을 지시문 뒤에 붙인다 |
 | `STEP_DELAY_MS` | `2000` | 단계별 모델의 단계 간격. 답은 세 간격 뒤에 시작한다 |
 | `SHOW_PROMPT` | `true` | 단계별 모델이 LLM에 보낸 전달문을 접힌 블록으로 보여 줄지 |
 | `PACE_NO_MEMORY` | `true` | 단계별 모델에서 기억 없는 쪽도 같은 박자로 세 단계를 밟을지 |
@@ -342,24 +344,22 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 ### 2.4.7 대본
 
-`scenario/script.json`에 세션 일곱 개와 질문 넷이 있다. 세션마다 날짜(UTC 오프셋 포함)와 제목과 턴 목록이 있고, 턴 시각은 세션 날짜에 순서대로 1분씩 더한 값이다. 질문마다 top-5에 들어야 하는 기대 문구가 있어 검사 스크립트가 자동으로 확인한다.
+`scenario/script_en.json`과 `script_ko.json`에 같은 인물과 사실의 영어와 한국어 대본이 있다. 각 파일에 언어, 공통 지시문, 세션 일곱 개, 시연 주제 둘이 있다. 세션마다 날짜(UTC 오프셋 포함)와 제목과 턴 목록이 있고, 턴 시각은 세션 날짜에 순서대로 1분씩 더한 값이다. 시연 주제마다 첫 질문과 후속 후보가 있고 질문마다 top-5에 들어야 하는 기대 문구가 있어 검사 스크립트가 자동으로 확인한다. 인물과 사실, 질문 표는 [콜드 데모 문서](cold_demo_2026-11-02.md) 4장에 있다.
 
-| 날짜 | 세션 | 턴 |
+| 날짜 | 세션(영어 제목) | 턴 |
 |---|---|---|
-| 2026-11-02 | Peanut allergy and school lunches | 6 |
-| 2026-11-09 | Planning Mia's 7th birthday | 6 |
-| 2026-11-16 | Weekend hosting and the family | 6 |
-| 2026-11-23 | Half marathon training plan | 6 |
-| 2026-12-01 | Seoul work trip in January | 6 |
-| 2026-12-08 | Learning Spanish for Rosa | 6 |
+| 2026-11-02 | Karina's peanut allergy and school lunches | 4 |
+| 2026-11-09 | Planning Karina's 7th birthday | 4 |
+| 2026-11-16 | Karina's Saturday swimming lesson | 4 |
+| 2026-11-23 | Seoul Marathon training plan | 6 |
+| 2026-12-01 | Conference trip to Las Vegas in January | 4 |
+| 2026-12-08 | Winter break plans for Karina | 4 |
 | 2026-12-15 | Home office and back pain | 4 |
 
-| 질문 | 기대 문구 |
-|---|---|
-| Can you plan the menu for Mia's birthday party this Saturday? | peanut, dinosaurs, vegetarian |
-| I am in Seoul next week. How do I keep my training on track while I am there? | Gangnam, long run |
-| What gifts should I bring for Junhyeok and for Rosa? | whisky, gardening |
-| My right knee was sore again after Sunday's long run. What should I change this week? | 12 km, kettlebell |
+| 주제 | 첫 질문(영어) | 기대 문구 |
+|---|---|---|
+| 카리나의 생일 파티 | Can you plan the food for Karina's party this Saturday? | peanut, mushrooms, Frozen, twelve |
+| 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday and Thursday, hotel, long run |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다.
 
