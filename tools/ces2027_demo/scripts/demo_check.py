@@ -116,6 +116,8 @@ def main() -> None:
     if not record_mode:
         check("answer from the step-by-step Pipe model",
               lambda: model_answer(ui, left + STEPS_SUFFIX, question, markers["last_step"]))
+        check("second turn after a step-by-step answer: no card copied into the answer",
+              lambda: second_turn_answer(ui, left + STEPS_SUFFIX, left, question, markers))
     finish()
 
 
@@ -151,12 +153,7 @@ def model_answer(ui: OpenWebUI, model_id: str, question: str, header: str | None
 
     header: text the block must contain, or None when the model writes no block. Errors start with a fixed phrase.
     """
-    reply = ui.call("POST", "/api/chat/completions",
-                    {"model": model_id, "messages": [{"role": "user", "content": question}], "stream": False})
-    content = reply.get("choices", [{}])[0].get("message", {}).get("content", "")
-    for prefix in ("Memory search failed:", "LLM call failed:", "MemMachine pipe:"):
-        if prefix in content:
-            raise_error(content[content.index(prefix):][:200])
+    content = pipe_reply(ui, model_id, [{"role": "user", "content": question}])
     block, rule, answer = content.partition("\n---\n")
     if header is None:
         answer = content
@@ -165,6 +162,35 @@ def model_answer(ui: OpenWebUI, model_id: str, question: str, header: str | None
     if not answer.strip():
         raise_error(f"empty answer: {content[:200]!r}")
     return answer.strip()[:80]
+
+
+def second_turn_answer(ui: OpenWebUI, first_model: str, second_model: str, question: str, markers: dict) -> str:
+    """The question again, in a chat whose history holds the first answer card and all, as Open WebUI sends it.
+
+    The Pipe cuts the card out of the history before the LLM sees it; without that the LLM copied the step
+    titles and the memory list into its answer (issue #45). The answer part must contain none of the markers.
+    """
+    first = pipe_reply(ui, first_model, [{"role": "user", "content": question}])
+    content = pipe_reply(ui, second_model, [{"role": "user", "content": question},
+                                            {"role": "assistant", "content": first},
+                                            {"role": "user", "content": question}])
+    block, rule, answer = content.partition("\n---\n")
+    copied = [marker for marker in markers.values() if marker in answer]
+    if not rule or copied:
+        raise_error(f"card markers {copied} in the second answer: {content[:200]!r}")
+    if not answer.strip():
+        raise_error(f"empty second answer: {content[:200]!r}")
+    return answer.strip()[:80]
+
+
+def pipe_reply(ui: OpenWebUI, model_id: str, messages: list[dict]) -> str:
+    """Content of one non-streamed completion from a Pipe model; the Pipe's own errors start with a fixed phrase."""
+    reply = ui.call("POST", "/api/chat/completions", {"model": model_id, "messages": messages, "stream": False})
+    content = reply.get("choices", [{}])[0].get("message", {}).get("content", "")
+    for prefix in ("Memory search failed:", "LLM call failed:", "MemMachine pipe:"):
+        if prefix in content:
+            raise_error(content[content.index(prefix):][:200])
+    return content
 
 
 def raise_error(message: str):

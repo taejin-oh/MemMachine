@@ -1,6 +1,6 @@
 """
 title: MemMachine
-version: 0.5.0
+version: 0.5.1
 description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
@@ -57,6 +57,8 @@ from pydantic import BaseModel, Field
 # scripts/common.py uses the same suffixes.
 NO_MEMORY_SUFFIX = "--no-memory"
 STEPS_SUFFIX = "--steps"
+# Written between the card and the answer; strip_card() cuts the history at its first occurrence.
+CARD_RULE = "---\n\n"
 
 # Screen and prompt texts per language (valve LANGUAGE). scripts/common.py
 # repeats the three markers that demo_check.py looks for (memories_retrieved,
@@ -308,7 +310,8 @@ class Pipe:
             yield self._text("no_memory_note", brand=self.valves.BRAND_NAME)
 
         prompt = self._system_prompt(memories)
-        llm_messages = [{"role": "system", "content": prompt}] + [m for m in messages if m.get("role") != "system"]
+        llm_messages = [{"role": "system", "content": prompt}] + [strip_card(m) for m in messages
+                                                                  if m.get("role") != "system"]
 
         if paced:
             parts = self._text("memories_some", count=len(memories)) if memories else self._text("memories_none")
@@ -318,7 +321,7 @@ class Pipe:
                 yield render_prompt(prompt, question, self._text("prompt_summary"))
             async for chunk in steps.start(3, self._text("step_ask", model=model_id)):
                 yield chunk
-        yield "---\n\n"
+        yield CARD_RULE
 
         answer_parts = []
         try:
@@ -539,6 +542,24 @@ def format_date(created_at: str | None, template: str) -> str:
     except ValueError:
         return ""
     return template.format(month=moment.strftime("%b"), month_number=moment.month, day=moment.day, year=moment.year)
+
+
+def strip_card(message: dict) -> dict:
+    """An earlier Pipe answer without its card, for the history the LLM sees.
+
+    Open WebUI stores everything the Pipe streamed as the assistant message, card included, and sends it back
+    in the next turn's messages. Left in, the LLM copies the card pattern (step titles, memory list) into its
+    next answer instead of answering. The card ends at the first rule, which the Pipe writes before any answer
+    token; the part before it is empty or starts like a step title or a blockquote, which leaves answers from
+    other models alone.
+    """
+    content = message.get("content")
+    if message.get("role") != "assistant" or not isinstance(content, str):
+        return message
+    card, rule, answer = content.partition(CARD_RULE)
+    if not rule or (card and not card.startswith(("**", "> "))):
+        return message
+    return {**message, "content": answer}
 
 
 def last_user_text(messages: list[dict]) -> str:
