@@ -36,7 +36,7 @@
 | 검사 스크립트의 여러 줄이 `FAIL`이고 원인을 찾을 시간이 없다 | 어느 서버의 줄인지 | 그 서버에서 `scripts/demo_reset.sh <프로필>`(앱 서버 `app`, DB 서버 `db`)을 실행한다. 컨테이너를 다시 만들고 앱 서버에서는 세팅, 적재, 검사까지 한다. 그래도 안 되면 `--wipe`를 붙여 볼륨부터 다시 만든다 |
 | 검사 스크립트의 `LLM server` 또는 `embedding server`가 `FAIL` | 해당 서버의 전원과 네트워크선, `docker compose ps` | 올라오는 중이면 기다린다. `exited`면 `docker compose --profile llm up -d`로 다시 올린다 |
 | `MemMachine`이 `FAIL` | 앱 서버의 `docker compose logs memmachine` | DB 서버가 늦게 켜졌으면 재시작 정책으로 몇 분 안에 올라온다. 안 되면 `docker compose --profile app restart memmachine` |
-| `top-5 memories`가 `FAIL` | Pipe의 Valve `PROJECT_ID`가 마지막 적재의 프로젝트인지(검사 출력의 `retrieved from` 뒤) | DB 볼륨을 되돌렸다면 그때의 프로젝트 ID와 Valve가 맞는지 본다. 맞지 않으면 적재 도구를 다시 실행한다 |
+| `top-6 memories`가 `FAIL` | Pipe의 Valve `PROJECT_ID`가 마지막 적재의 프로젝트인지(검사 출력의 `retrieved from` 뒤) | DB 볼륨을 되돌렸다면 그때의 프로젝트 ID와 Valve가 맞는지 본다. 맞지 않으면 적재 도구를 다시 실행한다 |
 | `record mode`가 `FAIL` | 관리자 화면의 Functions > MemMachine > Valves | `RECORD_MEMORY`를 끈다 |
 | 브라우저에 모델이 "Model not found"로 나온다 | LLM 서버가 켜진 뒤 모델 목록이 아직 갱신되지 않았다 | 브라우저를 새로 고친다 |
 | 새 채팅 위에 "Temporary Chat" 표시가 없다 | 누가 화면 오른쪽 위의 임시 채팅 단추를 껐거나 부스 계정의 설정이 바뀌었다 | `.env`의 `TEMPORARY_CHAT=false`면 정상이다. 아니면 먼저 New Chat을 누르고, 그래도 표시가 없으면 세팅 스크립트를 다시 실행하고 브라우저를 새로 고친다 |
