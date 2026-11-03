@@ -52,7 +52,7 @@ sequenceDiagram
         W->>P: 질문
         P->>M: 검색 (top 6)
         M-->>P: 기억 6개
-        P-->>W: 기억 목록 + 구분선
+        P-->>W: 기억 목록 (상위 5개) + 구분선
         P->>L: 질문 + 기본 프롬프트 + 기억 블록
         L-->>P: 답 (스트리밍)
         P-->>W: 답
@@ -278,7 +278,7 @@ sequenceDiagram
     M->>D: Qdrant 이웃 검색, PostgreSQL 본문
     M-->>P: 에피소드 6개 (content, created_at, metadata.session_id)
     P->>W: 채팅 ID로 세션 제목 조회 (같은 프로세스)
-    P-->>W: NOTE 블록의 "Memories retrieved (6)" 목록(5개와 "... and 1 more" 줄)과 구분선
+    P-->>W: NOTE 블록의 "Memories retrieved (5)" 목록(상위 5개. 여섯째는 화면에 드러나지 않는다)과 구분선
     P->>L: system = 기본 프롬프트 + 기억 블록, 그 뒤 원래 대화(앞 턴의 카드는 뺀다) (스트리밍)
     L-->>P: 토큰
     P-->>W: 토큰 그대로
@@ -310,7 +310,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | `LLM_BASE_URLS` | `http://llm:8000/v1` | 세미콜론으로 여러 개. 오른쪽 모델의 연결 주소와 같은 값 |
 | `PROJECT_ID` | `universal` | 적재 도구가 적재마다 새 ID를 써 넣는다 |
 | `TOP_K` | `6` | 검색 개수. 프롬프트에는 전부 들어간다 |
-| `SHOW_K` | `5` | 카드에 목록으로 보이는 개수(점수 순). 나머지는 "... 그 밖에 1개도 답에 썼습니다" 한 줄로 센다. 0이면 전부 |
+| `SHOW_K` | `5` | 화면에 보이는 개수(점수 순). 카드 목록, 상태줄과 단계 문구의 개수, 단계별 모델의 전달문 블록이 모두 이 수를 쓰고 나머지는 언급하지 않는다. LLM에는 항상 `TOP_K`개가 간다. 0이면 전부 |
 | `RECORD_MEMORY` | `false` | 켜면 각 턴을 MemMachine에 저장한다. 시연 중에는 끈다. 검사 스크립트가 확인한다 |
 | `SHOW_SESSION_INFO` | `true` | 목록에 날짜와 세션 제목 표시 |
 | `MEMORY_PREVIEW_CHARS` | `60` | 목록의 기억 본문을 단어 경계에서 자르고 "..."를 붙인다(와이드 모드 1600px에서 한 줄, 와이드 모드 없이는 40). 0이면 전문. 프롬프트에는 전문 |

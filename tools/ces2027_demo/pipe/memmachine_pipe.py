@@ -1,6 +1,6 @@
 """
 title: MemMachine
-version: 0.5.3
+version: 0.5.4
 description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
@@ -11,13 +11,17 @@ description: Four models per LLM: with and without memory, answering at once or 
 # "<model> (no memory)" (id suffix NO_MEMORY_SUFFIX), each also in a step-by-step
 # form (id suffix STEPS_SUFFIX), and pipe() handles one request. For every
 # question the memory model
-#   1. searches MemMachine for the top-k episodes,
+#   1. searches MemMachine for the top-k episodes (valve TOP_K),
 #   2. streams them into the chat as a numbered list inside a NOTE callout
 #      (Open WebUI's built-in "> [!NOTE]" markup: a blue bar; raw HTML and
 #      colours are escaped by Open WebUI, so this is the one coloured block
 #      available), followed by a rule,
 #   3. puts the same episodes into the system prompt and streams the LLM's
 #      answer below the rule.
+# The LLM gets all TOP_K episodes, but everything the audience sees (the list,
+# the counts in the status line and the step texts, the prompt block under
+# step 2) shows only the best SHOW_K of them, as if that many had been found:
+# the recorded demo keeps its five-line card while the answer draws on six.
 # The no-memory model skips the search, writes a one-line grey note in place of
 # the list (valve SHOW_NO_MEMORY_NOTE) and calls the same LLM with the same base
 # system prompt, so the only difference between the two answers is the memory
@@ -79,7 +83,6 @@ TEXT = {
         "date": "{month} {day}, {year}",
         "memories_retrieved": "**Memories retrieved ({count})**",
         "no_memories": "_No memories found._",
-        "memories_more": "_... and {count} more, also used in the answer._",
         "status_searching": "Searching memories",
         "status_retrieved": "Retrieved {count} memories",
         "status_answered": "Answered in {seconds:.1f} s",  # the LLM call only, without the step pauses
@@ -103,7 +106,6 @@ TEXT = {
         "date": "{year}년 {month_number}월 {day}일",
         "memories_retrieved": "**검색된 기억 ({count}개)**",
         "no_memories": "_찾은 기억이 없습니다._",
-        "memories_more": "_... 그 밖에 {count}개도 답에 썼습니다._",
         "status_searching": "기억을 검색하는 중",
         "status_retrieved": "기억 {count}개를 찾았습니다",
         "status_answered": "{seconds:.1f}초 만에 답했습니다",
@@ -149,8 +151,9 @@ class Pipe:
         TOP_K: int = Field(default=6, description="How many memories to retrieve and give to the LLM.")
         SHOW_K: int = Field(
             default=5,
-            description="How many of the retrieved memories the card lists, best first; the rest are counted in one "
-            "closing line. 0 lists all. The LLM always gets all TOP_K.",
+            description="How many of the retrieved memories the screen shows, best first: the card list, the counts "
+            "in the status line and the step texts, and the prompt block under step 2. The rest are not mentioned. "
+            "0 shows all. The LLM always gets all TOP_K.",
         )
         RECORD_MEMORY: bool = Field(
             default=False,
@@ -284,7 +287,8 @@ class Pipe:
         # The no-memory model walks the steps as well when PACE_NO_MEMORY is on, so both cards keep one rhythm.
         paced = steps is not None and (with_memory or self.valves.PACE_NO_MEMORY)
 
-        memories: list[dict] = []
+        memories: list[dict] = []  # all retrieved, for the LLM
+        shown: list[dict] = []     # the SHOW_K best, for the screen
         if with_memory:
             if steps:
                 async for chunk in steps.start(1, self._text("step_search", question=preview(question, 60))):
@@ -299,17 +303,16 @@ class Pipe:
                 await send_status(emit, self._text("status_search_failed"), done=True)
                 yield f"Memory search failed: {error}"
                 return
+            # The screen shows the best SHOW_K as if only those had been found; the LLM gets them all.
+            shown = memories[:self.valves.SHOW_K] if self.valves.SHOW_K > 0 else memories
             if steps:
-                async for chunk in steps.finish(self._text("step_search_done", count=len(memories),
+                async for chunk in steps.finish(self._text("step_search_done", count=len(shown),
                                                            seconds=time.monotonic() - search_started)):
                     yield chunk
             else:
-                await send_status(emit, self._text("status_retrieved", count=len(memories)), done=True)
-            shown = memories[:self.valves.SHOW_K] if self.valves.SHOW_K > 0 else memories
-            hidden = len(memories) - len(shown)
+                await send_status(emit, self._text("status_retrieved", count=len(shown)), done=True)
             yield render_memory_list(shown, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS,
-                                     self._text("memories_retrieved", count=len(memories)), self._text("no_memories"),
-                                     self._text("memories_more", count=hidden) if hidden else "")
+                                     self._text("memories_retrieved", count=len(shown)), self._text("no_memories"))
         elif paced:
             async for chunk in steps.start(1, self._text("step_search_skipped_title")):
                 yield chunk
@@ -323,11 +326,12 @@ class Pipe:
                                                                   if m.get("role") != "system"]
 
         if paced:
-            parts = self._text("memories_some", count=len(memories)) if memories else self._text("memories_none")
+            parts = self._text("memories_some", count=len(shown)) if shown else self._text("memories_none")
             async for chunk in steps.start(2, self._text("step_compose", memories=parts)):
                 yield chunk
             if self.valves.SHOW_PROMPT:
-                yield render_prompt(prompt, question, self._text("prompt_summary"))
+                # The block shows the prompt with the SHOW_K memories the card listed, not the full TOP_K.
+                yield render_prompt(self._system_prompt(shown), question, self._text("prompt_summary"))
             async for chunk in steps.start(3, self._text("step_ask", model=model_id)):
                 yield chunk
         yield CARD_RULE
@@ -504,13 +508,8 @@ def render_prompt(prompt: str, question: str, summary: str) -> str:
 # --- formatting helpers ---------------------------------------------------------
 
 
-def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int, header: str, empty: str,
-                       more: str = "") -> str:
-    """The block shown above the answer: a NOTE callout with the memories. No scores on purpose.
-
-    `header` carries the number retrieved; `memories` are the ones listed (valve SHOW_K) and `more`, when given, is
-    the closing line that counts the rest.
-    """
+def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int, header: str, empty: str) -> str:
+    """The block shown above the answer: a NOTE callout with the memories (the SHOW_K best). No scores on purpose."""
     lines = [header, ""]
     if not memories:
         lines.append(empty)
@@ -518,9 +517,6 @@ def render_memory_list(memories: list[dict], show_session_info: bool, preview_ch
         label = memory_label(memory) if show_session_info else ""
         lines.append(f"{number}. {label}".rstrip())
         lines.append(f'   "{preview(memory["text"], preview_chars)}"')
-    if more:
-        lines.append("")  # a blank line ends the list; without it the line joins the last item
-        lines.append(more)
     callout = ["> [!NOTE]"] + [f"> {line}".rstrip() for line in lines]
     return "\n".join(callout) + "\n\n"
 

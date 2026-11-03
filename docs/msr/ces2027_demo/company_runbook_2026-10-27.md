@@ -445,7 +445,7 @@ OK   chat model served by the LLM server: <LLM_MODEL_NAME>
 OK   new chats open with the pair STEPS_BY_DEFAULT selects: memmachine_pipe.<LLM_MODEL_NAME>--steps,memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps
 OK   the Pipe is in the script's language: en
 OK   Pipe valves at the defaults of the installed Pipe
-OK   top-6 memories for 'Can you help me plan Chloe's birthday party this S': 6 retrieved from ces-...; rank peanut allergy 4, refuses cherries 2, Elsa from Frozen 6, twelve kids 1; ['Elsa from Frozen'] beyond SHOW_K 5: used in the answer, not listed on the card
+OK   top-6 memories for 'Can you help me plan Chloe's birthday party this S': 6 retrieved from ces-...; rank peanut allergy 4, refuses cherries 2, Elsa from Frozen 6, twelve kids 1; ['Elsa from Frozen'] beyond SHOW_K 5: used in the answer, not shown on the screen
 OK   top-6 memories for 'What fruit and snacks should I put out for the kid': 6 retrieved from ces-...; rank peanut allergy 2, refuses cherries 1
 OK   top-6 memories for 'And what about the cake?': 6 retrieved from ces-...; rank ...
 OK   top-6 memories for 'I fly to Las Vegas on Monday. When and where do I ': 6 retrieved from ces-...; rank ...
@@ -460,7 +460,7 @@ OK   second turn after a step-by-step answer: no card copied into the answer: ..
 all checks passed
 ```
 
-모두 24줄이다. `top-6` 줄의 `rank`는 기대 문구마다의 순위(1이 최상)이고 숫자는 보기다. `SHOW_K`를 넘는 순위는 LLM에는 가지만 카드 목록에는 안 보인다는 뜻이며 OK로 센다. `Pipe valves at the defaults` 줄이 `WARN`이면 관리자 화면에서 저장한 Valve가 설치된 Pipe의 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Admin Panel > Functions > MemMachine > Valves에서 기본값으로 맞추고 다시 검사한다.
+모두 24줄이다. `top-6` 줄의 `rank`는 기대 문구마다의 순위(1이 최상)이고 숫자는 보기다. `SHOW_K`를 넘는 순위는 LLM에는 가지만 화면(카드, 상태줄, 단계 문구, 전달문 블록)에는 안 보인다는 뜻이며 OK로 센다. 화면의 숫자는 모두 `SHOW_K`인 5다. `Pipe valves at the defaults` 줄이 `WARN`이면 관리자 화면에서 저장한 Valve가 설치된 Pipe의 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Admin Panel > Functions > MemMachine > Valves에서 기본값으로 맞추고 다시 검사한다.
 
 **다르면** `FAIL` 줄의 끝에 이유가 있다. 앞쪽 서버 줄이 `FAIL`이면 6.1절에서 6.3절의 해당 서버를 본다. `top-6 memories` 줄이 `FAIL ... missing ['문구'] among 6 retrieved from ces-...`이면 그 질문의 기대 문구가 실제 임베더의 top-6에 없는 것이다. 이때는 대본을 바로 고치지 말고 먼저 무엇이 검색됐는지 본다.
 
@@ -480,7 +480,7 @@ EOF
 
 **하는 일** 관객이 보는 화면을 사람이 확인한다. 사람이 쓰는 PC의 브라우저로 `http://<APP_IP>:3000`을 열고 `visitor@demo.local`과 작업표의 부스 계정 비밀번호로 들어간다. 스태프 계정으로 들어가면 Open WebUI가 관리자에게는 기능을 숨기지 않아 첨부와 마이크 단추가 보이므로, 화면 확인은 부스 계정으로 한다. 사이드바가 접혀 있으면 왼쪽 위 단추로 펼친다.
 
-**나와야 하는 것** 사이드바에 과거 채팅 여덟 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory, step by step)` 이름(`STEPS_BY_DEFAULT=true`일 때. 빈 값이면 `(no memory)`). 5.4절의 `TEMPORARY_CHAT=false`에서는 "Temporary Chat" 표시가 없고 질문 채팅이 사이드바에 남는다(`true`면 표시가 있고 남지 않는다). 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 네 모델만 있다. 대본의 질문을 차례로 보내면(아래 목록) 왼쪽 카드에 단계별 쌍이면 "Step 1 of 3"부터 세 단계가, 즉시 쌍이면 상태줄 "Retrieved 6 memories"가 나오고, 파란 NOTE 블록 안의 목록(머리글 "Memories retrieved (6)", 날짜와 세션 제목과 본문 한 줄짜리 항목 다섯, 마지막 줄 "... and 1 more, also used in the answer.") 다음에 답이, 오른쪽에 기억 없는 답이 나온다. 질문 채팅이 남으면 다음 질문 전에 사이드바에서 지운다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다. 오른쪽 카드는 회색 한 줄 "No memory used"로 시작하고 두 답은 80단어 안팎으로 짧다.
+**나와야 하는 것** 사이드바에 과거 채팅 여덟 개. 새 채팅에 아바타 둘과 `<LLM_MODEL_NAME> (no memory, step by step)` 이름(`STEPS_BY_DEFAULT=true`일 때. 빈 값이면 `(no memory)`). 5.4절의 `TEMPORARY_CHAT=false`에서는 "Temporary Chat" 표시가 없고 질문 채팅이 사이드바에 남는다(`true`면 표시가 있고 남지 않는다). 입력창에는 보내기 단추만 있고 첨부, 마이크, 음성 통화, 컨트롤 단추가 없다. 모델 목록에 네 모델만 있다. 대본의 질문을 차례로 보내면(아래 목록) 왼쪽 카드에 단계별 쌍이면 "Step 1 of 3"부터 세 단계가, 즉시 쌍이면 상태줄 "Retrieved 5 memories"가 나오고, 파란 NOTE 블록 안의 목록(머리글 "Memories retrieved (5)", 날짜와 세션 제목과 본문 한 줄짜리 항목 다섯) 다음에 답이, 오른쪽에 기억 없는 답이 나온다. 질문 채팅이 남으면 다음 질문 전에 사이드바에서 지운다. 질문마다 왼쪽 답이 과거 사실을 쓰고 오른쪽 답이 일반론에 그치는지 사람이 보고 한 줄씩 적는다. 오른쪽 카드는 회색 한 줄 "No memory used"로 시작하고 두 답은 80단어 안팎으로 짧다.
 
 1. Can you help me plan Chloe's birthday party this Saturday? I need ideas for the food and a theme.
 2. What fruit and snacks should I put out for the kids? (또는 And what about the cake?)

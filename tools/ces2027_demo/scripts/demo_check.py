@@ -12,7 +12,7 @@ Prints one line per check and exits with a non-zero code if any failed:
      and for the first question and every follow-up of every demo topic the
      expected phrases are among the top-k memories that MemMachine retrieves
      from the loaded project, with the rank of each phrase (a rank beyond the
-     valve SHOW_K reaches the LLM but is not listed on the card),
+     valve SHOW_K reaches the LLM but is not shown on the screen),
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
   5. one question through the models: the memory model answers below its
      memory list, the no-memory model below its note (when the valve shows one),
@@ -182,7 +182,7 @@ def expected_memories(memmachine: str, project_id: str, top_k: int, show_k: int,
     detail = f"{len(texts)} retrieved from {project_id}; rank " + ", ".join(f"{p} {r}" for p, r in ranks.items())
     unseen = [phrase for phrase, rank in ranks.items() if show_k and rank > show_k]
     if unseen:
-        detail += f"; {unseen} beyond SHOW_K {show_k}: used in the answer, not listed on the card"
+        detail += f"; {unseen} beyond SHOW_K {show_k}: used in the answer, not shown on the screen"
     return detail
 
 
