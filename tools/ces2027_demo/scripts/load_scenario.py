@@ -15,6 +15,9 @@ Every run starts from scratch:
      timestamps show the past exactly as written,
   4. the same turns are stored as MemMachine episodes with the same timestamps
      and the new chat id as session_id, which the Pipe uses to show the title.
+     A turn with "store": false is left out of the memory: it is shown in the
+     chat only. The scripts use it for assistant acknowledgements, which would
+     otherwise outrank the user's facts in the search.
 
 Reload the browser afterwards so the sidebar picks up the new chats.
 """
@@ -51,8 +54,9 @@ def main() -> None:
 
     for session, turns in zip(script["sessions"], sessions):
         chat_id = import_chat(booth, session["title"], turns, pipe_model_id(env), pipe_model_name(env))
-        store_episodes(memmachine_url(env), project_id, chat_id, turns)
-        print(f"session '{session['title']}': {len(turns)} turns, chat {chat_id}")
+        stored = [turn for turn in turns if turn.get("store", True)]
+        store_episodes(memmachine_url(env), project_id, chat_id, stored)
+        print(f"session '{session['title']}': {len(turns)} turns, {len(stored)} stored as memories, chat {chat_id}")
     print("done. Reload the browser to see the chats.")
 
 
@@ -72,6 +76,8 @@ def timed_turns(session: dict) -> list[dict]:
             raise SystemExit(f"session '{title}': role must be user or assistant, not {turn.get('role')!r}")
         if not isinstance(turn.get("content"), str) or not turn["content"].strip():
             raise SystemExit(f"session '{title}': every turn needs a non-empty content string")
+        if not isinstance(turn.get("store", True), bool):
+            raise SystemExit(f"session '{title}': 'store' must be true or false when given")
     return [{**turn, "time": start + index * TURN_SPACING} for index, turn in enumerate(session["turns"])]
 
 
@@ -116,6 +122,8 @@ def import_chat(ui: OpenWebUI, title: str, turns: list[dict], model_id: str, mod
 
 def store_episodes(memmachine: str, project_id: str, chat_id: str, turns: list[dict]) -> None:
     """Store the turns as episodes of the project, tagged with the chat id (design section 5.1)."""
+    if not turns:
+        return
     messages = [
         {
             "content": turn["content"],

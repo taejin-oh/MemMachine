@@ -1,6 +1,6 @@
 """
 title: MemMachine
-version: 0.5.1
+version: 0.5.2
 description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
@@ -79,6 +79,7 @@ TEXT = {
         "date": "{month} {day}, {year}",
         "memories_retrieved": "**Memories retrieved ({count})**",
         "no_memories": "_No memories found._",
+        "memories_more": "_... and {count} more, also used in the answer._",
         "status_searching": "Searching memories",
         "status_retrieved": "Retrieved {count} memories",
         "status_answered": "Answered in {seconds:.1f} s",
@@ -102,6 +103,7 @@ TEXT = {
         "date": "{year}년 {month_number}월 {day}일",
         "memories_retrieved": "**검색된 기억 ({count}개)**",
         "no_memories": "_찾은 기억이 없습니다._",
+        "memories_more": "_... 그 밖에 {count}개도 답에 썼습니다._",
         "status_searching": "기억을 검색하는 중",
         "status_retrieved": "기억 {count}개를 찾았습니다",
         "status_answered": "{seconds:.1f}초 만에 답했습니다",
@@ -144,7 +146,12 @@ class Pipe:
             description="MemMachine project to search. load_scenario.py writes a fresh id here on every load.",
         )
         LLM_API_KEY: str = Field(default="dummy", description="Sent as a Bearer token; vLLM ignores it.")
-        TOP_K: int = Field(default=5, description="How many memories to retrieve and show.")
+        TOP_K: int = Field(default=6, description="How many memories to retrieve and give to the LLM.")
+        SHOW_K: int = Field(
+            default=5,
+            description="How many of the retrieved memories the card lists, best first; the rest are counted in one "
+            "closing line. 0 lists all. The LLM always gets all TOP_K.",
+        )
         RECORD_MEMORY: bool = Field(
             default=False,
             description="Store every turn in MemMachine (record mode, design appendix D). Keep OFF during the demo.",
@@ -299,8 +306,11 @@ class Pipe:
                     yield chunk
             else:
                 await send_status(emit, self._text("status_retrieved", count=len(memories)), done=True)
-            yield render_memory_list(memories, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS,
-                                     self._text("memories_retrieved", count=len(memories)), self._text("no_memories"))
+            shown = memories[:self.valves.SHOW_K] if self.valves.SHOW_K > 0 else memories
+            hidden = len(memories) - len(shown)
+            yield render_memory_list(shown, self.valves.SHOW_SESSION_INFO, self.valves.MEMORY_PREVIEW_CHARS,
+                                     self._text("memories_retrieved", count=len(memories)), self._text("no_memories"),
+                                     self._text("memories_more", count=hidden) if hidden else "")
         elif paced:
             async for chunk in steps.start(1, self._text("step_search_skipped_title")):
                 yield chunk
@@ -493,8 +503,13 @@ def render_prompt(prompt: str, question: str, summary: str) -> str:
 # --- formatting helpers ---------------------------------------------------------
 
 
-def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int, header: str, empty: str) -> str:
-    """The block shown above the answer: a NOTE callout with the memories. No scores on purpose."""
+def render_memory_list(memories: list[dict], show_session_info: bool, preview_chars: int, header: str, empty: str,
+                       more: str = "") -> str:
+    """The block shown above the answer: a NOTE callout with the memories. No scores on purpose.
+
+    `header` carries the number retrieved; `memories` are the ones listed (valve SHOW_K) and `more`, when given, is
+    the closing line that counts the rest.
+    """
     lines = [header, ""]
     if not memories:
         lines.append(empty)
@@ -502,6 +517,8 @@ def render_memory_list(memories: list[dict], show_session_info: bool, preview_ch
         label = memory_label(memory) if show_session_info else ""
         lines.append(f"{number}. {label}".rstrip())
         lines.append(f'   "{preview(memory["text"], preview_chars)}"')
+    if more:
+        lines.append(more)
     callout = ["> [!NOTE]"] + [f"> {line}".rstrip() for line in lines]
     return "\n".join(callout) + "\n\n"
 
