@@ -1,5 +1,5 @@
 {
-  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). Every turn is short and states one fact with its relationship word ('my daughter Chloe'), because the search ranks single turns by embedding similarity and the LLM only sees the retrieved turns. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: short word stems that must occur, as substrings, in the top-k memories (scripts/demo_check.py); stems rather than phrases, because the fact often comes back in a paraphrase ('swimming time' for 'swimming lesson') and demo_check.py matches substrings. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Seoul offset (+09:00): the recording device and TZ in deploy/.env are in that zone, so the sidebar and the memory list show the dates as written; turns are one minute apart.",
+  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 and 2026-11-03 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). The search ranks single turns by embedding similarity (no reranker) and shows the top 5, so every other turn is written not to compete with those three for the party question: each fact is stated once, by the user, with its relationship word ('my daughter Chloe'); the assistant does not repeat it; the Frozen theme is only in the Halloween sentence; the assistant replies in the Chloe chats avoid the words party, food and Saturday. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: substrings that must occur in the top-k memories (scripts/demo_check.py). For the three fixed sentences they are fragments of the sentence itself, so the check proves that sentence was retrieved and not a paraphrase of it; elsewhere short stems, because a fact often comes back as a paraphrase. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Seoul offset (+09:00): the recording device and TZ in deploy/.env are in that zone, so the sidebar and the memory list show the dates as written; turns are one minute apart.",
   "language": "en",
   "system_prompt": "You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.",
   "sessions": [
@@ -8,30 +8,26 @@
       "date": "2026-11-01T18:30:00+09:00",
       "turns": [
         {"role": "user", "content": "For Halloween, my daughter Chloe dressed up as her favourite character, Elsa from Frozen."},
-        {"role": "assistant", "content": "A classic choice. An Elsa costume photographs well against fairy lights, and a side braid with a little glitter finishes the look whenever Chloe wears it again."},
-        {"role": "user", "content": "She has not taken the dress off since, and now she wants everything at home to be Frozen."},
-        {"role": "assistant", "content": "Let her enjoy it. A Frozen phase at six is harmless and makes planning easy: anything with Elsa, snowflakes or ice blue will be a hit with Chloe for a while."}
+        {"role": "assistant", "content": "A lovely choice. Elsa suits her, and the photos will be worth keeping."}
       ]
     },
     {
-      "title": "Chloe's peanut allergy and school lunches",
+      "title": "Chloe's peanut allergy",
       "date": "2026-11-02T19:40:00+09:00",
       "turns": [
         {"role": "user", "content": "My daughter Chloe has a peanut allergy."},
-        {"role": "assistant", "content": "Thank you for telling me. Everything I suggest for Chloe, party food included, will be peanut-free, and labels should always be checked for 'may contain peanuts'."},
-        {"role": "user", "content": "Her school asked for safe lunch ideas. Can you help?"},
-        {"role": "assistant", "content": "Of course. Peanut-free lunches for Chloe: kimbap without any peanut sauce, pasta salad with mozzarella and cucumber, egg rolls with rice, and cut fruit."},
+        {"role": "assistant", "content": "Thank you for telling me. I will keep that in mind."},
         {"role": "user", "content": "Chloe loves all kinds of fruit, but she refuses cherries."},
-        {"role": "assistant", "content": "Noted: for Chloe, plenty of fruit in any form, never cherries, and nothing with peanuts."}
+        {"role": "assistant", "content": "Noted. I will remember that too."}
       ]
     },
     {
       "title": "Planning Chloe's 7th birthday",
       "date": "2026-11-09T21:05:00+09:00",
       "turns": [
-        {"role": "user", "content": "Chloe turns 7 on January 10 and she is obsessed with Frozen and Elsa. Her birthday party is at our apartment on Saturday, January 9, about twelve kids plus a few parents."},
-        {"role": "assistant", "content": "A Frozen party suits her: a snowflake hunt through the apartment, party food with winter names, and a paper crown for each guest. With twelve kids, two adults running the games keeps it calm."},
-        {"role": "user", "content": "She wants an ice castle cake like Elsa's palace for the party. How do I make one?"},
+        {"role": "user", "content": "Chloe turns 7 on January 10. Her birthday party is at our apartment on Saturday, January 9, about twelve kids plus a few parents."},
+        {"role": "assistant", "content": "Seven is a big one. With twelve kids in an apartment, two adults running the games and a clear end time keep it calm."},
+        {"role": "user", "content": "Chloe wants an ice castle cake like Elsa's palace. How do I make one?"},
         {"role": "assistant", "content": "Stack two round vanilla cakes, cover them with pale blue frosting, stand ice cream cones on top as towers, and press rock candy and white chocolate shards around them so they shine like ice. A sparkler on the tallest tower gets the big reaction."}
       ]
     },
@@ -39,10 +35,8 @@
       "title": "Chloe's Saturday swimming lesson",
       "date": "2026-11-16T10:30:00+09:00",
       "turns": [
-        {"role": "user", "content": "My daughter Chloe has a swimming lesson every Saturday from 10 to 11 at the pool in our neighbourhood, so Saturday plans for her have to start after lunch."},
-        {"role": "assistant", "content": "Noted: Saturday mornings are Chloe's swimming time, so anything planned for her on a Saturday starts in the afternoon."},
-        {"role": "user", "content": "She gets very hungry after swimming and tired by the early evening."},
-        {"role": "assistant", "content": "Then a late lunch right after the pool and nothing big after six in the evening works best for Chloe on Saturdays."}
+        {"role": "user", "content": "My daughter Chloe has a swimming lesson every Saturday from 10 to 11 at the pool in our neighbourhood, and she is starving afterwards."},
+        {"role": "assistant", "content": "Then a late lunch straight after the pool suits her Saturdays, and nothing big after six, since she tires by the early evening."}
       ]
     },
     {
@@ -71,10 +65,8 @@
       "title": "Winter break plans for Chloe",
       "date": "2026-12-08T20:20:00+09:00",
       "turns": [
-        {"role": "user", "content": "Chloe's winter break starts on December 24. She wants to learn to skate like Elsa, and on cold days she needs indoor things to do."},
-        {"role": "assistant", "content": "Start with two or three short sessions at the Seoul Plaza skating rink, with a helmet and gloves. For cold days: a children's museum visit, baking together, and a library card."},
-        {"role": "user", "content": "She loved the skating. She also keeps asking to decorate her birthday cake herself."},
-        {"role": "assistant", "content": "Let Chloe decorate the ice castle cake: she can press the rock candy and sugar snowflakes onto the frosting once the towers stand."}
+        {"role": "user", "content": "Chloe's winter break starts on December 24. She wants to learn to skate like Elsa, and she keeps asking to decorate the ice castle cake herself."},
+        {"role": "assistant", "content": "Start with two or three short sessions at the Seoul Plaza skating rink, with a helmet and gloves. And let her do the cake: once the towers stand, she can press the rock candy and sugar snowflakes onto the frosting."}
       ]
     },
     {
@@ -92,23 +84,23 @@
     {
       "topic": "Chloe's birthday party",
       "first": {
-        "text": "Can you plan the food for Chloe's party this Saturday?",
-        "why": "needs the peanut allergy and the fruit without cherries (chat 2), the Elsa costume (chat 1) and the Frozen party with twelve kids (chat 3)",
-        "expected": ["peanut", "cherries", "Frozen", "twelve"],
-        "no_memory": "asks who Chloe is, her age or her allergies, or lists a generic children's menu"
+        "text": "Can you help me plan Chloe's birthday party this Saturday? I need ideas for the food and a theme.",
+        "why": "needs the peanut allergy and the fruit without cherries (chat 2), the Elsa costume for the theme (chat 1) and the Saturday party with twelve kids (chat 3)",
+        "expected": ["peanut allergy", "refuses cherries", "Elsa from Frozen", "twelve kids"],
+        "no_memory": "asks who Chloe is, her age, what she likes or her allergies, or lists a generic children's party"
       },
       "follow_ups": [
         {
           "if": "the first answer did not mention the cake",
           "text": "And what about the cake?",
-          "why": "needs the ice castle cake (chat 3) and Chloe decorating it herself (chat 7)",
+          "why": "needs the ice castle cake and its recipe (chat 3) and Chloe decorating it herself (chat 7)",
           "expected": ["ice castle", "frosting"],
           "no_memory": "suggests a generic birthday cake"
         },
         {
           "if": "the first answer already described the cake",
           "text": "What time should the party start?",
-          "why": "needs the Saturday swimming lesson from 10 to 11 and the late lunch (chat 4)",
+          "why": "needs the Saturday swimming lesson from 10 to 11 and the late lunch after it (chat 4)",
           "expected": ["swimming", "lunch"],
           "no_memory": "suggests a usual early-afternoon time without a reason"
         }
