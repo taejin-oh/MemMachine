@@ -11,9 +11,9 @@
 ## 2. 한국에서 끄기 전에
 
 1. 마지막 리허설을 끝낸 상태 그대로 둔다. 적재 도구를 다시 실행하지 않는다. 실행하면 새 프로젝트가 만들어지고 사이드바의 채팅이 지워졌다가 다시 들어가므로, 다시 실행했다면 검사 스크립트까지 다시 돌린다.
-2. 앱 서버에서 `python3 scripts/demo_check.py scenario/script_en.json`이 전부 통과하는지 마지막으로 본다. 출력을 복사해 둔다.
+2. 앱 서버에서 `python3 scripts/demo_check.py scenario/script_en.json`(마지막에 적재한 대본이 한국어면 `script_ko.json`. 다른 대본을 주면 언어 줄이 FAIL이다)이 전부 통과하는지 마지막으로 본다. 출력을 복사해 둔다.
 3. USB 메모리에 복구 재료를 모은다. 각 서버의 `deploy/.env`와 `/etc/hosts`, 브랜치 clone 전체, 그리고 설계 6.3절대로 `docker save`로 뜬 이미지 tar(Open WebUI, pgvector, Qdrant, vLLM, 공개 MemMachine 이미지 `memmachine/memmachine:0.4.1-dev1`, 백업용 alpine)다. 인터넷이 없는 부스에서 서버를 교체하려면 이것이 전부 있어야 한다.
-4. DB 서버에서 볼륨을 백업한다. `docker compose --profile db stop`으로 멈춘 뒤 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine tar czf /b/postgres_data.tgz -C /d .`과 같은 명령으로 PostgreSQL과 Qdrant 볼륨을 tar로 떠서 USB 메모리에 둔다. 앱 서버의 `deploy_openwebui_data`도 같은 방법으로 뜬다. 백업이 끝나면 `docker compose --profile db up -d`(앱 서버는 `--profile app`)로 다시 올리고 `docker compose ps`에서 모두 `Up`인지 확인한다. `restart: always`라서 멈춘 채 꺼도 부팅 때 되살아나지만, 올라온 것을 보고 끄는 쪽이 확실하다. 적재는 몇 초면 다시 할 수 있지만, 볼륨을 되돌리는 쪽이 사이드바의 채팅 ID까지 그대로 유지한다.
+4. DB 서버에서 볼륨을 백업한다. `docker compose --profile db stop`으로 멈춘 뒤 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine tar czf /b/postgres_data.tgz -C /d .`과 같은 명령으로 PostgreSQL과 Qdrant 볼륨을 tar로 떠서 USB 메모리에 둔다. 앱 서버의 `deploy_openwebui_data`도 같은 방법으로 뜨되, 그 안의 SQLite 파일이 쓰이는 중이면 안 되므로 먼저 `docker compose --profile app stop`으로 멈춘다. 백업이 끝나면 `docker compose --profile db up -d`(앱 서버는 `--profile app`)로 다시 올리고 `docker compose ps`에서 모두 `Up`인지 확인한다. `restart: always`라서 멈춘 채 꺼도 부팅 때 되살아나지만, 올라온 것을 보고 끄는 쪽이 확실하다. 적재는 몇 초면 다시 할 수 있지만, 볼륨을 되돌리는 쪽이 사이드바의 채팅 ID까지 그대로 유지한다.
 5. 서버마다 `docker compose --profile <역할> down`이 아니라 운영체제 종료를 쓴다. `down`을 하면 컨테이너가 지워져 부팅 때 자동으로 올라오지 않는다. 그랬다면 `scripts/demo_reset.sh <프로필>`로 다시 만든다. 정상 종료 순서는 앱 서버, LLM 서버, 임베더 서버, DB 서버다.
 6. 전원을 끈 뒤 전원선과 네트워크선을 뽑고, 각 선과 포트에 서버 이름(`app`, `llm`, `embed`, `db`)을 적은 라벨을 붙인다. 스위치와 시연 장비도 함께 포장한다.
 7. 서버마다 부팅 때 Docker 데몬이 시작되도록 되어 있는지(`systemctl is-enabled docker`가 `enabled`), 그리고 끄기 직전에 모든 컨테이너가 `Up`인지 다시 확인한다. 끈 뒤 한 번 켜서 저절로 올라오고 검사 스크립트가 통과하는 것까지 보는 것이 가장 확실하다.
@@ -24,7 +24,7 @@
 1. 라벨대로 스위치에 서버 네 대와 시연 장비를 연결한다. 인터넷은 연결하지 않는다.
 2. 전원을 켜는 순서는 DB 서버, 임베더 서버, LLM 서버, 앱 서버다. 순서가 바뀌어도 `restart: always` 정책 때문에 결국 올라오지만, 이 순서가 가장 빨리 안정된다.
 3. vLLM 두 대는 모델을 적재하는 데 몇 분이 걸린다. GPU 서버에서 `docker compose ps`의 상태가 `healthy`가 될 때까지 기다린다. 10분이 지나도 `starting`이면 `docker compose logs llm`을 본다.
-4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script_en.json`을 실행한다. 전부 `OK`여야 한다.
+4. 시연 장비에서 터미널을 열고 앱 서버에 접속하거나, 시연 장비에 브랜치가 있으면 거기서 `python3 scripts/demo_check.py scenario/script_en.json`(마지막에 적재한 대본)을 실행한다. 전부 `OK`여야 한다.
 5. 앱 서버의 터미널 하나에 `python3 scripts/demo_monitor.py`를 띄워 시연 내내 둔다. 서버 여섯 곳과 컨테이너가 모두 `OK`여야 한다. 바뀐 줄은 `scripts/demo_monitor.log`에 남는다.
 6. 브라우저로 `http://app:3000`을 열고 `.env`의 부스 계정(`BOOTH_EMAIL`, `BOOTH_PASSWORD`)으로 들어간다. 사이드바에 과거 채팅 여덟 개가 11월과 12월로 묶여 있고, 새 채팅에 두 모델이 선택되어 있고 그 위에 "Temporary Chat" 표시(`TEMPORARY_CHAT=true`일 때)가 있으면 준비가 끝난 것이다. 로그인은 4주 동안 유효하므로 한국에서 한 로그인에 기대지 말고 여기서 다시 한다. 화면 왼쪽의 사이드바가 접혀 있으면 왼쪽 위 단추로 한 번 펼친다. 이 설정은 브라우저에 남는다.
 7. 대본의 첫 질문을 한 번 보내 두 답이 수 초 안에 시작하는지 본다. 이 질문은 시연 중의 질문과 같으며 기억에 저장되지 않는다.
@@ -42,7 +42,11 @@
 | 새 채팅 위에 "Temporary Chat" 표시가 없다 | 누가 화면 오른쪽 위의 임시 채팅 단추를 껐거나 부스 계정의 설정이 바뀌었다 | `.env`의 `TEMPORARY_CHAT=false`면 정상이다. 아니면 먼저 New Chat을 누르고, 그래도 표시가 없으면 세팅 스크립트를 다시 실행하고 브라우저를 새로 고친다 |
 | 왼쪽 카드에 `Memory search failed` | 앱 서버에서 MemMachine 로그 | DB 서버 연결을 본다. 검사 스크립트의 `PostgreSQL port`, `Qdrant port` |
 | 왼쪽 카드에 `LLM call failed`, 오른쪽도 답이 없다 | LLM 서버 로그 | vLLM이 재시작 중이면 기다린다. 문맥 길이 오류면 `.env`의 `LLM_MAX_MODEL_LEN`을 늘리고 LLM 서버만 다시 올린다 |
-| 서버 한 대가 켜지지 않는다 | 전원과 디스크 | 예비 장비에 USB 메모리의 `.env`, `/etc/hosts`, 볼륨 백업을 넣고 같은 역할의 프로필로 올린다. 브랜치는 앱 서버의 clone을 복사한다 |
+| 서버 한 대가 켜지지 않는다 | 전원과 디스크 | 예비 장비에 USB 메모리의 재료로 복원한다. 순서는 아래 "예비 장비로 복원"이다 |
+
+### 예비 장비로 복원
+
+볼륨 백업은 컨테이너를 올리기 전에 풀어야 한다. 먼저 올리면 compose가 빈 볼륨을 만들고 PostgreSQL이 새 클러스터를 초기화하므로, 그 위에 백업을 풀면 깨진다. 순서는 다음과 같다. USB 메모리의 이미지 tar를 `docker load -i <파일>`로 모두 넣는다. 브랜치 clone과 그 서버 역할의 `.env`, `/etc/hosts`를 복사한다. `deploy` 디렉터리에서 `docker compose --profile <역할> create`를 실행한다. 컨테이너와 라벨이 붙은 빈 볼륨만 만들고 시작하지는 않는다. 볼륨마다 백업을 푼다. 예를 들어 `docker run --rm -v deploy_postgres_data:/d -v $PWD:/b alpine sh -c 'cd /d && tar xzf /b/postgres_data.tgz'`이고, DB 서버는 `deploy_qdrant_data`, 앱 서버는 `deploy_openwebui_data`도 같다. 그 뒤 `docker compose --profile <역할> up -d`로 올리고 검사 스크립트를 돌린다. 볼륨 이름의 앞머리 `deploy_`는 compose가 디렉터리 이름에서 붙인 것이라 clone의 위치가 달라도 같다.
 
 ## 5. 시연이 끝난 뒤
 

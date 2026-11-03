@@ -10,9 +10,9 @@ tools/ces2027_demo/
   deploy/.env.example         장소별 값. .env로 복사해서 쓴다
   deploy/memmachine.yml       MemMachine 설정. 모든 장소에서 같다
   deploy/hosts.example        시연 화면 장비의 /etc/hosts 예시
-  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 두 모델(기억 있음, 없음)을 제공한다. 기억 검색, 목록 출력, 답변
+  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 네 모델(기억 있음과 없음, 즉시형과 단계별)을 제공한다. 기억 검색, 목록 출력, 답변
   mock/                       개발용 LLM과 임베더 mock (Mac에서만 쓴다)
-  scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 두 모델의 표시 설정
+  scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 네 모델 항목의 표시 설정
   scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
   scripts/demo_check.py       전원을 켠 뒤 준비 상태를 한 번에 검사
   scripts/demo_reset.sh       문제가 생겼을 때 이 서버의 컨테이너를 다시 만들고 세팅, 적재, 검사를 한 번에
@@ -44,7 +44,7 @@ python3 ../scripts/load_scenario.py ../scenario/script.sample.json
 python3 ../scripts/demo_check.py ../scenario/script.sample.json
 ```
 
-브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 날짜 줄과 본문 한 줄)과 답이, 오른쪽에 회색 한 줄 "No memory used"와 기억 없는 답이 나온다. 두 모델 모두 Pipe를 거치며 같은 시스템 프롬프트로 같은 LLM을 부르고, 차이는 기억 블록뿐이다. 모델 선택에서 "(step by step)" 쌍으로 바꾸면 같은 두 모델이 "Step 1 of 3: Searching memory", "Step 2 of 3: Composing the prompt"(LLM에 보낸 전달문이 접힌 블록으로 붙는다), "Step 3 of 3: Asking <모델>"을 2초 간격으로 보여 준 뒤 답한다. 간격은 Valve `STEP_DELAY_MS`다. 새 채팅은 임시 채팅으로 열리므로 보낸 질문은 사이드바에 남지 않고, 다음 시연은 New Chat을 누르면 된다. `.env`의 `TEMPORARY_CHAT=false`로 두면 질문이 보통 채팅으로 저장되고 스태프가 지운다. 화면은 와이드 모드로 열려 두 카드가 화면 전체를 쓴다.
+브라우저로 `http://127.0.0.1:3300`에 접속해 `.env`의 부스 계정(`BOOTH_EMAIL`)으로 들어가면 사이드바에 대본의 과거 채팅이 있고, 새 채팅에는 두 모델이 선택되어 있다. 대본의 질문을 보내면 왼쪽에 파란 NOTE 블록 안의 "Memories retrieved" 목록(기억마다 날짜 줄과 본문 한 줄)과 답이, 오른쪽에 회색 한 줄 "No memory used"와 기억 없는 답이 나온다. 두 모델 모두 Pipe를 거치며 같은 시스템 프롬프트로 같은 LLM을 부르고, 차이는 기억 블록뿐이다. 모델 선택에서 "(step by step)" 쌍으로 바꾸면 같은 두 모델이 "Step 1 of 3: Searching memory", "Step 2 of 3: Composing the prompt"(LLM에 보낸 전달문이 접힌 블록으로 붙는다), "Step 3 of 3: Asking <모델>"을 2초 간격으로 보여 준 뒤 답한다. 간격은 Valve `STEP_DELAY_MS`다. `.env`의 `TEMPORARY_CHAT=false`(예시 파일의 기본값, 녹화 설정)면 보낸 질문이 보통 채팅으로 저장되어 사이드바에 남고 스태프가 지운다. `true`면 새 채팅이 임시 채팅으로 열려 질문이 남지 않고 다음 시연은 New Chat을 누르면 된다. 화면은 와이드 모드로 열려 두 카드가 화면 전체를 쓴다.
 
 적재 도구는 실행할 때마다 새 MemMachine 프로젝트를 만들고 채팅을 모두 지운 뒤 처음부터 넣는다. 대본을 고쳤으면 그냥 다시 실행한다. Pipe 코드나 `.env`를 고쳤으면 `setup_openwebui.py`를 다시 실행한다. compose가 읽는 값(포트, 호스트, 모델 이름, `TZ`)을 고쳤으면 `docker compose --profile local up -d`도 다시 실행해야 컨테이너에 반영된다. 모든 것을 지우고 처음부터 하려면 `docker compose --profile local down -v`를 실행한다. `scripts/demo_reset.sh --wipe local scenario/script.sample.json`은 지우고 다시 올리고 세팅, 적재, 검사까지 한 번에 한다(아래 "문제가 생겼을 때"). MemMachine 이미지를 다른 계보로 바꿨을 때(예전에 브랜치에서 빌드한 이미지로 만든 볼륨이 남아 있을 때)도 이렇게 비워야 한다. 그대로 두면 적재가 `column "uid" of relation "episodestore" does not exist` 같은 스키마 오류로 500을 낸다.
 
@@ -65,7 +65,7 @@ docker compose --profile db up -d            # DB 서버: PostgreSQL + Qdrant
 docker compose --profile llm up -d           # LLM 서버: vLLM 채팅 모델 (8000)
 docker compose --profile embed up -d         # 임베더 서버: vLLM 임베딩 모델 (8001)
 docker compose --profile app up -d           # 앱 서버: MemMachine + Open WebUI
-python3 ../scripts/setup_openwebui.py        # 앱 서버에서 한 번. 계정, Pipe, 두 모델 항목
+python3 ../scripts/setup_openwebui.py        # 앱 서버에서 한 번. 계정, Pipe, 네 모델 항목
 python3 ../scripts/load_scenario.py ../scenario/script_en.json   # 실제 대본
 python3 ../scripts/demo_check.py ../scenario/script_en.json
 ```
@@ -97,7 +97,7 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] `llm`과 `embed` 프로필이 뜨고 `curl http://llm:8000/v1/models`, `curl http://embed:8001/v1/models`가 모델을 보여 준다. 임베딩 모델이 자동 변환되지 않으면 `EMBED_EXTRA_ARGS=--convert embed`를 준다.
 - [ ] `dimensions`를 붙인 임베딩 요청이 성공한다(실행서 6.2절의 `DIM-OK`). 거절되면 MemMachine이 인자 없이 다시 보내지만 그 결과는 모델 기본 길이라 설정값과 다르면 첫 적재가 500으로 끝난다. 모델 설정에 Matryoshka 표시가 없으면(Qwen3-Embedding) `EMBED_EXTRA_ARGS=--hf-overrides '{"is_matryoshka": true}'`를 주거나 `dimensions`를 기본 길이로 맞춘다.
 - [ ] 첫 적재(`load_scenario.py`)가 성공한다.
-- [ ] `demo_check.py`가 전부 통과한다.
+- [ ] `demo_check.py`의 24줄이 전부 통과한다. `Pipe valves at the defaults of the installed Pipe` 줄이 WARN이면 관리자 화면에서 저장한 Valve가 코드 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Functions > Valves에서 맞춘다. `top-6` 줄 끝의 `rank`로 고정 문장의 순위를 읽는다.
 - [ ] 비교 화면에서 왼쪽에 목록과 답, 오른쪽에 기억 없는 답이 나오고, 답이 수 초 안에 시작한다. 걸린 시간을 적는다.
 - [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 그 네 모델만 쓴다. 부스 계정에는 그 네 모델만 보인다(설계 5.3절).
 - [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 네 모델만 있다.
