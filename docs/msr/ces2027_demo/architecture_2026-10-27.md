@@ -19,11 +19,11 @@
 
 ## 1.1 무엇을 보여 주나
 
-스태프가 "이번 토요일 Chloe 파티 음식을 짜 줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 3, 2026 (Peanut allergy and school lunches)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
+스태프가 "이번 토요일 Chloe 생일 파티 준비를 도와줘"처럼 과거 대화 여러 개를 알아야 답할 수 있는 영어 질문을 입력한다. 왼쪽 카드에는 "Nov 2, 2026 (Chloe's peanut allergy)"처럼 날짜와 세션 제목이 붙은 기억 다섯 개가 먼저 뜨고 그 아래 답이 나온다. 오른쪽 카드에는 같은 LLM이 질문만 보고 쓴 일반론 답이 나온다. 관객이 원하면 사이드바의 과거 채팅을 열어 왼쪽 목록의 문장이 실제로 그 대화에 있었음을 보여 준다.
 
 ![비교 화면](img/08_booth_comparison_callout.png)
 
-과거 대화는 미리 적어 둔 대본이다. 여덟 세션 서른여섯 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
+과거 대화는 미리 적어 둔 대본이다. 여덟 세션 스물여덟 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
 
 ## 1.2 다섯 가지 구성 요소
 
@@ -350,18 +350,18 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 날짜 | 세션(영어 제목) | 턴 |
 |---|---|---|
-| 2026-11-01 | Chloe's Halloween costume | 4 |
-| 2026-11-02 | Chloe's peanut allergy and school lunches | 6 |
+| 2026-11-01 | Chloe's Halloween costume | 2 |
+| 2026-11-02 | Chloe's peanut allergy | 4 |
 | 2026-11-09 | Planning Chloe's 7th birthday | 4 |
-| 2026-11-16 | Chloe's Saturday swimming lesson | 4 |
+| 2026-11-16 | Chloe's Saturday swimming lesson | 2 |
 | 2026-11-23 | Seoul Marathon training plan | 6 |
 | 2026-12-01 | Conference trip to Las Vegas in January | 4 |
-| 2026-12-08 | Winter break plans for Chloe | 4 |
+| 2026-12-08 | Winter break plans for Chloe | 2 |
 | 2026-12-15 | Home office and back pain | 4 |
 
 | 주제 | 첫 질문(영어) | 기대 문구 |
 |---|---|---|
-| Chloe의 생일 파티 | Can you plan the food for Chloe's party this Saturday? | peanut, cherries, Frozen, twelve |
+| Chloe의 생일 파티 | Can you help me plan Chloe's birthday party this Saturday? I need ideas for the food and a theme. | peanut allergy, refuses cherries, Elsa from Frozen, twelve kids |
 | 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday, Thursday, hotel, long run |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다. 대본의 날짜는 서울 오프셋(+09:00)이고 `.env`의 `TZ`도 `Asia/Seoul`이라 기억 목록과 사이드바가 날짜를 적은 대로 보인다.
