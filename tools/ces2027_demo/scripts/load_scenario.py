@@ -64,7 +64,7 @@ def timed_turns(session: dict) -> list[dict]:
     title = session.get("title", "?")
     start = datetime.fromisoformat(session["date"])
     if start.tzinfo is None:
-        raise SystemExit(f"session '{title}': the date needs a UTC offset such as -08:00")
+        raise SystemExit(f"session '{title}': the date needs a UTC offset such as +09:00")
     if not session["turns"]:
         raise SystemExit(f"session '{title}': no turns")
     for turn in session["turns"]:

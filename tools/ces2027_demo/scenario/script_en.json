@@ -1,11 +1,11 @@
 {
-  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). Every turn is short and states one fact with its relationship word ('my daughter Chloe'), because the search ranks single turns by embedding similarity and the LLM only sees the retrieved turns. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: short word stems that must occur, as substrings, in the top-k memories (scripts/demo_check.py); stems rather than phrases, because the fact often comes back in a paraphrase ('swimming time' for 'swimming lesson') and demo_check.py matches substrings. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Las Vegas offset so the sidebar shows them as written; turns are one minute apart.",
+  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). Every turn is short and states one fact with its relationship word ('my daughter Chloe'), because the search ranks single turns by embedding similarity and the LLM only sees the retrieved turns. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: short word stems that must occur, as substrings, in the top-k memories (scripts/demo_check.py); stems rather than phrases, because the fact often comes back in a paraphrase ('swimming time' for 'swimming lesson') and demo_check.py matches substrings. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Seoul offset (+09:00): the recording device and TZ in deploy/.env are in that zone, so the sidebar and the memory list show the dates as written; turns are one minute apart.",
   "language": "en",
   "system_prompt": "You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.",
   "sessions": [
     {
       "title": "Chloe's Halloween costume",
-      "date": "2026-11-01T18:30:00-08:00",
+      "date": "2026-11-01T18:30:00+09:00",
       "turns": [
         {"role": "user", "content": "For Halloween, my daughter Chloe dressed up as her favourite character, Elsa from Frozen."},
         {"role": "assistant", "content": "A classic choice. An Elsa costume photographs well against fairy lights, and a side braid with a little glitter finishes the look whenever Chloe wears it again."},
@@ -15,7 +15,7 @@
     },
     {
       "title": "Chloe's peanut allergy and school lunches",
-      "date": "2026-11-02T19:40:00-08:00",
+      "date": "2026-11-02T19:40:00+09:00",
       "turns": [
         {"role": "user", "content": "My daughter Chloe has a peanut allergy."},
         {"role": "assistant", "content": "Thank you for telling me. Everything I suggest for Chloe, party food included, will be peanut-free, and labels should always be checked for 'may contain peanuts'."},
@@ -27,7 +27,7 @@
     },
     {
       "title": "Planning Chloe's 7th birthday",
-      "date": "2026-11-09T21:05:00-08:00",
+      "date": "2026-11-09T21:05:00+09:00",
       "turns": [
         {"role": "user", "content": "Chloe turns 7 on January 10 and she is obsessed with Frozen and Elsa. Her birthday party is at our apartment on Saturday, January 9, about twelve kids plus a few parents."},
         {"role": "assistant", "content": "A Frozen party suits her: a snowflake hunt through the apartment, party food with winter names, and a paper crown for each guest. With twelve kids, two adults running the games keeps it calm."},
@@ -37,7 +37,7 @@
     },
     {
       "title": "Chloe's Saturday swimming lesson",
-      "date": "2026-11-16T10:30:00-08:00",
+      "date": "2026-11-16T10:30:00+09:00",
       "turns": [
         {"role": "user", "content": "My daughter Chloe has a swimming lesson every Saturday from 10 to 11 at the pool in our neighbourhood, so Saturday plans for her have to start after lunch."},
         {"role": "assistant", "content": "Noted: Saturday mornings are Chloe's swimming time, so anything planned for her on a Saturday starts in the afternoon."},
@@ -47,7 +47,7 @@
     },
     {
       "title": "Seoul Marathon training plan",
-      "date": "2026-11-23T06:50:00-08:00",
+      "date": "2026-11-23T06:50:00+09:00",
       "turns": [
         {"role": "user", "content": "I am training for the Seoul Marathon in March. I run on Tuesday and Thursday mornings along the Han River before work and do my long run on Sunday. Can you build me a training plan?"},
         {"role": "assistant", "content": "A 16-week plan: Tuesday easy 5 km building to 8 km, Thursday intervals or tempo, Sunday long run from 8 km adding about 1 km a week up to 18 km, then a taper. Every fourth week is lighter."},
@@ -59,7 +59,7 @@
     },
     {
       "title": "Conference trip to Las Vegas in January",
-      "date": "2026-12-01T22:15:00-08:00",
+      "date": "2026-12-01T22:15:00+09:00",
       "turns": [
         {"role": "user", "content": "Our team at SK hynix MSR is presenting at a conference in Las Vegas, so I fly there from January 11 to January 15. Sessions run all day, and I want to keep running during the trip."},
         {"role": "assistant", "content": "Run early, before the sessions: most hotels there have a gym with treadmills, and the streets are quiet at six in the morning. Keep the runs short on a conference week."},
@@ -69,7 +69,7 @@
     },
     {
       "title": "Winter break plans for Chloe",
-      "date": "2026-12-08T20:20:00-08:00",
+      "date": "2026-12-08T20:20:00+09:00",
       "turns": [
         {"role": "user", "content": "Chloe's winter break starts on December 24. She wants to learn to skate like Elsa, and on cold days she needs indoor things to do."},
         {"role": "assistant", "content": "Start with two or three short sessions at the Seoul Plaza skating rink, with a helmet and gloves. For cold days: a children's museum visit, baking together, and a library card."},
@@ -79,7 +79,7 @@
     },
     {
       "title": "Home office and back pain",
-      "date": "2026-12-15T14:45:00-08:00",
+      "date": "2026-12-15T14:45:00+09:00",
       "turns": [
         {"role": "user", "content": "I work from home on Mondays, Wednesdays and Fridays, and my lower back hurts after long days at the desk. I just bought a standing desk."},
         {"role": "assistant", "content": "Alternate roughly forty minutes sitting and twenty standing, elbows at ninety degrees, monitor at eye level, and take a short walk every hour."},
