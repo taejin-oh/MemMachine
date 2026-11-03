@@ -279,7 +279,7 @@ sequenceDiagram
     M-->>P: 에피소드 5개 (content, created_at, metadata.session_id)
     P->>W: 채팅 ID로 세션 제목 조회 (같은 프로세스)
     P-->>W: NOTE 블록의 "Memories retrieved (5)" 목록과 구분선
-    P->>L: system = 기본 프롬프트 + 기억 블록, 그 뒤 원래 대화 (스트리밍)
+    P->>L: system = 기본 프롬프트 + 기억 블록, 그 뒤 원래 대화(앞 턴의 카드는 뺀다) (스트리밍)
     L-->>P: 토큰
     P-->>W: 토큰 그대로
 ```
@@ -325,6 +325,8 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 실패는 일부러 눈에 띄게 한다. MemMachine 호출이 실패하면 "Memory search failed: ..." 한 줄을 내고 멈추고, LLM 호출이 실패하면 "LLM call failed: ..."를 답 자리에 낸다. 제목 생성 같은 보조 작업은 설정에서 모두 꺼 두지만, 혹시 호출돼도 검색 없이 LLM에 그대로 넘긴다.
 
+둘째 턴부터 Pipe는 LLM에 보내는 대화 이력에서 자기가 앞 턴에 쓴 카드(단계 제목, 기억 목록, 기억 없음 안내)를 잘라 낸다. Open WebUI는 Pipe가 화면에 흘린 전문을 어시스턴트 메시지로 저장해 다음 턴의 `messages`에 그대로 실어 보내는데, 모델이 그 카드를 보면 답 대신 카드 패턴을 베껴 쓰기 때문이다(이슈 #45 댓글 6576205806). 카드는 Pipe가 답 토큰보다 먼저 내는 구분선 `---`에서 끝나므로 어시스턴트 메시지의 첫 구분선 앞을 자르되, 그 앞부분이 Pipe 카드 모양(비어 있거나 `**` 또는 `> `로 시작)일 때만 자른다. 화면과 저장된 채팅은 그대로다. 검사 스크립트는 첫 답을 카드째 이력에 넣고 같은 질문을 다시 보내 둘째 답에 카드 문구가 없는지 본다.
+
 ### 2.4.6 Open WebUI 설정
 
 소스를 고치지 않고 환경 변수와 관리 API만 쓴다. `ENABLE_PERSISTENT_CONFIG=false`라 환경 변수가 항상 최종값이고, compose 파일 하나로 재현된다.
@@ -362,7 +364,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 | Chloe의 생일 파티 | Can you plan the food for Chloe's party this Saturday? | peanut, cherries, Frozen, twelve |
 | 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday, Thursday, hotel, long run |
 
-두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다.
+두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다. 대본의 날짜는 서울 오프셋(+09:00)이고 `.env`의 `TZ`도 `Asia/Seoul`이라 기억 목록과 사이드바가 날짜를 적은 대로 보인다.
 
 ## 2.5 세 환경의 공통점과 차이
 
