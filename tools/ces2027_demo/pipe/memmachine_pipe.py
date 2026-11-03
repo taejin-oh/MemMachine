@@ -1,6 +1,6 @@
 """
 title: MemMachine
-version: 0.5.2
+version: 0.5.3
 description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
@@ -82,7 +82,7 @@ TEXT = {
         "memories_more": "_... and {count} more, also used in the answer._",
         "status_searching": "Searching memories",
         "status_retrieved": "Retrieved {count} memories",
-        "status_answered": "Answered in {seconds:.1f} s",
+        "status_answered": "Answered in {seconds:.1f} s",  # the LLM call only, without the step pauses
         "status_search_failed": "Memory search failed",
         "step": "Step {number} of {total}: {text}",
         "step_search": 'Searching memory for "{question}"',
@@ -250,7 +250,7 @@ class Pipe:
         with_memory = not model_id.endswith(NO_MEMORY_SUFFIX)
         llm_model = model_id.removesuffix(NO_MEMORY_SUFFIX)
         if llm_model not in self._model_urls:
-            await self.pipes()  # fills the map again after an Open WebUI restart
+            await self.pipes()  # fills the map again after the module is reloaded (restart, update, toggle)
         base_url = self._model_urls.get(llm_model)
         if base_url is None:
             return (f"MemMachine pipe: {llm_model} is not offered by {self.valves.LLM_BASE_URLS} "
@@ -280,7 +280,6 @@ class Pipe:
         Open WebUI turns each yielded string into a chunk.
         """
         question = last_user_text(messages)
-        started = time.monotonic()
         steps = Steps(emit, self.valves.STEP_DELAY_MS / 1000, self._text("step")) if in_steps else None
         # The no-memory model walks the steps as well when PACE_NO_MEMORY is on, so both cards keep one rhythm.
         paced = steps is not None and (with_memory or self.valves.PACE_NO_MEMORY)
@@ -334,16 +333,18 @@ class Pipe:
         yield CARD_RULE
 
         answer_parts = []
+        llm_started = time.monotonic()
         try:
             async for token in self._stream(base_url, model_id, llm_messages):
                 answer_parts.append(token)
                 yield token
         except Exception as error:
             # Same rule as for memory: a visible error beats a card that stops silently.
+            await send_status(emit, "LLM call failed", done=True)  # else the step-3 status keeps spinning
             yield f"\n\nLLM call failed: {error}"
             return
         if steps:
-            await send_status(emit, self._text("status_answered", seconds=time.monotonic() - started), done=True)
+            await send_status(emit, self._text("status_answered", seconds=time.monotonic() - llm_started), done=True)
 
         if with_memory and self.valves.RECORD_MEMORY:
             try:
@@ -518,6 +519,7 @@ def render_memory_list(memories: list[dict], show_session_info: bool, preview_ch
         lines.append(f"{number}. {label}".rstrip())
         lines.append(f'   "{preview(memory["text"], preview_chars)}"')
     if more:
+        lines.append("")  # a blank line ends the list; without it the line joins the last item
         lines.append(more)
     callout = ["> [!NOTE]"] + [f"> {line}".rstrip() for line in lines]
     return "\n".join(callout) + "\n\n"
@@ -549,8 +551,9 @@ def format_date(created_at: str | None, template: str) -> str:
     """ISO timestamp from MemMachine to the language's date form (TEXT "date", e.g. 'Nov 3, 2026') in the
     container's time zone (TZ in .env).
 
-    MemMachine stores UTC; converting keeps the list consistent with the chat
-    timestamps the browser shows in the display device's local time.
+    MemMachine stores UTC and sends the offset ("2026-11-09T12:05:00Z"); converting keeps the list consistent
+    with the chat timestamps the browser shows in the display device's local time. A value without an offset
+    would be taken as local time by astimezone(), so the offset matters.
     """
     if not created_at:
         return ""
