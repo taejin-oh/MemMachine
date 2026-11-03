@@ -1,5 +1,5 @@
 {
-  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 and 2026-11-03 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). The search ranks single turns by embedding similarity (no reranker) and shows the top 5, so every other turn is written not to compete with those three for the party question: each fact is stated once, by the user, with its relationship word ('my daughter Chloe'); the assistant does not repeat it; the Frozen theme is only in the Halloween sentence; the assistant replies in the Chloe chats avoid the words party, food and Saturday. demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: substrings that must occur in the top-k memories (scripts/demo_check.py). For the three fixed sentences they are fragments of the sentence itself, so the check proves that sentence was retrieved and not a paraphrase of it; elsewhere short stems, because a fact often comes back as a paraphrase. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Seoul offset (+09:00): the recording device and TZ in deploy/.env are in that zone, so the sidebar and the memory list show the dates as written; turns are one minute apart.",
+  "_comment": "English script for the recorded (cold) demo, decisions of 2026-11-02 and 2026-11-03 (docs/msr/ces2027_demo/cold_demo_2026-11-02.md). One persona: Junhyeok, who works at SK hynix MSR in Seoul, and his daughter Chloe. Eight past chats from November and December 2026; the demo is recorded on 2027-01-06 (DEMO_DATE in deploy/.env, a Wednesday), so 'this Saturday' is January 9 and 'Monday' is January 11. Three user turns are fixed sentences that the video shows as the stored memories and must stay word for word: the Halloween costume (chat 1), the peanut allergy and the fruit-but-no-cherries turn (chat 2). The search ranks single turns by embedding similarity (no reranker) and the LLM gets the top 6 of which the card lists 5 (valves TOP_K and SHOW_K), so every other turn is written not to compete with those three for the party question: each fact is stated once, by the user, with its relationship word ('my daughter Chloe'); the assistant does not repeat it; the Frozen theme is only in the Halloween sentence; the assistant replies in the Chloe chats avoid the words party, food and Saturday; the acknowledgements in chats 1 and 2 carry \"store\": false, so they appear in the chat but not in the memory (short content-free replies rank high for almost any question in the real embedder). demos: one topic per recording. The first question is asked verbatim in a chat with the no-memory model and again in a new chat with the memory model; the follow-up is chosen by whoever records, from follow_ups, by the condition in 'if', and must ask for facts the first answer did not contain, so that the second memory list differs from the first. expected: substrings that must occur in the top-k memories (scripts/demo_check.py). For the three fixed sentences they are fragments of the sentence itself, so the check proves that sentence was retrieved and not a paraphrase of it; elsewhere short stems, because a fact often comes back as a paraphrase. no_memory: what the no-memory model is expected to do; asking back is a legitimate outcome. language and system_prompt are written into the Pipe valves by scripts/load_scenario.py. Dates carry the Seoul offset (+09:00): the recording device and TZ in deploy/.env are in that zone, so the sidebar and the memory list show the dates as written; turns are one minute apart.",
   "language": "en",
   "system_prompt": "You are a helpful assistant. Keep every answer under 80 words, plain and concrete. Answer from what you know. Only when something essential is missing, say so in one sentence and ask one question.",
   "sessions": [
@@ -8,7 +8,7 @@
       "date": "2026-11-01T18:30:00+09:00",
       "turns": [
         {"role": "user", "content": "For Halloween, my daughter Chloe dressed up as her favourite character, Elsa from Frozen."},
-        {"role": "assistant", "content": "A lovely choice. Elsa suits her, and the photos will be worth keeping."}
+        {"role": "assistant", "content": "A classic choice. An Elsa costume photographs well against fairy lights, and a side braid with a little glitter finishes the look whenever she wears it again.", "store": false}
       ]
     },
     {
@@ -16,9 +16,9 @@
       "date": "2026-11-02T19:40:00+09:00",
       "turns": [
         {"role": "user", "content": "My daughter Chloe has a peanut allergy."},
-        {"role": "assistant", "content": "Thank you for telling me. I will keep that in mind."},
+        {"role": "assistant", "content": "Thank you for telling me. Everything I suggest for Chloe will be peanut-free, and labels are worth checking for 'may contain peanuts'.", "store": false},
         {"role": "user", "content": "Chloe loves all kinds of fruit, but she refuses cherries."},
-        {"role": "assistant", "content": "Noted. I will remember that too."}
+        {"role": "assistant", "content": "Noted: plenty of fruit for Chloe in any form, just never cherries.", "store": false}
       ]
     },
     {
@@ -91,18 +91,18 @@
       },
       "follow_ups": [
         {
-          "if": "the first answer did not mention the cake",
+          "if": "the first answer did not say what fruit or snacks to serve",
+          "text": "What fruit and snacks should I put out for the kids?",
+          "why": "needs the peanut allergy and the fruit without cherries (chat 2), the two fixed sentences the first question rarely brings both of",
+          "expected": ["peanut allergy", "refuses cherries"],
+          "no_memory": "lists generic kids' snacks and fruit, or asks about allergies"
+        },
+        {
+          "if": "the first answer already covered the fruit and the allergy",
           "text": "And what about the cake?",
           "why": "needs the ice castle cake and its recipe (chat 3) and Chloe decorating it herself (chat 7)",
           "expected": ["ice castle", "frosting"],
           "no_memory": "suggests a generic birthday cake"
-        },
-        {
-          "if": "the first answer already described the cake",
-          "text": "What time should the party start?",
-          "why": "needs the Saturday swimming lesson from 10 to 11 and the late lunch after it (chat 4)",
-          "expected": ["swimming", "lunch"],
-          "no_memory": "suggests a usual early-afternoon time without a reason"
         }
       ]
     },
