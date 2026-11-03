@@ -15,6 +15,14 @@
 # brings its services back without any command, even those stopped by hand
 # before the power-off. Only `docker compose down` removes them for good;
 # scripts/demo_reset.sh brings them back.
+#
+# Every service caps its container log (100 MB in all) and its swap, so a
+# server that runs for days neither fills its disk with logs nor thrashes in
+# swap: a service that outgrows its memory limit is killed and restarted.
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "20m", max-file: "5"}
 
 services:
 
@@ -35,12 +43,14 @@ services:
       timeout: 5s
       retries: 5
     mem_limit: 512m
+    memswap_limit: 512m
+    logging: *logging
 
   qdrant:
     profiles: [local, db]
     image: qdrant/qdrant:v1.19.0
     restart: always
-    ports: ["6333:6333", "6334:6334"]
+    ports: ["6333:6333"]            # REST only; memmachine.yml sets prefer_grpc false
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -48,9 +58,19 @@ services:
       # server that exhausted the memory limit and then the file descriptors
       # (GitHub issue #45). Eight is plenty for the demo's handful of requests.
       QDRANT__SERVICE__MAX_WORKERS: "8"
-    # The image has no shell or curl, so no healthcheck here;
-    # scripts/demo_check.py probes the port instead.
+    # The image has bash but no curl, so the probe is bash's /dev/tcp. It
+    # catches a Qdrant that hangs with the process alive (the state the company
+    # saw with too many workers), which restart: always cannot see;
+    # scripts/demo_monitor.py restarts an unhealthy container.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333; printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3; head -1 <&3 | grep -q ' 200 '"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     mem_limit: 2g
+    memswap_limit: 2g
+    logging: *logging
 
   # The published MemMachine image, not one built from this branch: the demo
   # runs the released server, and the branch only carries the demo tooling
@@ -78,6 +98,8 @@ services:
       retries: 10
       start_period: 60s
     mem_limit: 2g
+    memswap_limit: 2g
+    logging: *logging
 
   openwebui:
     profiles: [local, app]
@@ -165,6 +187,8 @@ services:
       retries: 10
       start_period: 90s
     mem_limit: 2g
+    memswap_limit: 2g
+    logging: *logging
 
   # Development stand-in for both vLLM servers. It listens on one port and is
   # published twice so that llm:8000 and embed:8001 both reach it.
@@ -177,11 +201,16 @@ services:
     environment:
       MOCK_MODEL_NAMES: ${LLM_MODEL_NAME},mock-llm-b
     mem_limit: 256m
+    memswap_limit: 256m
+    logging: *logging
 
   # vLLM for the chat model. Weights come from a local directory (no Hugging
   # Face access); the served name is what Open WebUI shows and .env refers to.
   # The host needs the NVIDIA container toolkit. Loading a model takes minutes,
-  # hence the long start_period.
+  # on a slow disk or a shared GPU longer, hence the 30-minute start_period: a
+  # failing probe inside it never counts, a passing one makes the container
+  # healthy at once, and a container marked unhealthy while still loading would
+  # be restarted (demo_monitor.py) and load from the start again.
   llm:
     profiles: [llm]
     image: ${VLLM_IMAGE}
@@ -209,7 +238,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 600s
+      start_period: 1800s
+    logging: *logging
 
   # vLLM for the embedding model, served under the fixed name "embed" that
   # memmachine.yml refers to. Same image, pooling runner, port 8001.
@@ -240,7 +270,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 600s
+      start_period: 1800s
+    logging: *logging
 
 volumes:
   postgres_data:

@@ -31,6 +31,10 @@ from common import DEMO_DIR, http_json, llm_urls_for_scripts, load_env, memmachi
 LOG_FILE = Path(__file__).resolve().parent / "demo_monitor.log"
 COMPOSE = ["docker", "compose", "--project-directory", str(DEMO_DIR / "deploy")]
 TIMEOUT = 5  # seconds per probe, so a dead server does not stall the screen
+# Services the monitor never restarts: vLLM loads its model for minutes, and a
+# restart while it is still loading (marked unhealthy after start_period) would
+# begin the load again. They only matter where a GPU server also runs the monitor.
+NO_RESTART = ("llm", "embed")
 
 
 def main() -> None:
@@ -97,7 +101,8 @@ def container_rows() -> list:
         # c["Status"] would make every row a change on every refresh.
         health = c.get("Health") or ""  # absent in older compose versions and for services without a healthcheck
         detail = c["State"] + (f" ({health})" if health else "")
-        if c["State"] == "running" and health == "unhealthy":  # hung; docker handles exited and restarting ones
+        if c["State"] == "running" and health == "unhealthy" and c["Service"] not in NO_RESTART:
+            # hung; docker handles exited and restarting ones
             restart = subprocess.run(COMPOSE + ["restart", c["Service"]], capture_output=True, text=True)
             detail += ", restarted by the monitor" if restart.returncode == 0 else f", restart failed: {restart.stderr.strip()[:80]}"
         rows.append((f"container {c['Service']}", c["State"] == "running" and health != "unhealthy", detail))
