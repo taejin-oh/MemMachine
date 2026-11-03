@@ -88,7 +88,7 @@ def install_pipe(ui: OpenWebUI, name: str, valves: dict) -> None:
     form = {
         "id": PIPE_ID,
         "name": name,
-        "content": PIPE_FILE.read_text(),
+        "content": PIPE_FILE.read_text(encoding="utf-8"),
         "meta": {"description": "CES 2027 demo: top-k memories from MemMachine, then the answer."},
     }
     try:

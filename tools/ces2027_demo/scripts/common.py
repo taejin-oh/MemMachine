@@ -16,6 +16,13 @@ ENV_FILE = DEMO_DIR / "deploy" / ".env"
 PIPE_FILE = DEMO_DIR / "pipe" / "memmachine_pipe.py"
 ASSETS_DIR = DEMO_DIR / "assets"
 PIPE_ID = "memmachine_pipe"  # Open WebUI function id; its models are named "<PIPE_ID>.<model>"
+# Keys every script needs from .env; a missing one stops the run with the key names instead of a traceback.
+REQUIRED_ENV = ("APP_HOST", "OPENWEBUI_PORT", "MEMMACHINE_PORT", "DB_HOST", "LLM_HOST", "EMBED_HOST",
+                "LLM_MODEL_NAME", "LLM_BASE_URLS", "ADMIN_NAME", "ADMIN_EMAIL", "ADMIN_PASSWORD",
+                "BOOTH_NAME", "BOOTH_EMAIL", "BOOTH_PASSWORD")
+# Valves the scripts write themselves (setup_openwebui.py and load_scenario.py); every other stored valve
+# is a value someone set in the admin UI, which demo_check.py lists.
+SCRIPT_VALVES = ("DEMO_DATE", "LLM_BASE_URLS", "BRAND_NAME", "PROJECT_ID", "LANGUAGE", "BASE_SYSTEM_PROMPT")
 NO_MEMORY_SUFFIX = "--no-memory"  # the Pipe's id suffix for the right-hand model (pipe/memmachine_pipe.py)
 STEPS_SUFFIX = "--steps"  # the Pipe's id suffix for the step-by-step form of either model
 LANGUAGES = ("en", "ko")  # the Pipe's TEXT table has these; a script file names one
@@ -79,7 +86,7 @@ def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
 
 def read_script(path: str) -> dict:
     """The script file (scenario/script_en.json or script_ko.json), checked for the keys every tool relies on."""
-    script = json.loads(Path(path).read_text())
+    script = json.loads(Path(path).read_text(encoding="utf-8"))
     if script.get("language") not in LANGUAGES:
         raise SystemExit(f"{path}: language must be one of {LANGUAGES}, not {script.get('language')!r}")
     if not isinstance(script.get("system_prompt"), str) or not script["system_prompt"].strip():
@@ -100,16 +107,25 @@ def demo_questions(demo: dict) -> list[dict]:
 
 
 def load_env(path: Path = ENV_FILE) -> dict[str, str]:
-    """Parse KEY=VALUE lines, the same format docker compose reads. Quotes around a value are removed."""
+    """Parse KEY=VALUE lines the way docker compose reads them: a matching pair of quotes around a value is
+    removed, and an unquoted value ends at ' #' (an inline comment). Stops when a required key is missing."""
     if not path.exists():
         raise SystemExit(f"{path} not found. Copy .env.example to .env in the same directory and edit it.")
     values = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
+        value = value.strip()
+        if len(value) > 1 and value[0] in "'\"" and value.endswith(value[0]):
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].rstrip()
+        values[key.strip()] = value
+    missing = [key for key in REQUIRED_ENV if not values.get(key)]
+    if missing:
+        raise SystemExit(f"{path}: missing {', '.join(missing)}; copy those lines from .env.example and fill them in")
     return values
 
 
@@ -189,6 +205,9 @@ class OpenWebUI:
         try:
             return self.signin(email, password)
         except RuntimeError as signin_error:
+            if "HTTP 429" in str(signin_error):
+                raise SystemExit("Open WebUI is limiting sign-ins for this e-mail (15 in 3 minutes): "
+                                 "wait 3 minutes and run again") from None
             try:
                 user = self.call("POST", "/api/v1/auths/signup", {"name": name, "email": email, "password": password})
             except RuntimeError as signup_error:
@@ -196,14 +215,19 @@ class OpenWebUI:
         self.token = user["token"]
         return user
 
-    def get_valves(self) -> dict:
-        """The Pipe's effective valves: the defaults from its Valves class, overridden by what is stored."""
+    def valve_defaults(self) -> dict:
+        """The defaults of the installed Pipe's Valves class."""
         spec = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves/spec") or {}
-        defaults = {name: field.get("default") for name, field in spec.get("properties", {}).items()}
-        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
-        return {**defaults, **stored}
+        return {name: field.get("default") for name, field in spec.get("properties", {}).items()}
+
+    def stored_valves(self) -> dict:
+        """The valves written by the scripts or saved in the admin UI; they survive a reinstall of the Pipe."""
+        return self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
+
+    def get_valves(self) -> dict:
+        """The Pipe's effective valves: the defaults, overridden by what is stored."""
+        return {**self.valve_defaults(), **self.stored_valves()}
 
     def set_valves(self, changes: dict) -> None:
         """Update some Pipe valves. The API replaces the whole stored set, so merge with it to keep values set in the admin UI."""
-        stored = self.call("GET", f"/api/v1/functions/id/{PIPE_ID}/valves") or {}
-        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**stored, **changes})
+        self.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update", {**self.stored_valves(), **changes})

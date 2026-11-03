@@ -7,9 +7,12 @@ Prints one line per check and exits with a non-zero code if any failed:
      two database ports answer,
   2. the booth account sees the four demo models in Open WebUI,
   3. the Pipe is in the script's language (the last load used this script),
+     its valves are at the defaults of the installed Pipe (a value saved in the
+     admin UI survives a reinstall, so a changed one is listed as a warning),
      and for the first question and every follow-up of every demo topic the
      expected phrases are among the top-k memories that MemMachine retrieves
-     from the loaded project,
+     from the loaded project, with the rank of each phrase (a rank beyond the
+     valve SHOW_K reaches the LLM but is not listed on the card),
   4. the Pipe's record mode (valve RECORD_MEMORY) is off,
   5. one question through the models: the memory model answers below its
      memory list, the no-memory model below its note (when the valve shows one),
@@ -19,11 +22,12 @@ Prints one line per check and exits with a non-zero code if any failed:
 import json
 import sys
 
-from common import (REPLY_MARKERS, STEPS_SUFFIX, OpenWebUI, default_models, demo_models, demo_questions, http_json,
-                    llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id, openwebui_url, pipe_model_id,
-                    port_open, read_script, script_host)
+from common import (REPLY_MARKERS, SCRIPT_VALVES, STEPS_SUFFIX, OpenWebUI, default_models, demo_models,
+                    demo_questions, http_json, llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id,
+                    openwebui_url, pipe_model_id, port_open, read_script, script_host)
 
 failures = 0
+PROBE_TIMEOUT = 5  # seconds for the server probes of section 1, so a powered-off server fails in seconds
 
 
 def report(ok: bool, what: str, detail: str = "", warn_only: bool = False) -> None:
@@ -66,8 +70,8 @@ def main() -> None:
     # The development mock embeds by word overlap, so expected phrases can only be
     # verified for real with the booth's embedding model; until then they warn.
     mock_embedder = embed_models and all(m.startswith("mock-") for m in embed_models)
-    check("MemMachine", lambda: json.dumps(http_json("GET", f"{memmachine}/api/v2/health")))
-    check("Open WebUI", lambda: json.dumps(http_json("GET", f"{openwebui_url(env)}/health")))
+    check("MemMachine", lambda: json.dumps(http_json("GET", f"{memmachine}/api/v2/health", timeout=PROBE_TIMEOUT)))
+    check("Open WebUI", lambda: json.dumps(http_json("GET", f"{openwebui_url(env)}/health", timeout=PROBE_TIMEOUT)))
     check("PostgreSQL port", lambda: port_open(script_host(env, "DB_HOST"), 5432))
     check("Qdrant port", lambda: port_open(script_host(env, "DB_HOST"), 6333))
 
@@ -80,23 +84,31 @@ def main() -> None:
     check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
     left, right = pipe_model_id(env), no_memory_model_id(env)
     expected_ids = {model_id for model_id, _, _ in demo_models(env)}
-    check("the four demo models visible to the booth account",
-          lambda: ", ".join(sorted(expected_ids))
-          if expected_ids <= {m["id"] for m in booth.call("GET", "/api/models")["data"]}
-          else raise_error(f"missing: {sorted(expected_ids - {m['id'] for m in booth.call('GET', '/api/models')['data']})}"))
+    check("the four demo models visible to the booth account", lambda: booth_models(booth, expected_ids, bool(llm_models)))
     report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
     check("new chats open with the pair STEPS_BY_DEFAULT selects", lambda: default_pair_in_use(booth, env))
 
-    # 3. the loaded language, then expected memories per question, in the project the Pipe searches
-    valves = ui.get_valves()
+    # 3. the loaded language and the valves, then expected memories per question, in the project the Pipe searches
+    try:
+        defaults, stored = ui.valve_defaults(), ui.stored_valves()
+    except RuntimeError as error:
+        report(False, "the Pipe's valves", f"{error}; run setup_openwebui.py, then load_scenario.py")
+        finish()
+    valves = {**defaults, **stored}
     language = valves.get("LANGUAGE", "en")  # .get: an older installed Pipe has no such valve
     report(language == script["language"], "the Pipe is in the script's language",
            language if language == script["language"] else f"Pipe {language!r}, script {script['language']!r}: load this script first")
-    project_id, top_k = valves["PROJECT_ID"], int(valves["TOP_K"])
+    # Values saved in the admin UI stay when the Pipe is reinstalled, so a default changed in the code does not
+    # reach a server where the old value was saved once; list them so that nobody records with the wrong ones.
+    changed = {name: value for name, value in stored.items() if name not in SCRIPT_VALVES and value != defaults.get(name)}
+    report(not changed, "Pipe valves at the defaults of the installed Pipe",
+           ", ".join(f"{name} {value!r} (default {defaults.get(name)!r})" for name, value in changed.items())
+           + "; set in Admin Panel > Functions > Valves" if changed else "", warn_only=True)
+    project_id, top_k, show_k = valves["PROJECT_ID"], int(valves["TOP_K"]), int(valves.get("SHOW_K", 0))
     for demo in script["demos"]:
         for question in demo_questions(demo):
             check(f"top-{top_k} memories for '{question['text'][:50]}'",
-                  lambda q=question: expected_memories(memmachine, project_id, top_k, q), warn_only=mock_embedder)
+                  lambda q=question: expected_memories(memmachine, project_id, top_k, show_k, q), warn_only=mock_embedder)
     if mock_embedder:
         print("     (mock embedder: expected phrases are matched by word overlap only; verify with the real embedder)")
 
@@ -123,9 +135,24 @@ def main() -> None:
 
 def served_models(base_url: str, into: list) -> str:
     """Model ids an OpenAI-compatible server lists; also appended to `into` for later checks."""
-    found = [m["id"] for m in http_json("GET", f"{base_url}/models")["data"]]
+    found = [m["id"] for m in http_json("GET", f"{base_url}/models", timeout=PROBE_TIMEOUT)["data"]]
     into.extend(found)
     return ", ".join(found)
+
+
+def booth_models(booth: OpenWebUI, expected_ids: set[str], llm_up: bool) -> str:
+    """The four demo model ids, if the booth account's model list has them all.
+
+    The Pipe lists its models only while it can reach the LLM server, so with that server down the entries
+    are gone as well and come back by themselves; the hint says so instead of sending staff to the setup script.
+    """
+    visible = {m["id"] for m in booth.call("GET", "/api/models")["data"]}
+    missing = sorted(expected_ids - visible)
+    if missing and not llm_up:
+        raise_error("none while the LLM server is down (see its line above); they return by themselves when it is up")
+    if missing:
+        raise_error(f"missing: {missing}; run setup_openwebui.py")
+    return ", ".join(sorted(expected_ids))
 
 
 def default_pair_in_use(booth: OpenWebUI, env: dict[str, str]) -> str:
@@ -138,14 +165,25 @@ def default_pair_in_use(booth: OpenWebUI, env: dict[str, str]) -> str:
     return wanted
 
 
-def expected_memories(memmachine: str, project_id: str, top_k: int, question: dict) -> str:
+def expected_memories(memmachine: str, project_id: str, top_k: int, show_k: int, question: dict) -> str:
+    """The same search the Pipe makes; every expected phrase must occur in one of the retrieved texts.
+
+    The detail names the rank of each phrase (1 = best). The LLM gets all top_k, but the card lists only the
+    first show_k, so a phrase beyond that is used in the answer without being seen on the screen.
+    """
     result = http_json("POST", f"{memmachine}/api/v2/memories/search",
                        {"project_id": project_id, "query": question["text"], "top_k": top_k})
     texts = [e["content"] for e in result["content"]["episodic_memory"]["long_term_memory"]["episodes"]]
-    missing = [phrase for phrase in question["expected"] if not any(phrase in t for t in texts)]
+    ranks = {phrase: next((number for number, text in enumerate(texts, start=1) if phrase in text), None)
+             for phrase in question["expected"]}
+    missing = [phrase for phrase, rank in ranks.items() if rank is None]
     if missing:
         raise_error(f"missing {missing} among {len(texts)} retrieved from {project_id}")
-    return f"{len(texts)} retrieved from {project_id}"
+    detail = f"{len(texts)} retrieved from {project_id}; rank " + ", ".join(f"{p} {r}" for p, r in ranks.items())
+    unseen = [phrase for phrase, rank in ranks.items() if show_k and rank > show_k]
+    if unseen:
+        detail += f"; {unseen} beyond SHOW_K {show_k}: used in the answer, not listed on the card"
+    return detail
 
 
 def model_answer(ui: OpenWebUI, model_id: str, question: str, header: str | None) -> str:
