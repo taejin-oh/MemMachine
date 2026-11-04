@@ -23,7 +23,7 @@
 
 ![비교 화면](img/08_booth_comparison_callout.png)
 
-과거 대화는 미리 적어 둔 대본이다. 여덟 세션 스물여덟 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바와 MemMachine의 기억에 똑같이 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
+과거 대화는 미리 적어 둔 대본이다. 여덟 세션 스물여덟 턴이 2026년 11월과 12월 날짜로 Open WebUI의 사이드바에 들어가 있고, 그중 질문에 필요한 스물한 턴이 MemMachine의 기억에 들어가 있다. 시연 중에는 아무것도 저장하지 않으므로 같은 질문을 몇 번 해도 같은 기억이 나온다.
 
 ## 1.2 다섯 가지 구성 요소
 
@@ -176,7 +176,7 @@ flowchart TB
 | 스크립트 | 로그인 | 하는 일 |
 |---|---|---|
 | `setup_openwebui.py` | 관리자(첫 실행 때 가입으로 생성) | Pipe 함수 설치와 활성화, Valve 기록, 네 모델 항목(즉시 둘과 단계별 둘. 표시 이름, `.env`의 `AVATAR_*`가 고른 아바타, 내장 도구와 첨부 차단, 모든 계정의 읽기 권한)과 옛 `LLM_MODEL_NAME`의 항목 제거, 부스 계정 생성, 두 계정의 조용한 설정 |
-| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 부스 계정의 채팅을 모두 지운 뒤 대본의 여덟 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 새 프로젝트 `ces-<날짜>-<시각>`의 MemMachine 에피소드로 저장한 다음, 마지막에 그 프로젝트 ID와 대본의 언어와 공통 지시문을 Valve에 쓴다. 중간에 멈추면 Pipe는 직전 적재를 계속 검색한다. 턴에 `"store": false`가 있으면 채팅에만 넣고 기억에는 저장하지 않는다(채팅 1과 2의 비서 응답) |
+| `load_scenario.py` | 관리자(Valve)와 부스 계정(채팅) | 부스 계정의 채팅을 모두 지운 뒤 대본의 여덟 세션을 날짜와 시각 그대로 가져오고, 같은 턴을 새 프로젝트 `ces-<날짜>-<시각>`의 MemMachine 에피소드로 저장한 다음, 마지막에 그 프로젝트 ID와 대본의 언어와 공통 지시문을 Valve에 쓴다. 중간에 멈추면 Pipe는 직전 적재를 계속 검색한다. 턴에 `"store": false`가 있으면 채팅에만 넣고 기억에는 저장하지 않는다(채팅 1과 2의 비서 응답, 채팅 3과 6의 되풀이 비서 응답, 수영 채팅의 두 턴. 콜드 데모 문서 15장) |
 | `demo_check.py` | 관리자(Valve)와 부스 계정(모델 목록) | 서버 여섯 곳 응답(프로브는 5초 안에 끝난다), 부스 계정에 네 모델 보임, 채팅 모델이 서빙됨, 새 채팅의 기본 쌍, Pipe가 대본의 언어임, 관리자 화면에서 저장한 Valve가 기본값과 다르면 WARN, 시연 주제마다 첫 질문과 후속 후보의 기대 문구가 top-6에 듦(문구마다 순위를 적고 `SHOW_K`를 넘는 순위는 카드에 안 보인다고 표시), 녹음 Valve 꺼짐, 기억 모델과 기억 없는 모델과 단계별 모델에서 답 하나씩과 둘째 턴 검사. 모두 24줄 |
 | `demo_reset.sh` | 위 세 스크립트를 부른다 | 이 서버의 컨테이너를 다시 만들고(`--wipe`면 볼륨도 지운 뒤) healthcheck를 기다리고, 앱 서버면 세팅, 적재, 검사를 이어서 실행 |
 | `demo_monitor.py` | 없음 | 서버 여섯 곳과 이 서버의 컨테이너 상태를 몇 초마다 표시, 바뀐 줄을 로그에 기록, 실행 중인 unhealthy 컨테이너 재시작 |
@@ -362,7 +362,7 @@ Qdrant 컬렉션은 설정의 `dimensions`로 만들어진다. 임베딩 서버�
 
 | 주제 | 첫 질문(영어) | 기대 문구 |
 |---|---|---|
-| Chloe의 생일 파티 | Can you help me plan Chloe's birthday party this Saturday? I need ideas for the food and a theme. | peanut allergy, refuses cherries, Elsa from Frozen, twelve kids |
+| Chloe의 생일 파티 | Can you help me plan Chloe's birthday party this Saturday? I need ideas for the food and a theme. | peanut allergy, Elsa from Frozen, twelve kids |
 | 학회 출장 중 달리기 | I fly to Las Vegas on Monday. When and where do I run next week? | Tuesday, Thursday, hotel, long run |
 
 두 모델 모두 "Today is Wednesday, 2027-01-06."을 시스템 프롬프트로 받아 "this Saturday" 같은 표현이 서버 시계와 무관하게 고정된다. 사이드바의 날짜 묶음은 브라우저의 현재 시각 기준이라 시연 날짜(2027년 1월)에는 월별로 묶인다. 대본의 날짜는 서울 오프셋(+09:00)이고 `.env`의 `TZ`도 `Asia/Seoul`이라 기억 목록과 사이드바가 날짜를 적은 대로 보인다.

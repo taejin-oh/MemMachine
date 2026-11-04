@@ -421,7 +421,7 @@ cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose --profile ap
 cd ~/ces2027/MemMachine/tools/ces2027_demo && python3 scripts/load_scenario.py scenario/script_en.json
 ```
 
-**나와야 하는 것** `previous chats of visitor@demo.local deleted`, 세션 여덟 줄(`session '...': N turns, M stored as memories, chat ...`, 모두 합쳐 28턴 중 25턴 저장), 마지막에 `project ces-<날짜>-<시각>: Pipe valves set (language en). done. Reload the browser to see the chats.` Pipe의 Valve는 적재가 다 끝난 뒤에 새 프로젝트로 바뀌므로, 중간에 멈추면 Pipe는 직전 적재를 계속 검색하고 `load stopped: ...` 뒤에 다시 실행하라는 안내가 나온다.
+**나와야 하는 것** `previous chats of visitor@demo.local deleted`, 세션 여덟 줄(`session '...': N turns, M stored as memories, chat ...`, 모두 합쳐 28턴 중 21턴 저장. 채팅 1과 2의 비서 응답 셋, 채팅 3과 6의 되풀이 비서 응답 둘, 수영 채팅의 두 턴은 채팅에만 들어간다), 마지막에 `project ces-<날짜>-<시각>: Pipe valves set (language en). done. Reload the browser to see the chats.` Pipe의 Valve는 적재가 다 끝난 뒤에 새 프로젝트로 바뀌므로, 중간에 멈추면 Pipe는 직전 적재를 계속 검색하고 `load stopped: ...` 뒤에 다시 실행하라는 안내가 나온다.
 
 **다르면** HTTP 500이면 `cd ~/ces2027/MemMachine/tools/ces2027_demo/deploy && docker compose logs --tail 100 memmachine`에서 임베딩 오류를 본다. `dimension`이 들어 있으면 5.3절과 6.2절의 값이 다른 것이고, `connection`이 들어 있으면 `EMBED_HOST`가 틀린 것이다. 고친 뒤 바로 위의 MemMachine 다시 올리기 명령을 실행하고 적재를 다시 실행한다. 적재는 매번 처음부터 다시 한다.
 
@@ -445,7 +445,7 @@ OK   chat model served by the LLM server: <LLM_MODEL_NAME>
 OK   new chats open with the pair STEPS_BY_DEFAULT selects: memmachine_pipe.<LLM_MODEL_NAME>--steps,memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps
 OK   the Pipe is in the script's language: en
 OK   Pipe valves at the defaults of the installed Pipe
-OK   top-6 memories for 'Can you help me plan Chloe's birthday party this S': 6 retrieved from ces-...; rank peanut allergy 4, refuses cherries 2, Elsa from Frozen 6, twelve kids 1; ['Elsa from Frozen'] beyond SHOW_K 5: used in the answer, not shown on the screen
+OK   top-6 memories for 'Can you help me plan Chloe's birthday party this S': 6 retrieved from ces-...; rank peanut allergy 4, Elsa from Frozen 5, twelve kids 1
 OK   top-6 memories for 'What fruit and snacks should I put out for the kid': 6 retrieved from ces-...; rank peanut allergy 2, refuses cherries 1
 OK   top-6 memories for 'And what about the cake?': 6 retrieved from ces-...; rank ...
 OK   top-6 memories for 'I fly to Las Vegas on Monday. When and where do I ': 6 retrieved from ces-...; rank ...
