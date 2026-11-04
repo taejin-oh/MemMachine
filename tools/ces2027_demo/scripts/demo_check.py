@@ -5,7 +5,8 @@
 Prints one line per check and exits with a non-zero code if any failed:
   1. the LLM server(s), the embedding server, MemMachine, Open WebUI and the
      two database ports answer,
-  2. the booth account sees the four demo models in Open WebUI,
+  2. the booth account sees the demo's model entries in Open WebUI (four per chat model in
+     LLM_MODEL_ALLOW), and every one of those chat models is served by an LLM server,
   3. the Pipe is in the script's language (the last load used this script),
      its valves are at the defaults of the installed Pipe (a value saved in the
      admin UI survives a reinstall, so a changed one is listed as a warning),
@@ -23,8 +24,9 @@ import json
 import sys
 
 from common import (REPLY_MARKERS, SCRIPT_VALVES, STEPS_SUFFIX, OpenWebUI, default_models, demo_models,
-                    demo_questions, http_json, llm_urls_for_scripts, load_env, memmachine_url, no_memory_model_id,
-                    openwebui_url, pipe_model_id, port_open, read_script, script_host)
+                    demo_questions, http_json, llm_model_ids, llm_model_names, llm_urls_for_scripts, load_env,
+                    memmachine_url, no_memory_model_id, openwebui_url, pipe_model_id, port_open, read_script,
+                    script_host)
 
 failures = 0
 PROBE_TIMEOUT = 5  # seconds for the server probes of section 1, so a powered-off server fails in seconds
@@ -63,8 +65,9 @@ def main() -> None:
 
     # 1. servers
     llm_models, embed_models = [], []
+    key = env.get("LLM_API_KEY", "")  # a gateway that answers 401 to an anonymous probe needs it
     for url in llm_urls_for_scripts(env):
-        check(f"LLM server {url}", lambda url=url: served_models(url, llm_models))
+        check(f"LLM server {url}", lambda url=url: served_models(url, llm_models, key, llm_model_names(env)))
     embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"  # port fixed by design section 4.1, as in memmachine.yml
     check(f"embedding server {embed}", lambda: served_models(embed, embed_models))
     # The development mock embeds by word overlap, so expected phrases can only be
@@ -84,8 +87,13 @@ def main() -> None:
     check("sign in as the booth account", lambda: booth.signin(env["BOOTH_EMAIL"], env["BOOTH_PASSWORD"])["email"])
     left, right = pipe_model_id(env), no_memory_model_id(env)
     expected_ids = {model_id for model_id, _, _ in demo_models(env)}
-    check("the four demo models visible to the booth account", lambda: booth_models(booth, expected_ids, bool(llm_models)))
-    report(env["LLM_MODEL_NAME"] in llm_models, "chat model served by the LLM server", env["LLM_MODEL_NAME"])
+    check(f"the {len(expected_ids)} demo models visible to the booth account",
+          lambda: booth_models(booth, expected_ids, bool(llm_models)))
+    # One line per chat model the demo offers (LLM_MODEL_ALLOW), so a model that vanished from a gateway's list
+    # is named instead of only the default being checked.
+    missing_models = [name for name in llm_model_names(env) if name not in llm_models]
+    report(not missing_models, "chat models served by the LLM server",
+           ", ".join(llm_model_names(env)) if not missing_models else f"missing: {missing_models}")
     check("new chats open with the pair STEPS_BY_DEFAULT selects", lambda: default_pair_in_use(booth, env))
 
     # 3. the loaded language and the valves, then expected memories per question, in the project the Pipe searches
@@ -102,7 +110,8 @@ def main() -> None:
     # reach a server where the old value was saved once; list them so that nobody records with the wrong ones.
     changed = {name: value for name, value in stored.items() if name not in SCRIPT_VALVES and value != defaults.get(name)}
     report(not changed, "Pipe valves at the defaults of the installed Pipe",
-           ", ".join(f"{name} {value!r} (default {defaults.get(name)!r})" for name, value in changed.items())
+           ", ".join(f"{name} {value!r} (default {defaults.get(name)!r})" if not secret_valve(name) else f"{name} (set)"
+                     for name, value in changed.items())
            + "; set in Admin Panel > Functions > Valves" if changed else "", warn_only=True)
     project_id, top_k, show_k = valves["PROJECT_ID"], int(valves["TOP_K"]), int(valves.get("SHOW_K", 0))
     for demo in script["demos"]:
@@ -133,11 +142,22 @@ def main() -> None:
     finish()
 
 
-def served_models(base_url: str, into: list) -> str:
-    """Model ids an OpenAI-compatible server lists; also appended to `into` for later checks."""
-    found = [m["id"] for m in http_json("GET", f"{base_url}/models", timeout=PROBE_TIMEOUT)["data"]]
+def secret_valve(name: str) -> bool:
+    """A valve whose value must not reach the console (this output gets pasted into issues and screenshots)."""
+    return any(word in name.upper() for word in ("KEY", "PASSWORD", "SECRET", "TOKEN"))
+
+
+def served_models(base_url: str, into: list, key: str = "", wanted: list[str] | None = None) -> str:
+    """Model ids an OpenAI-compatible server lists; also appended to `into` for later checks. A gateway's list is
+    long (a company one serves 26 ids including embeddings and rerankers), so `wanted` names the demo's own and the
+    rest is counted; llm_model_ids retries with the key when an anonymous probe gets 401."""
+    found = llm_model_ids(base_url, key)
     into.extend(found)
-    return ", ".join(found)
+    if not wanted:
+        return ", ".join(found)
+    named = [name for name in wanted if name in found]
+    rest = len(found) - len(named)
+    return ", ".join(named) + (f" (+{rest} more)" if rest else "") or ", ".join(found)
 
 
 def booth_models(booth: OpenWebUI, expected_ids: set[str], llm_up: bool) -> str:

@@ -9,18 +9,20 @@ Every step creates or updates, so running it twice is harmless.
 Steps:
   1. sign in as the staff account (created on the first run; first user = admin)
   2. install or update the Pipe function and switch it on
-  3. write the Pipe valves that come from .env (LLM address, brand name shown
-     on the memory side, demo date); the shared system prompt and the screen
-     language come from the script file when load_scenario.py runs
-  4. create or update the four model entries, all served by the Pipe (with and
-     without memory, at once and step by step): display names, avatars from
-     ../assets, the capability flags that stop Open WebUI from feeding past
-     chats, notes or files to any of them, and read access for every account
+  3. write the Pipe valves that come from .env (LLM addresses, its key, which
+     served ids the model list may offer, whether reasoning is switched off,
+     brand name shown on the memory side, demo date); the shared system prompt
+     and the screen language come from the script file when load_scenario.py runs
+  4. create or update the model entries the demo offers — four per chat model in
+     LLM_MODEL_ALLOW (with and without memory, at once and step by step), all
+     served by the Pipe — with their display names, their avatars from ../assets,
+     the capability flags that stop Open WebUI from feeding past chats, notes or
+     files to any of them, and read access for every account
      (the system prompt comes from the Pipe valve); entries of this Pipe that an
-     earlier .env produced (another LLM_MODEL_NAME) are removed
+     earlier .env produced (another LLM_MODEL_NAME or LLM_MODEL_ALLOW) are removed
   5. create the booth account if it is missing: a regular user, so that the
      USER_PERMISSIONS_* variables in docker-compose.yml apply to it and it
-     sees only these two models (Open WebUI never restricts an admin)
+     sees only these entries (Open WebUI never restricts an admin)
   6. settings of both accounts: no release-notes pop-up on first login, an
      empty personal system prompt so nothing extra reaches either model, and
      temporary chats by default so nothing a visitor types is saved and the
@@ -31,8 +33,8 @@ Steps:
 import base64
 from datetime import date
 
-from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, default_models, demo_models, load_env,
-                    openwebui_url)
+from common import (ASSETS_DIR, PIPE_FILE, PIPE_ID, OpenWebUI, brand_name, default_models, demo_models, direct_models,
+                    load_env, openwebui_url)
 
 # Blocks Open WebUI's builtin tools (search_chats, view_chat, ...) and the
 # attach menu for a model; see the design document, section 5.3.
@@ -56,7 +58,10 @@ def main() -> None:
         raise SystemExit("this account is not an admin: remove the openwebui_data volume and run again")
 
     brand = brand_name(env)
-    install_pipe(ui, brand, {"DEMO_DATE": demo_date(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"], "BRAND_NAME": brand})
+    install_pipe(ui, brand, {"DEMO_DATE": demo_date(env), "LLM_BASE_URLS": env["LLM_BASE_URLS"],
+                             "LLM_API_KEY": env.get("LLM_API_KEY", ""),
+                             "LLM_MODEL_ALLOW": env.get("LLM_MODEL_ALLOW", ""),
+                             "DISABLE_THINKING": thinking_disabled(env), "BRAND_NAME": brand})
 
     # All entries are Pipe models; the Pipe gives each its system prompt, so no params here.
     models = demo_models(env)
@@ -64,6 +69,7 @@ def main() -> None:
         upsert_model(ui, model_id, name, avatar)
     remove_stale_models(ui, {model_id for model_id, _, _ in models})
     print(f"new chats open with {', '.join(default_pair)} (STEPS_BY_DEFAULT; demo_check.py verifies the running container)")
+    ensure_direct_models(ui, env)
     booth = ensure_booth_account(ui, env)
     temporary = env.get("TEMPORARY_CHAT", "true") == "true"
     quiet_account(ui, env["ADMIN_EMAIL"], temporary)
@@ -81,6 +87,16 @@ def demo_date(env: dict[str, str]) -> str:
         except ValueError:
             raise SystemExit(f"DEMO_DATE in .env must look like 2027-01-06, not {value!r}") from None
     return value
+
+
+def thinking_disabled(env: dict[str, str]) -> bool:
+    """LLM_DISABLE_THINKING from .env, checked; the Pipe then asks the chat server to answer without reasoning
+    first. Needed for a Qwen3-family model served without --default-chat-template-kwargs, which otherwise spends
+    the whole MAX_TOKENS budget on thinking and answers with nothing. Any other value stops the run."""
+    value = env.get("LLM_DISABLE_THINKING", "")
+    if value not in ("", "true"):
+        raise SystemExit(f"LLM_DISABLE_THINKING in .env must be true or empty, not {value!r}")
+    return value == "true"
 
 
 def install_pipe(ui: OpenWebUI, name: str, valves: dict) -> None:
@@ -136,6 +152,41 @@ def quiet_account(ui: OpenWebUI, email: str, temporary: bool) -> None:
     ui.call("POST", "/api/v1/users/user/settings/update", settings)
     print(f"account settings of {email}: release notes off, personal system prompt empty, "
           f"new chats {'temporary' if temporary else 'saved'}, wide screen mode")
+
+
+def ensure_direct_models(ui: OpenWebUI, env: dict[str, str]) -> None:
+    """Make the models that answer without the Pipe usable by every account.
+
+    A model of a connection (OPENAI_API_BASE_URLS) reaches a non-admin only through a workspace entry that
+    carries a read grant: Open WebUI filters a non-admin's list by grants, and a connection's own ids have
+    none (measured: the entry existed, had no grant, and the booth account saw neither the entry nor an answer
+    — "Model not found"). So an id that has no entry yet gets a plain one, and any entry gets the grant.
+
+    Names are never rewritten here: an operator's display name for such a model (this server has
+    "LLM (no LTM)") survives. These models are outside the Pipe, so no Valve reaches them; with
+    LLM_DISABLE_THINKING=true their entries ask for the same thing the Pipe does, because a connection cannot
+    carry a request parameter and without one a thinking model on a gateway spent 2231~4065 reasoning tokens
+    and 21~42s per answer here.
+    """
+    ids = direct_models(env)
+    if not ids:
+        return
+    params = {"chat_template_kwargs": {"enable_thinking": False}} if thinking_disabled(env) else {}
+    existing = {entry["id"]: entry for entry in ui.call("GET", "/api/v1/models/all")}
+    for model_id in ids:
+        entry = existing.get(model_id)
+        if entry is None:
+            ui.call("POST", "/api/v1/models/create", {"id": model_id, "base_model_id": None, "name": model_id,
+                                                     "meta": {"capabilities": NO_PAST_CONTEXT},
+                                                     "params": params, "is_active": True})
+            print(f"model {model_id}: created (no Pipe: answers straight from its server)")
+        elif params and not entry.get("params"):
+            form = {key: entry.get(key) for key in ("id", "base_model_id", "name", "meta", "is_active")}
+            form["params"] = params
+            ui.call("POST", "/api/v1/models/model/update", form)
+            print(f"model {model_id}: asks for no reasoning (params), like the Pipe models")
+        ui.call("POST", "/api/v1/models/model/access/update", {"id": model_id, "access_grants": PUBLIC_READ})
+    print(f"{len(ids)} model(s) reachable without the Pipe: {', '.join(ids)}")
 
 
 def upsert_model(ui: OpenWebUI, model_id: str, name: str, avatar: str) -> None:

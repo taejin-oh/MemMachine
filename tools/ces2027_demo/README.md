@@ -10,9 +10,9 @@ tools/ces2027_demo/
   deploy/.env.example         장소별 값. .env로 복사해서 쓴다
   deploy/memmachine.yml       MemMachine 설정. 모든 장소에서 같다
   deploy/hosts.example        시연 화면 장비의 /etc/hosts 예시
-  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 네 모델(기억 있음과 없음, 즉시형과 단계별)을 제공한다. 기억 검색, 목록 출력, 답변
+  pipe/memmachine_pipe.py     Open WebUI Pipe 함수. 데모가 쓰는 채팅 모델마다 네 항목(기억 있음과 없음, 즉시형과 단계별)을 제공한다. 기억 검색, 목록 출력, 답변
   mock/                       개발용 LLM과 임베더 mock (Mac에서만 쓴다)
-  scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 네 모델 항목의 표시 설정
+  scripts/setup_openwebui.py  스태프와 부스 계정, Pipe 설치, Valve, 모델 항목의 표시 설정
   scripts/load_scenario.py    대본의 과거 세션을 Open WebUI와 MemMachine에 적재
   scripts/demo_check.py       전원을 켠 뒤 준비 상태를 한 번에 검사
   scripts/demo_reset.sh       문제가 생겼을 때 이 서버의 컨테이너를 다시 만들고 세팅, 적재, 검사를 한 번에
@@ -54,7 +54,7 @@ python3 ../scripts/demo_check.py ../scenario/script.sample.json
 
 준비물은 서버마다 Docker와 Docker Compose(프로필을 지원하는 v2), GPU 서버에는 NVIDIA 드라이버와 NVIDIA Container Toolkit, 그리고 모델 가중치 디렉터리다. 브랜치를 pull한 뒤 서버마다 다음 순서로 한다.
 
-1. `deploy/.env.example`을 `.env`로 복사하고 부스 값을 적는다. 다른 서버의 IP(`DB_HOST`, `LLM_HOST`, `EMBED_HOST`, `APP_HOST`), 공개 포트(`OPENWEBUI_PORT=3000`, `MEMMACHINE_PORT=8080`), 녹화 장비의 시간대(`TZ=Asia/Seoul`), 모델 이름(`LLM_MODEL_NAME`), vLLM 이미지와 가중치 경로, GPU 번호와 메모리 비율이다. 회사 검증에서 H100 두 장이 한 서버에 있으면 `LLM_GPU=0`, `EMBED_GPU=1`로 두고 두 프로필을 같은 서버에서 올린다.
+1. `deploy/.env.example`을 `.env`로 복사하고 부스 값을 적는다. 다른 서버의 IP(`DB_HOST`, `LLM_HOST`, `EMBED_HOST`, `APP_HOST`), 공개 포트(`OPENWEBUI_PORT=3000`, `MEMMACHINE_PORT=8080`), 녹화 장비의 시간대(`TZ=Asia/Seoul`), 모델 이름(`LLM_MODEL_NAME`), vLLM 이미지와 가중치 경로, GPU 번호와 메모리 비율이다. 회사 검증에서 H100 두 장이 한 서버에 있으면 `LLM_GPU=0`, `EMBED_GPU=1`로 두고 두 프로필을 같은 서버에서 올린다. 채팅 모델을 여러 개 올려 골라 쓰려면 `LLM_MODEL_ALLOW`에 나열하고(비워 두면 `LLM_MODEL_NAME` 하나만), 게이트웨이 너머 모델이면 그 키를 `LLM_API_KEY`에 넣는다(vLLM은 받고 지나가는 값이고, `/v1/models`가 익명 조회에 401을 주는 곳에서는 검사와 모니터도 그 키를 쓴다).
 2. 임베딩 모델을 정했으면 `deploy/memmachine.yml`의 `dimensions`를 그 모델의 차원으로 고친다. 기억을 넣은 뒤에는 바꾸지 않는다.
 3. 시연 화면 장비의 `/etc/hosts`에 `deploy/hosts.example`의 줄을 넣는다. 브라우저가 `http://app:3000`을 찾기 위해서이며, 스크립트는 `.env`의 IP를 쓴다.
 4. 서버 역할에 맞는 프로필로 올린다. MemMachine은 공개 이미지 `memmachine/memmachine:0.4.1-dev1`을 내려받아 쓰고 브랜치에서 빌드하지 않는다. vLLM 두 대를 운영자가 이미 띄워 둔 곳에서는 `llm`, `embed` 프로필을 올리지 않고 실행서 2.4절의 조건을 운영자와 맞춘다.
@@ -65,7 +65,7 @@ docker compose --profile db up -d            # DB 서버: PostgreSQL + Qdrant
 docker compose --profile llm up -d           # LLM 서버: vLLM 채팅 모델 (8000)
 docker compose --profile embed up -d         # 임베더 서버: vLLM 임베딩 모델 (8001)
 docker compose --profile app up -d           # 앱 서버: MemMachine + Open WebUI
-python3 ../scripts/setup_openwebui.py        # 앱 서버에서 한 번. 계정, Pipe, 네 모델 항목
+python3 ../scripts/setup_openwebui.py        # 앱 서버에서 한 번. 계정, Pipe, 모델 항목
 python3 ../scripts/load_scenario.py ../scenario/script_en.json   # 실제 대본
 python3 ../scripts/demo_check.py ../scenario/script_en.json
 ```
@@ -97,14 +97,14 @@ Mac에서는 mock으로만 확인했다. 실제 vLLM으로 처음 올릴 때 다
 - [ ] `llm`과 `embed` 프로필이 뜨고 `curl http://llm:8000/v1/models`, `curl http://embed:8001/v1/models`가 모델을 보여 준다. 임베딩 모델이 자동 변환되지 않으면 `EMBED_EXTRA_ARGS=--convert embed`를 준다.
 - [ ] `dimensions`를 붙인 임베딩 요청이 성공한다(실행서 6.2절의 `DIM-OK`). 거절되면 MemMachine이 인자 없이 다시 보내지만 그 결과는 모델 기본 길이라 설정값과 다르면 첫 적재가 500으로 끝난다. 모델 설정에 Matryoshka 표시가 없으면(Qwen3-Embedding) `EMBED_EXTRA_ARGS=--hf-overrides '{"is_matryoshka": true}'`를 주거나 `dimensions`를 기본 길이로 맞춘다.
 - [ ] 첫 적재(`load_scenario.py`)가 성공한다.
-- [ ] `demo_check.py`의 24줄이 전부 통과한다. `Pipe valves at the defaults of the installed Pipe` 줄이 WARN이면 관리자 화면에서 저장한 Valve가 코드 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Functions > Valves에서 맞춘다. `top-6` 줄 끝의 `rank`로 고정 문장의 순위를 읽는다.
+- [ ] `demo_check.py`의 줄이 전부 통과한다(줄 수는 `LLM_BASE_URLS`에 적힌 채팅 서버 수에 따라 한 줄씩 늘어난다. 회사 서버는 로컬 vLLM과 게이트웨이 둘을 적어 25줄). `Pipe valves at the defaults of the installed Pipe` 줄이 WARN이면 관리자 화면에서 저장한 Valve가 코드 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Functions > Valves에서 맞춘다. `top-6` 줄 끝의 `rank`로 고정 문장의 순위를 읽는다.
 - [ ] 비교 화면에서 왼쪽에 목록과 답, 오른쪽에 기억 없는 답이 나오고, 답이 수 초 안에 시작한다. 걸린 시간을 적는다.
-- [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 그 네 모델만 쓴다. 부스 계정에는 그 네 모델만 보인다(설계 5.3절).
-- [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 네 모델만 있다.
+- [ ] vLLM 로그에 `tools`가 들어간 요청이 없고, 채팅 화면에 `ask_user` 같은 도구 블록이 뜨지 않는다. 운영자 vLLM에 요청 로그가 없으면 "미판정"으로 적는다. 있으면 세팅 도구의 항목이 없는 모델로 채팅한 것이다(세팅 도구 실행 전이거나, 항목이 없는 다른 모델을 고른 경우). 세팅 도구를 다시 실행하고 부스 계정으로 들어가 그 모델들만 쓴다. 부스 계정에는 데모가 쓰는 모델의 항목만 보인다(설계 5.3절).
+- [ ] 부스 계정으로 들어간 화면의 입력창에 첨부, 마이크, 음성 통화, 컨트롤 단추가 없고, 모델 목록에 데모 항목(`LLM_MODEL_ALLOW`의 모델 × 4종)만 있다.
 - [ ] 모델 드롭다운에서 `MemMachine + <모델>`과 `<모델> (no memory)`, 그리고 둘의 `(step by step)` 형태가 보이고(`.env`의 `BRAND_NAME`을 바꿨으면 "MemMachine" 자리에 그 이름), 모델을 두 개 띄웠다면 둘 사이의 전환이 된다.
 - [ ] 새 채팅이 `.env`의 `STEPS_BY_DEFAULT`가 고른 쌍으로 열린다(빈 값이면 즉시 쌍, `true`면 단계별 쌍). 검사 스크립트의 "new chats open with" 줄이 같은 것을 확인한다.
 - [ ] 단계별 쌍으로 바꿔 질문하면 왼쪽 카드에 "Step 1 of 3" 제목이 바로 나오고, 2초마다 기억 목록, "Step 2 of 3"과 접힌 "Prompt sent to the LLM", "Step 3 of 3"이 이어진 뒤 답이 흐른다. 오른쪽도 같은 박자로 "Skipped. This model has no memory."를 지나 답한다. 접힌 블록을 펼치면 전달문 전체가 보인다. 간격이 길거나 짧으면 Valve `STEP_DELAY_MS`를 바꾼다.
-- [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). 다른 모델이면 모델을 바꾼다.
+- [ ] 생각(reasoning) 모델이면 `reasoning_content`가 먼저 흐르는 동안 카드가 비어 보인다. Qwen3 계열은 `LLM_EXTRA_ARGS=--default-chat-template-kwargs '{"enable_thinking": false}'`로 끈다(실행서 5.4절). vLLM을 우리가 띄우지 않아 그 인자를 줄 수 없으면(회사처럼 게이트웨이 너머 모델) `.env`의 `LLM_DISABLE_THINKING=true`로 같은 요청을 보내고(세팅 도구가 Valve `DISABLE_THINKING`에 쓴다), 그래도 비어 있으면 다른 모델로 바꾼다. 끈 뒤에는 기본 `MAX_TOKENS` 300으로 충분한 것이 보통이고(회사 게이트웨이 실측), 답이 문장 중간에서 끊기면 Valve `MAX_TOKENS`를 올린다.
 - [ ] 왼쪽 카드의 기억 목록이 파란 NOTE 블록 안에 있고 기억마다 본문이 한 줄을 넘지 않는다. 넘으면 관리자 화면의 Functions > MemMachine > Valves에서 `MEMORY_PREVIEW_CHARS`를 줄인다(기본 60은 와이드 모드 1600px 기준이고, 와이드 모드를 끄면 40).
 - [ ] 오른쪽 카드가 회색 한 줄 "No memory used"로 시작한다(끄려면 Valve `SHOW_NO_MEMORY_NOTE`). 두 답이 모두 80단어 안팎으로 짧다. 길면 대본 파일의 `system_prompt`를 손보고 적재 도구를 다시 실행하거나 Valve `MAX_TOKENS`(기본 300)를 줄인다.
 - [ ] 부스 계정의 새 채팅 위에 "Temporary Chat"이 보이고, 질문을 보낸 뒤 New Chat을 누르면 사이드바에 질문 채팅이 남지 않는다(`TEMPORARY_CHAT=true`일 때. `false`면 질문 채팅이 남고 직접 지운다).

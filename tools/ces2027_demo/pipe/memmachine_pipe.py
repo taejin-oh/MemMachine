@@ -1,13 +1,14 @@
 """
 title: MemMachine
-version: 0.5.4
+version: 0.5.5
 description: Four models per LLM: with and without memory, answering at once or showing the three steps (memory search, prompt, LLM) first. Screen text in English or Korean.
 """
 
 # Open WebUI Pipe function for the CES 2027 demo (design section 5.2).
 #
 # Open WebUI loads this file as a "manifold" pipe: pipes() lists four models per
-# chat model that the LLM server offers, "<BRAND_NAME> + <model>" and
+# chat model that the LLM server offers (or only those the valve LLM_MODEL_ALLOW
+# names, when a shared gateway serves dozens of ids), "<BRAND_NAME> + <model>" and
 # "<model> (no memory)" (id suffix NO_MEMORY_SUFFIX), each also in a step-by-step
 # form (id suffix STEPS_SUFFIX), and pipe() handles one request. For every
 # question the memory model
@@ -148,6 +149,14 @@ class Pipe:
             description="MemMachine project to search. load_scenario.py writes a fresh id here on every load.",
         )
         LLM_API_KEY: str = Field(default="dummy", description="Sent as a Bearer token; vLLM ignores it.")
+        LLM_MODEL_ALLOW: str = Field(
+            default="",
+            description="Served model ids the model list offers, separated by ',', or empty for every id the servers "
+            "list. A gateway that serves dozens of ids (embeddings and rerankers included) would otherwise put four "
+            "entries per id in the dropdown. setup_openwebui.py writes LLM_MODEL_ALLOW from .env; the ids it makes "
+            "workspace entries for come from the same key, so listing one here that is missing there hides it from "
+            "the booth account but not from an admin.",
+        )
         TOP_K: int = Field(default=6, description="How many memories to retrieve and give to the LLM.")
         SHOW_K: int = Field(
             default=5,
@@ -191,6 +200,13 @@ class Pipe:
             description="Longest answer in tokens for both models; BASE_SYSTEM_PROMPT asks for a short answer and "
             "this is the safety net behind it. 0 sends no limit.",
         )
+        DISABLE_THINKING: bool = Field(
+            default=False,
+            description="Send chat_template_kwargs {enable_thinking: false} with the LLM request, for reasoning "
+            "models served by vLLM (the operator does the same with --default-chat-template-kwargs). Without it a "
+            "thinking model can spend the whole MAX_TOKENS budget on reasoning and answer with nothing. Off = ask "
+            "nothing. vLLM hands the key to the chat template, and templates that do not use it ignore it.",
+        )
         REQUEST_TIMEOUT: int = Field(default=60, description="Seconds allowed for a MemMachine or LLM response.")
         # Step-by-step models only.
         STEP_DELAY_MS: int = Field(
@@ -218,6 +234,7 @@ class Pipe:
         """Four entries (with and without memory, at once and step by step) per chat model on each LLM server;
         Open WebUI calls this when it refreshes its model list."""
         entries = []
+        allowed = self._allowed_models()
         async with self._client() as client:
             for index, base_url in enumerate(self._base_urls()):
                 try:
@@ -225,6 +242,8 @@ class Pipe:
                     response.raise_for_status()
                     for model in response.json().get("data", []):
                         name = model["id"]
+                        if allowed and name not in allowed:
+                            continue  # a gateway that also serves embeddings and rerankers lists dozens of ids
                         self._model_urls[name] = base_url
                         # setup_openwebui.py gives the four demo models their final display names.
                         entries.append({"id": name, "name": f"{self.valves.BRAND_NAME} + {name}"})
@@ -430,6 +449,8 @@ class Pipe:
         payload = {"model": model_id, "messages": messages, "stream": True}
         if self.valves.MAX_TOKENS > 0:
             payload["max_tokens"] = self.valves.MAX_TOKENS
+        if self.valves.DISABLE_THINKING:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         async with self._client() as client:
             async with client.stream(
                 "POST", f"{base_url}/chat/completions", json=payload, headers=self._llm_headers()
@@ -463,8 +484,14 @@ class Pipe:
     def _base_urls(self) -> list[str]:
         return [url.strip().rstrip("/") for url in self.valves.LLM_BASE_URLS.split(";") if url.strip()]
 
+    def _allowed_models(self) -> set[str]:
+        """The ids LLM_MODEL_ALLOW names, or an empty set when it is empty (= offer every served id)."""
+        return {name.strip() for name in self.valves.LLM_MODEL_ALLOW.split(",") if name.strip()}
+
     def _llm_headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.valves.LLM_API_KEY}"}
+        """Bearer token for the LLM servers; no header at all when no key is set, so a plain vLLM sees the
+        same request it saw before the key existed rather than an empty one."""
+        return {"Authorization": f"Bearer {self.valves.LLM_API_KEY}"} if self.valves.LLM_API_KEY else {}
 
 
 # --- step-by-step presentation ----------------------------------------------------

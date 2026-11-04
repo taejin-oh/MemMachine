@@ -26,7 +26,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from common import DEMO_DIR, http_json, llm_urls_for_scripts, load_env, memmachine_url, openwebui_url, port_open, script_host
+from common import (DEMO_DIR, http_json, llm_model_ids, llm_urls_for_scripts, load_env, memmachine_url, openwebui_url,
+                    port_open, script_host)
 
 LOG_FILE = Path(__file__).resolve().parent / "demo_monitor.log"
 COMPOSE = ["docker", "compose", "--project-directory", str(DEMO_DIR / "deploy")]
@@ -64,7 +65,9 @@ def main() -> None:
 
 def server_probes(env: dict[str, str]) -> list:
     """The six servers of demo_check.py's first section, each as (name, probe)."""
-    probes = [(f"LLM server {url}", lambda url=url: served_models(url)) for url in llm_urls_for_scripts(env)]
+    # A gateway that answers 401 to an anonymous probe needs the same key the Pipe sends (LLM_API_KEY in .env).
+    key = env.get("LLM_API_KEY", "")
+    probes = [(f"LLM server {url}", lambda url=url: served_models(url, key)) for url in llm_urls_for_scripts(env)]
     embed = f"http://{script_host(env, 'EMBED_HOST')}:8001/v1"
     probes += [
         (f"embedding server {embed}", lambda: served_models(embed)),
@@ -76,8 +79,9 @@ def server_probes(env: dict[str, str]) -> list:
     return probes
 
 
-def served_models(base_url: str) -> str:
-    return ", ".join(m["id"] for m in http_json("GET", f"{base_url}/models", timeout=TIMEOUT)["data"])
+def served_models(base_url: str, key: str = "") -> str:
+    """Model ids a chat server lists; llm_model_ids retries with the key after an anonymous 401."""
+    return ", ".join(llm_model_ids(base_url, key))
 
 
 def result(probe) -> tuple[bool, str]:

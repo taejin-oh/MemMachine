@@ -112,7 +112,17 @@ services:
       ENABLE_PERSISTENT_CONFIG: "false"    # these variables always win over the admin UI
       # Both cards are models of the Pipe (pipe/memmachine_pipe.py), which calls
       # the LLM server itself; Open WebUI keeps no model connection of its own.
-      ENABLE_OPENAI_API: "false"
+      ENABLE_OPENAI_API: "${DIRECT_LLM_ENABLED:-false}"
+      # Pipe-less models, for when someone wants to chat with a served model with no
+      # memory card. Off unless DIRECT_LLM_ENABLED=true in .env (the Mac and the booth
+      # leave it unset, so Open WebUI keeps no connection of its own). Each connection
+      # lists its ids in OPENAI_API_CONFIGS' model_ids, a fixed set: without it Open
+      # WebUI lists every id that server serves, and a shared gateway serves
+      # embeddings and rerankers too. An id must be listed under the server that
+      # answers it, or it shows in the list and then fails when selected.
+      OPENAI_API_BASE_URLS: "${DIRECT_LLM_BASE_URLS:-}"
+      OPENAI_API_KEYS: "${DIRECT_LLM_KEYS:-${LLM_API_KEY:-}}"
+      OPENAI_API_CONFIGS: "${DIRECT_LLM_CONFIGS:-}"
       ENABLE_OLLAMA_API: "false"
       ENABLE_DIRECT_CONNECTIONS: "false"
       # A new chat opens with both models selected (comparison view). The ids are
@@ -180,6 +190,10 @@ services:
       - openwebui_data:/app/backend/data
     extra_hosts:
       - "llm:${LLM_HOST}"
+      # A gateway host that routes by name (LiteLLM at MSRD) needs its real name resolvable in
+      # the container; the host's own /etc/hosts is not visible here. Both come from .env and
+      # are only used when LLM_BASE_URLS points at the gateway; harmless otherwise.
+      - "${GATEWAY_HOST:-gateway.invalid}:${GATEWAY_IP:-127.0.0.1}"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
       interval: 15s

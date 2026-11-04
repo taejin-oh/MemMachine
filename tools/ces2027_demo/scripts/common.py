@@ -22,7 +22,8 @@ REQUIRED_ENV = ("APP_HOST", "OPENWEBUI_PORT", "MEMMACHINE_PORT", "DB_HOST", "LLM
                 "BOOTH_NAME", "BOOTH_EMAIL", "BOOTH_PASSWORD")
 # Valves the scripts write themselves (setup_openwebui.py and load_scenario.py); every other stored valve
 # is a value someone set in the admin UI, which demo_check.py lists.
-SCRIPT_VALVES = ("DEMO_DATE", "LLM_BASE_URLS", "BRAND_NAME", "PROJECT_ID", "LANGUAGE", "BASE_SYSTEM_PROMPT")
+SCRIPT_VALVES = ("DEMO_DATE", "LLM_BASE_URLS", "LLM_API_KEY", "LLM_MODEL_ALLOW", "DISABLE_THINKING",
+                 "BRAND_NAME", "PROJECT_ID", "LANGUAGE", "BASE_SYSTEM_PROMPT")
 NO_MEMORY_SUFFIX = "--no-memory"  # the Pipe's id suffix for the right-hand model (pipe/memmachine_pipe.py)
 STEPS_SUFFIX = "--steps"  # the Pipe's id suffix for the step-by-step form of either model
 LANGUAGES = ("en", "ko")  # the Pipe's TEXT table has these; a script file names one
@@ -35,9 +36,21 @@ REPLY_MARKERS = {
 }
 
 
-def pipe_model_id(env: dict[str, str]) -> str:
-    """Id of the left (memory) model in Open WebUI."""
-    return f"{PIPE_ID}.{env['LLM_MODEL_NAME']}"
+def llm_model_names(env: dict[str, str]) -> list[str]:
+    """Every chat model the demo offers, in the order LLM_MODEL_ALLOW lists them (LLM_MODEL_NAME alone when
+    unset). Each one gets the four entries of demo_models(), so staff can switch chat models in the picker;
+    LLM_MODEL_NAME is the one a new chat opens with."""
+    names = [name.strip() for name in env.get("LLM_MODEL_ALLOW", "").split(",") if name.strip()]
+    if names and env["LLM_MODEL_NAME"] not in names:
+        # The new-chat pair (DEFAULT_MODELS in docker-compose.yml) is made from LLM_MODEL_NAME; without its entries
+        # a new chat would open with models the booth account cannot see.
+        raise SystemExit(f"LLM_MODEL_NAME {env['LLM_MODEL_NAME']!r} must be one of LLM_MODEL_ALLOW {names}")
+    return names or [env["LLM_MODEL_NAME"]]
+
+
+def pipe_model_id(env: dict[str, str], model: str | None = None) -> str:
+    """Id of the left (memory) model in Open WebUI; another served id than the default when named."""
+    return f"{PIPE_ID}.{model or env['LLM_MODEL_NAME']}"
 
 
 def brand_name(env: dict[str, str]) -> str:
@@ -45,19 +58,19 @@ def brand_name(env: dict[str, str]) -> str:
     return env.get("BRAND_NAME", "MemMachine")
 
 
-def pipe_model_name(env: dict[str, str]) -> str:
+def pipe_model_name(env: dict[str, str], model: str | None = None) -> str:
     """Display name of the left (memory) model."""
-    return f"{brand_name(env)} + {env['LLM_MODEL_NAME']}"
+    return f"{brand_name(env)} + {model or env['LLM_MODEL_NAME']}"
 
 
-def no_memory_model_id(env: dict[str, str]) -> str:
-    """Id of the right (no-memory) model in Open WebUI, also served by the Pipe."""
-    return f"{PIPE_ID}.{env['LLM_MODEL_NAME']}{NO_MEMORY_SUFFIX}"
+def no_memory_model_id(env: dict[str, str], model: str | None = None) -> str:
+    """Id of the right (no-memory) model in Open WebUI, also served by the Pipe; another served id when named."""
+    return f"{PIPE_ID}.{model or env['LLM_MODEL_NAME']}{NO_MEMORY_SUFFIX}"
 
 
-def no_memory_model_name(env: dict[str, str]) -> str:
+def no_memory_model_name(env: dict[str, str], model: str | None = None) -> str:
     """Display name of the right (no-memory) model."""
-    return f"{env['LLM_MODEL_NAME']} (no memory)"
+    return f"{model or env['LLM_MODEL_NAME']} (no memory)"
 
 
 def default_models(env: dict[str, str]) -> list[str]:
@@ -72,16 +85,49 @@ def default_models(env: dict[str, str]) -> list[str]:
 
 
 def demo_models(env: dict[str, str]) -> list[tuple[str, str, str]]:
-    """The four models the booth sees, as (id, display name, avatar PNG): the two above and their step-by-step
-    forms, which show the memory search, the prompt and the LLM call before the answer. The avatars come from
-    AVATAR_MEMORY and AVATAR_NO_MEMORY in .env, a file name in ../assets or an absolute path."""
+    """Four entries per chat model the demo offers (see llm_model_names), as (id, display name, avatar PNG):
+    with and without memory, at once and step by step, which shows the memory search, the prompt and the LLM call
+    before the answer. The avatars come from AVATAR_MEMORY and AVATAR_NO_MEMORY in .env, a file name in ../assets
+    or an absolute path."""
     memory, no_memory = env.get("AVATAR_MEMORY", "memmachine.png"), env.get("AVATAR_NO_MEMORY", "no_memory.png")
-    return [
-        (pipe_model_id(env), pipe_model_name(env), memory),
-        (no_memory_model_id(env), no_memory_model_name(env), no_memory),
-        (pipe_model_id(env) + STEPS_SUFFIX, f"{pipe_model_name(env)} (step by step)", memory),
-        (no_memory_model_id(env) + STEPS_SUFFIX, f"{env['LLM_MODEL_NAME']} (no memory, step by step)", no_memory),
-    ]
+    entries = []
+    for model in llm_model_names(env):
+        entries += [
+            (pipe_model_id(env, model), pipe_model_name(env, model), memory),
+            (no_memory_model_id(env, model), no_memory_model_name(env, model), no_memory),
+            (pipe_model_id(env, model) + STEPS_SUFFIX, f"{pipe_model_name(env, model)} (step by step)", memory),
+            (no_memory_model_id(env, model) + STEPS_SUFFIX,
+             f"{model} (no memory, step by step)", no_memory),
+        ]
+    return entries
+
+
+def direct_models(env: dict[str, str]) -> list[str]:
+    """Served ids Open WebUI should offer without the Pipe (DIRECT_LLM_ENABLED=true), read out of the same
+    DIRECT_LLM_CONFIGS JSON that docker-compose.yml passes to OPENAI_API_CONFIGS: a fixed model_ids list per
+    connection, because a connection without one lists everything its server serves. Empty when the switch is
+    off, so the Mac and the booth keep their four entries and nothing else. The ids are the ones to reach the
+    server that answers them; an id listed under the wrong connection shows up and then fails when selected."""
+    enabled = env.get("DIRECT_LLM_ENABLED", "")
+    if enabled not in ("", "true"):  # docker-compose.yml passes the value to ENABLE_OPENAI_API, which reads only "true"
+        raise SystemExit(f"DIRECT_LLM_ENABLED in .env must be true or empty, not {enabled!r}")
+    if not enabled:
+        return []
+    value = env.get("DIRECT_LLM_CONFIGS", "")
+    if not value:
+        raise SystemExit("DIRECT_LLM_ENABLED is set but DIRECT_LLM_CONFIGS is empty: it must name the ids of "
+                         "each connection in DIRECT_LLM_BASE_URLS, e.g. "
+                         '{"0":{"model_ids":["LLM"]},"1":{"model_ids":["LLM-MEDIUM"]}}')
+    try:
+        configs = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"DIRECT_LLM_CONFIGS in .env is not JSON: {error}") from None
+    ids = []
+    for config in configs.values():
+        ids += [name for name in (config or {}).get("model_ids", []) if name]
+    if not ids:
+        raise SystemExit("DIRECT_LLM_CONFIGS has no model_ids: no model would be offered without the Pipe")
+    return ids
 
 
 def read_script(path: str) -> dict:
@@ -159,6 +205,20 @@ def llm_urls_for_scripts(env: dict[str, str]) -> list[str]:
         netloc = parts.netloc.replace("llm", script_host(env, "LLM_HOST"), 1) if parts.hostname == "llm" else parts.netloc
         urls.append(urlunsplit((parts.scheme, netloc, parts.path, "", "")).rstrip("/"))
     return urls
+
+
+def llm_model_ids(base_url: str, key: str = "") -> list[str]:
+    """Served model ids of an OpenAI-compatible chat server, as /v1/models lists them.
+
+    A gateway may answer 401 to an anonymous probe (the company's does), so the key is sent only after that
+    failed: a server that answers anonymously never sees it."""
+    try:
+        data = http_json("GET", f"{base_url}/models", timeout=5)
+    except RuntimeError as error:
+        if not key or "HTTP 401" not in str(error):
+            raise
+        data = http_json("GET", f"{base_url}/models", token=key, timeout=5)
+    return [m["id"] for m in data["data"]]
 
 
 def port_open(host: str, port: int) -> str:
