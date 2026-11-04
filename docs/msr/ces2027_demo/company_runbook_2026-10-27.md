@@ -225,6 +225,9 @@ OPENWEBUI_PORT=3000
 MEMMACHINE_PORT=8080
 LLM_MODEL_NAME=<LLM_MODEL_NAME>
 LLM_BASE_URLS=http://llm:8000/v1
+# Chat model behind a gateway instead of (or next to) the local vLLM: add its URL to LLM_BASE_URLS,
+# list the served ids in LLM_MODEL_ALLOW, put the key in LLM_API_KEY, set LLM_DISABLE_THINKING=true for a
+# Qwen3-family model, and GATEWAY_HOST/GATEWAY_IP when the gateway is reached by name. See .env.example.
 TZ=Asia/Seoul
 VLLM_IMAGE=vllm/vllm-openai:v0.26.0
 LLM_MODEL_PATH=<LLM_MODEL_PATH>
@@ -440,8 +443,8 @@ OK   PostgreSQL port: <DB_IP>:5432
 OK   Qdrant port: <DB_IP>:6333
 OK   sign in to Open WebUI: staff@demo.local
 OK   sign in as the booth account: visitor@demo.local
-OK   the four demo models visible to the booth account: memmachine_pipe.<LLM_MODEL_NAME>, memmachine_pipe.<LLM_MODEL_NAME>--no-memory, memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps, memmachine_pipe.<LLM_MODEL_NAME>--steps
-OK   chat model served by the LLM server: <LLM_MODEL_NAME>
+OK   the 4 demo models visible to the booth account: memmachine_pipe.<LLM_MODEL_NAME>, memmachine_pipe.<LLM_MODEL_NAME>--no-memory, memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps, memmachine_pipe.<LLM_MODEL_NAME>--steps
+OK   chat models served by the LLM server: <LLM_MODEL_NAME>
 OK   new chats open with the pair STEPS_BY_DEFAULT selects: memmachine_pipe.<LLM_MODEL_NAME>--steps,memmachine_pipe.<LLM_MODEL_NAME>--no-memory--steps
 OK   the Pipe is in the script's language: en
 OK   Pipe valves at the defaults of the installed Pipe
@@ -460,7 +463,7 @@ OK   second turn after a step-by-step answer: no card copied into the answer: ..
 all checks passed
 ```
 
-모두 24줄이다. `top-6` 줄의 `rank`는 기대 문구마다의 순위(1이 최상)이고 숫자는 보기다. `SHOW_K`를 넘는 순위는 LLM에는 가지만 화면(카드, 상태줄, 단계 문구, 전달문 블록)에는 안 보인다는 뜻이며 OK로 센다. 화면의 숫자는 모두 `SHOW_K`인 5다. `Pipe valves at the defaults` 줄이 `WARN`이면 관리자 화면에서 저장한 Valve가 설치된 Pipe의 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Admin Panel > Functions > MemMachine > Valves에서 기본값으로 맞추고 다시 검사한다.
+채팅 서버가 하나면 24줄이고 `LLM_BASE_URLS`에 적은 서버마다 `LLM server` 줄이 하나씩 는다(로컬 vLLM과 게이트웨이를 함께 적은 회사 서버는 25줄). `top-6` 줄의 `rank`는 기대 문구마다의 순위(1이 최상)이고 숫자는 보기다. `SHOW_K`를 넘는 순위는 LLM에는 가지만 화면(카드, 상태줄, 단계 문구, 전달문 블록)에는 안 보인다는 뜻이며 OK로 센다. 화면의 숫자는 모두 `SHOW_K`인 5다. `Pipe valves at the defaults` 줄이 `WARN`이면 관리자 화면에서 저장한 Valve가 설치된 Pipe의 기본값과 다른 것이다(예: `TOP_K 5 (default 6)`). Admin Panel > Functions > MemMachine > Valves에서 기본값으로 맞추고 다시 검사한다.
 
 **다르면** `FAIL` 줄의 끝에 이유가 있다. 앞쪽 서버 줄이 `FAIL`이면 6.1절에서 6.3절의 해당 서버를 본다. `top-6 memories` 줄이 `FAIL ... missing ['문구'] among 6 retrieved from ces-...`이면 그 질문의 기대 문구가 실제 임베더의 top-6에 없는 것이다. 이때는 대본을 바로 고치지 말고 먼저 무엇이 검색됐는지 본다.
 
